@@ -1,0 +1,9 @@
+<table>
+  <tr><th>Deal</th><th class="num">Our ledger: in escrow</th><th class="num">Chain: capturable</th><th>Result</th></tr>
+  {% for r in rows %}<tr><td><a href="/deals/{{ r.deal.deal_id }}"><code>{{ r.deal.deal_id }}</code></a></td>
+    <td class="num">{{ r.ours|money(r.deal.asset) }}</td>
+    <td class="num">{{ r.chain|money(r.deal.asset) if r.chain is not none else '—' }}</td>
+    <td>{% if r.err %}<span class="badge b-warn">chain unreachable</span> <span class="small muted">{{ r.err }}</span>{% elif r.ok %}<span class="badge b-ok">reconciled</span>{% else %}<span class="badge b-bad">mismatch</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No escrow locks to reconcile.</td></tr>{% endfor %}
+</table>
+{% if sim() %}<p class="small muted">Simulated chain: this compares with the simulator, not Base Sepolia.</p>{% endif %}

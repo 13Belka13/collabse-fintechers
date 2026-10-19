@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS deliveries (
 CREATE TABLE IF NOT EXISTS disputes (
   deal_id TEXT PRIMARY KEY, items_json TEXT, rejection_criteria_json TEXT, seller_statement TEXT,
   step TEXT, step_deadline_at REAL, decision TEXT, decided_by TEXT, default_rule TEXT,
-  decided_at REAL);
+  decided_at REAL, terms_json TEXT, captured INTEGER NOT NULL DEFAULT 0, capture_n INTEGER NOT NULL DEFAULT 0,
+  holdback INTEGER NOT NULL DEFAULT 0, holdback_until REAL, holdback_released INTEGER NOT NULL DEFAULT 0,
+  voided INTEGER NOT NULL DEFAULT 0, pending_json TEXT, opened_at REAL, closed_at REAL);
 CREATE TABLE IF NOT EXISTS onchain_txs (
   tx_hash TEXT PRIMARY KEY, kind TEXT NOT NULL, deal_id TEXT, status TEXT NOT NULL,
   idem_key TEXT UNIQUE, sender TEXT, nonce INTEGER, raw_tx TEXT, block_number INTEGER, gas_used INTEGER,

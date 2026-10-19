@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Statement · Collabse bank{% endblock %}
+{% block main %}
+<h1>Statement · mandate <code>{{ mandate_id }}</code></h1>
+{% if summary %}
+<div class="money">
+  <div class="stat ok"><div class="k">Budget left</div><div class="v">{{ summary.remaining_eur_cents|eur }}</div><div class="small muted">of {{ summary.budget_eur_cents|eur }} this month</div></div>
+  <div class="stat info"><div class="k">Paid out (mandate)</div><div class="v">{{ summary.committed_eur_cents|eur }}</div></div>
+  <div class="stat warn"><div class="k">Reserved</div><div class="v">{{ summary.reserved_eur_cents|eur }}</div></div>
+</div>
+{% endif %}
+<h2>Per asset</h2>
+<table>
+  <tr><th>Asset</th><th class="num">Locked in escrow, total</th><th class="num">Paid to sellers</th><th class="num">Returned</th><th class="num">Still locked</th></tr>
+  {% for a, t in totals.items() %}<tr><td>{{ a }}</td><td class="num">{{ t.total|money(a) }}</td><td class="num">{{ t.captured|money(a) }}</td><td class="num">{{ t.returned|money(a) }}</td><td class="num">{{ t.in_escrow|money(a) }}</td></tr>{% endfor %}
+</table>
+<h2>Deals</h2>
+<table>
+  <tr><th>Deal</th><th>Seller</th><th>State</th><th class="num">Price</th><th class="num">Paid</th><th class="num">Returned</th><th class="num">Locked</th></tr>
+  {% for r in rows %}{% set l = r.ledger %}<tr><td><a href="/deals/{{ r.deal_id }}"><code>{{ r.deal_id }}</code></a></td><td>{{ names.get(r.seller_id, r.seller_id) }}</td><td>{% include "_state.html" %}</td>
+    <td class="num">{{ r.amount|money(r.asset) if r.amount else '—' }}</td><td class="num">{{ l.captured|money(r.asset) }}</td><td class="num">{{ l.returned|money(r.asset) }}</td><td class="num">{{ l.in_escrow|money(r.asset) }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No deals.</td></tr>{% endfor %}
+</table>
+<h2>Reconcile with the chain</h2>
+<p class="muted small">Reads <code>paymentState</code> of every escrow lock from the chain and compares the capturable amount with our ledger.</p>
+<button hx-get="/statement/reconcile?mandate_id={{ mandate_id }}" hx-target="#recon" hx-swap="innerHTML">Read the chain and reconcile</button>
+<div id="recon" style="margin-top:12px"></div>
+{% endblock %}

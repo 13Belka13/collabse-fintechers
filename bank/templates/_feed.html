@@ -1,0 +1,58 @@
+{% for a in alarms %}
+<div class="banner bad">ALARM · deal <a href="/deals/{{ a.deal_id }}">{{ a.deal_id }}</a> ({{ a.state }}): escrow authorization expires in <span class="countdown" data-deadline="{{ a.expiry }}">{{ a.left }} s</span> — after that the seller can no longer be paid, only void / reclaim.</div>
+{% endfor %}
+<div class="grid">
+  <div class="stat info"><div class="k">Last decision</div><div class="v">{{ '%.1f'|format(panel.last_ms) if panel.last_ms is not none else '—' }} ms</div></div>
+  <div class="stat info"><div class="k">Decision p95 · {{ panel.decision.n }} runs</div><div class="v">{{ '%.1f'|format(panel.decision.p95) if panel.decision.p95 is not none else '—' }} ms</div><div class="small muted">target ≤ 50 ms</div></div>
+  <div class="stat info"><div class="k">Model cost, total</div><div class="v">${{ '%.4f'|format(panel.llm.cost_usd or 0) }}</div><div class="small muted">{{ panel.llm.calls }} calls · {{ panel.llm.input_tokens }} in / {{ panel.llm.output_tokens }} out tokens</div></div>
+  <div class="stat {{ 'ok' if panel.timer else 'warn' }}"><div class="k">Dispute timer</div><div class="v">{{ 'running' if panel.timer else 'stopped' }}</div><div class="small muted">every 5 s, applies silence defaults</div></div>
+</div>
+<h2>All transfers and decisions</h2>
+{% if not rows %}<div class="card muted">Nothing yet. Start a demo scenario above.</div>{% endif %}
+{% for r in rows %}
+<div class="row {{ r.tone }}">
+  <div class="when">{{ r.ts|ts }}</div>
+  <div class="body">
+  {% if r.kind == 'decision' %}
+    <div class="flex">
+      {% if r.status == 'ok' %}<span class="badge b-ok">Passed</span>{% elif r.status == 'refused' %}<span class="badge b-bad">Refused</span>{% else %}<span class="badge b-warn">Needs a human</span>{% endif %}
+      {% if r.code %}<code>{{ r.code }}</code>{% endif %}
+      <span class="right small muted">deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% if r.ms %} · {{ '%.1f'|format(r.ms) }} ms{% endif %}</span>
+    </div>
+    <div class="title">{{ r.text.split('\n')[0] }}</div>
+    {% if r.reasons %}<ul class="reasons">
+      {% for x in r.reasons %}<li>{% if view == 'compliance' %}{% if x.public %}<span class="badge b-muted">public</span>{% else %}<span class="badge b-bad">non-public</span>{% endif %} {% endif %}<code>{{ x.code }}</code> {{ x.text }}{% if x.source_url %} · <a href="{{ x.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}
+    </ul>{% endif %}
+    {% if view == 'compliance' and r.hidden_from_client %}<div class="small"><span class="badge b-warn">hidden from client</span> client was told: “{{ r.client_text }}”</div>{% endif %}
+  {% elif r.kind == 'transfer' %}
+    <div class="flex">
+      <span class="badge b-ok">Transfer</span>
+      <span class="title">{{ r.title }}</span>
+      {% if r.amount %}<span class="amount">{{ r.amount|money(r.asset) }}</span>{% endif %}
+      {% set t = r.tx|tx %}{% if t %}{% if t.url %}<a class="mono" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.short }}</a>{% else %}<span class="mono muted">{{ t.short }} (simulated)</span>{% endif %}{% endif %}
+      <span class="right small muted">{% if r.actor %}by <code>{{ r.actor }}</code>{% endif %}{% if r.rule %} · rule: {{ r.rule }}{% endif %}{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>
+    </div>
+  {% else %}
+    {% set p = r.payload %}
+    <div class="flex">
+      <span class="badge {{ 'b-bad' if r.tone == 'bad' else 'b-info' }}">{{ r.event.replace('dispute.', 'dispute · ').replace('_', ' ') }}</span>
+      <span>
+      {% if r.event == 'dispute.opened' %}{{ p['items'] }} item(s) in question; holdback {{ p.holdback|money(r.asset) }} stays in escrow
+      {% elif r.event == 'dispute.default_applied' %}<code>{{ p.placeId }}</code> → <strong>{{ p.outcome }}</strong>, nobody acted in time ({{ p.rule }})
+      {% elif r.event == 'dispute.buyer_review' %}<code>{{ p.placeId }}</code> buyer: <strong>{{ p.outcome.replace('_', ' ') }}</strong>{% if p.criterion %} — criterion <code>{{ p.criterion }}</code>{% endif %}
+      {% elif r.event == 'dispute.seller_objection' %}<code>{{ p.placeId }}</code> seller objects: “{{ p.statement }}” <span class="untrusted">written by the seller</span>
+      {% elif r.event == 'dispute.decision' %}<code>{{ p.placeId }}</code> decided: <strong>{{ p.outcome }}</strong>{% if p.note %} — {{ p.note }}{% endif %}
+      {% elif r.event == 'dispute.holdback_released' %}Holdback {{ p.holdback|money(r.asset) }} released to the seller ({{ p.rule }})
+      {% elif r.event == 'dispute.closed' %}Escrow settled: {{ p.captured|money(r.asset) }} to the seller{% if p.voided %}, the rest returned to the buyer{% endif %}
+      {% elif r.event == 'escrow_expiry_alarm' %}Escrow authorization expires in {{ p.seconds_left }} s and the deal is still open
+      {% elif r.event == 'x402_refused' %}x402 transfer refused by the bank: <code>{{ p.code }}</code>
+      {% elif r.event == 'demo.scenario' %}Demo scenario “{{ p.title }}”: {{ p.outcome or 'started' }}
+      {% elif r.event == 'dispute.tx_failed' %}Transaction failed, retried on the next tick with the same idempotency key: {{ p.error }}
+      {% else %}{{ p }}{% endif %}
+      </span>
+      <span class="right small muted">by <code>{{ r.actor }}</code>{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>
+    </div>
+  {% endif %}
+  </div>
+</div>
+{% endfor %}

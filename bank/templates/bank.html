@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Bank feed · Collabse bank{% endblock %}
+{% block main %}
+<div class="flex">
+  <h1>Bank feed</h1>
+  <div class="toggle right" role="group" aria-label="Explanation level">
+    <a href="/bank?view=client" class="{{ 'on' if view == 'client' }}">Client view</a>
+    <a href="/bank?view=compliance" class="{{ 'on' if view == 'compliance' }}">Compliance view</a>
+  </div>
+</div>
+<p class="muted small">{% if view == 'client' %}What the client and its agent may see: public reasons only; anything non-public shows as “under review” (no tipping-off, §38 AML Act).{% else %}Full reasons with sources, including non-public ones — for the bank's compliance officer only.{% endif %}</p>
+<div class="card scen">
+  <div class="flex"><strong>Demo scenarios</strong>
+    <form method="post" action="/timer/tick" class="right"><button class="ghost" type="submit">Run the timer now</button></form>
+  </div>
+  {% for key, s in scenarios.items() %}<form method="post" action="/demo/{{ key }}"><button type="submit">{{ s.title }}</button></form>{% endfor %}
+  <details class="small muted"><summary>What each scenario shows</summary><ul>{% for key, s in scenarios.items() %}<li><strong>{{ s.title }}:</strong> {{ s.story }}</li>{% endfor %}</ul></details>
+</div>
+<div id="feed" hx-get="/bank/feed?view={{ view }}" hx-trigger="every 2s" hx-swap="innerHTML">
+{% include "_feed.html" %}
+</div>
+{% endblock %}

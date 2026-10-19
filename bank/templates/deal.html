@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Deal {{ deal.deal_id }} · Collabse bank{% endblock %}
+{% block main %}
+<div class="flex"><h1>Deal <code>{{ deal.deal_id }}</code></h1>{% with r = deal %}{% include "_state.html" %}{% endwith %}
+  <span class="muted">{{ seller.name }} (IČO {{ seller.ico }}) · {{ deal.asset }}</span>
+  {% if dispute %}<a class="btn right" href="/deals/{{ deal.deal_id }}/dispute">Dispute card →</a>{% endif %}</div>
+{% include "_money.html" %}
+{% set marks = [] %}{% for e in events %}{% for m in (e.payload.marks or []) %}{% if m not in marks %}{% set _ = marks.append(m) %}{% endif %}{% endfor %}{% endfor %}
+{% if marks %}<div class="flex">{% for m in marks %}<span class="badge b-warn">{{ m }}</span>{% endfor %}</div>{% endif %}
+
+<h2>Bank decisions</h2>
+{% for x in decisions %}
+<div class="row {{ {'ok': 'ok', 'refused': 'bad'}.get(x.compliance.status, 'warn') }}"><div class="when">{{ x.row.created_at|ts }}</div><div class="body">
+  <div class="flex"><span class="badge b-muted">{{ x.row.kind }}</span>{% if x.compliance.code %}<code>{{ x.compliance.code }}</code>{% endif %}{% if x.row.ms %}<span class="small muted">{{ '%.1f'|format(x.row.ms) }} ms</span>{% endif %}</div>
+  <div><strong>Client sees:</strong> {{ x.client.text }}</div>
+  <div class="small"><strong>Compliance sees:</strong> {{ x.compliance.text }}</div>
+  {% if x.compliance.reasons %}<ul class="reasons small">{% for r in x.compliance.reasons %}<li>{% if r.public %}<span class="badge b-muted">public</span>{% else %}<span class="badge b-bad">non-public</span>{% endif %} <code>{{ r.code }}</code> {{ r.text }}{% if r.source_url %} · <a href="{{ r.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+</div></div>
+{% else %}<div class="card muted">No decision yet.</div>{% endfor %}
+
+<div class="cols">
+<div class="card">
+  <h2 style="margin-top:0">Offer and quote</h2>
+  {% if deal.offer %}<div>{{ deal.offer.items_spec }}</div>
+  <div class="small muted">offer <code>{{ deal.offer.offer_id }}</code> · delivery within {{ deal.offer.deadline_s }} s</div>{% endif %}
+  {% if deal.quote %}<div style="margin-top:8px"><strong>402 quote:</strong> {{ deal.quote.amount|money(deal.asset) }} to <code>{{ deal.quote.pay_to }}</code> on {{ deal.quote.network }}</div>{% endif %}
+  {% if criteria %}<h3>Acceptance criteria</h3>
+  <table class="small"><tr><td>Items</td><td>{{ criteria.count }}</td></tr><tr><td>City</td><td>{{ criteria.city }} (or postcode {{ criteria.postcode_prefix }}xx xx)</td></tr>
+    <tr><td>Rating</td><td>&gt; {{ criteria.min_rating }}</td></tr><tr><td>Category keywords</td><td>{{ criteria.category_keywords|join(', ') }}</td></tr>
+    <tr><td>Required fields</td><td>{{ criteria.required_fields|join(', ') }}</td></tr></table>{% endif %}
+  {% if deal.offer and deal.offer.dispute_terms %}{% set t = deal.offer.dispute_terms %}<h3>Dispute terms (agreed in the offer)</h3>
+  <div class="small">review {{ t.review_window_s }} s · objection {{ t.objection_window_s }} s · decision {{ t.decision_sla_s }} s · holdback {{ t.holdback_bps / 100 }} % for {{ t.holdback_s }} s<br>
+  buyer silent → {{ t.on_buyer_silence }} · seller silent → {{ t.on_seller_silence }} · no decision → {{ t.on_decision_timeout }}</div>{% endif %}
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Escrow</h2>
+  {% if deal.payment_hash %}
+  <div class="small">payment hash <code>{{ deal.payment_hash }}</code></div>
+  {% set pi = deal.payment_info %}<div class="small">receiver <code>{{ pi.receiver }}</code></div>
+  <div class="small">authorization expires in <span class="countdown" data-deadline="{{ pi.authorizationExpiry }}"></span> · refunds until {{ pi.refundExpiry|ts }}</div>
+  <table class="small" style="margin-top:8px"><tr><th>Tx</th><th>Kind</th><th>Status</th></tr>
+  {% for t in txs %}{% set x = t.tx_hash|tx %}<tr><td>{% if x.url %}<a class="mono" href="{{ x.url }}" target="_blank" rel="noopener">{{ x.short }}</a>{% else %}<span class="mono">{{ x.short }}</span> <span class="muted">simulated</span>{% endif %}</td><td>{{ t.kind }}</td><td>{{ t.status }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No transactions.</td></tr>{% endfor %}</table>
+  <div style="margin-top:10px"><button class="ghost" hx-get="/deals/{{ deal.deal_id }}/escrow-state" hx-target="#escrow-state" hx-swap="innerHTML">Read escrow state from the chain</button></div>
+  <div id="escrow-state" style="margin-top:8px"></div>
+  {% else %}<div class="muted">Nothing locked for this deal.</div>{% endif %}
+</div>
+</div>
+
+<h2>Delivered items</h2>
+{% if items %}
+<table class="small">
+  <tr><th>#</th><th>Item</th><th>Verdict</th><th>Failed rules</th><th>Judge</th></tr>
+  {% for it in items %}{% set src = raw.get(it.placeId, {}) %}
+  <tr><td>{{ loop.index }}</td><td>{{ it.title }}<div class="muted"><code>{{ it.placeId }}</code>{% if src.city %} · {{ src.city }}{% endif %}{% if src.totalScore %} · ★ {{ src.totalScore }}{% endif %}</div></td>
+    <td><span class="badge {{ {'accepted': 'b-ok', 'held': 'b-warn', 'rejected': 'b-bad'}.get(it.status, 'b-muted') }}">{{ it.status }}</span></td>
+    <td>{% for f in it.failed %}<code>{{ f }}</code> {% else %}—{% endfor %}</td>
+    <td>{% if it.judge %}{{ it.judge.reason }} {% if it.judge.ai_generated %}<span class="ai">{{ AI_LABEL }}</span>{% endif %}{% else %}—{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<div class="card flex"><span class="muted">No delivery yet.</span>
+  {% if deal.state == 'authorized' %}<form method="post" action="/deals/{{ deal.deal_id }}/retry-delivery" class="right">
+    <button type="submit" class="ghost">Remind the seller to deliver</button></form>
+  <span class="small muted">resends the escrow notice; the money stays locked, nothing is paid twice</span>{% endif %}</div>{% endif %}
+
+<h2>Journal</h2>
+<table class="small">
+  <tr><th>Time</th><th>Actor</th><th>Event</th></tr>
+  {% for e in events %}<tr><td>{{ e.ts|ts }}</td><td><code>{{ e.actor }}</code></td><td>{{ e.event }}{% if e.payload.source == 'untrusted:seller' %} <span class="untrusted">untrusted:seller</span>{% endif %}{% if e.payload.rule %} <span class="muted">rule: {{ e.payload.rule }}</span>{% endif %}</td></tr>{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Deals · Collabse bank{% endblock %}
+{% block main %}
+<h1>Deals</h1>
+<table>
+  <tr><th>Deal</th><th>Seller</th><th>State</th><th class="num">Price</th><th class="num">Paid to seller</th><th class="num">Returned</th><th class="num">In escrow</th><th>Dispute</th><th>Created</th></tr>
+  {% for r in rows %}{% set l = r.ledger %}
+  <tr>
+    <td><a href="/deals/{{ r.deal_id }}"><code>{{ r.deal_id }}</code></a></td>
+    <td>{{ names.get(r.seller_id, r.seller_id) }}</td>
+    <td>{% include "_state.html" %}</td>
+    <td class="num">{{ r.amount|money(r.asset) if r.amount else '—' }}</td>
+    <td class="num">{{ l.captured|money(r.asset) if l.captured else '—' }}</td>
+    <td class="num">{{ l.returned|money(r.asset) if l.returned else '—' }}</td>
+    <td class="num">{{ l.in_escrow|money(r.asset) if l.in_escrow else '—' }}</td>
+    <td>{% if r.dispute %}<a href="/deals/{{ r.deal_id }}/dispute">{{ r.dispute['items']|length }} item(s) · {{ r.dispute.step }}</a>{% else %}—{% endif %}</td>
+    <td>{{ r.created_at|ts }}</td>
+  </tr>
+  {% else %}<tr><td colspan="9" class="muted">No deals yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

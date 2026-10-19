@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Mandate · Collabse bank{% endblock %}
+{% block main %}
+<h1>Mandate <code>{{ mandate_id }}</code></h1>
+{% if error %}<div class="banner bad">{{ error }}</div>{% elif ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
+{% if not current %}<div class="card">No mandate yet. Run <code>python -m scripts.demo_seed</code> or a demo scenario.</div>{% else %}
+{% set s = summary %}
+<div class="money">
+  <div class="stat ok"><div class="k">Budget left this month</div><div class="v">{{ s.remaining_eur_cents|eur }}</div><div class="small muted">of {{ s.budget_eur_cents|eur }}</div></div>
+  <div class="stat info"><div class="k">Paid out</div><div class="v">{{ s.committed_eur_cents|eur }}</div></div>
+  <div class="stat warn"><div class="k">Reserved (in escrow)</div><div class="v">{{ s.reserved_eur_cents|eur }}</div></div>
+  <div class="stat info"><div class="k">Per deal / confirm above</div><div class="v">{{ s.per_deal_max_eur_cents|eur }}</div><div class="small muted">a human confirms above {{ s.confirm_above_eur_cents|eur }}</div></div>
+</div>
+<div class="card">
+  <div class="flex"><strong>Current version {{ current.version }}</strong> <span class="muted small">approved {{ current.approved_at|ts }} by <code>{{ current.approved_by }}</code></span></div>
+  <div class="small">policy_hash <code>{{ current.policy_hash }}</code></div>
+  <table style="margin-top:10px">
+    <tr><th>Rule</th><th>Value</th></tr>
+    <tr><td>Category</td><td>{{ current.policy.category }}</td></tr>
+    <tr><td>Assets allowed</td><td>{{ current.policy.assets_allowed|join(', ') }}</td></tr>
+    <tr><td>Counterparties</td><td>{{ current.policy.counterparties }}</td></tr>
+    <tr><td>Valid until</td><td>{{ current.policy.valid_until }}</td></tr>
+    <tr><td>Velocity</td><td>{{ current.policy.velocity }}</td></tr>
+    <tr><td>VAT risk acknowledged (§109 VAT Act)</td><td>{% for a in current.policy.vat_risk_acknowledged %}<div>IČO <code>{{ a.ico }}</code> · {{ a.asset }} · {{ a.at }} by <code>{{ a.by }}</code></div>{% else %}<span class="muted">none</span>{% endfor %}</td></tr>
+  </table>
+</div>
+<h2>Waiting for a human</h2>
+{% for p in pending %}
+<div class="row warn"><div class="body">
+  <div class="flex"><span class="badge b-warn">Needs a human</span><code>{{ p.decision.code }}</code>
+    <span>deal <a href="/deals/{{ p.deal.deal_id }}">{{ p.deal.deal_id }}</a> · {{ p.seller.name }} · {{ p.deal.amount|money(p.deal.asset) }} in {{ p.deal.asset }}</span></div>
+  <div class="title">{{ p.decision.text.split('\n')[0] }}</div>
+  <ul class="reasons">{% for x in p.decision.reasons %}<li><code>{{ x.code }}</code> {{ x.text }}{% if x.source_url %} · <a href="{{ x.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}</ul>
+  <div class="flex" style="margin-top:8px">
+    <form method="post" action="/mandate/deals/{{ p.deal.deal_id }}/{{ 'ack-vat' if p.decision.code == 'VAT_LIABILITY_RISK' else 'confirm' }}">
+      <input type="hidden" name="who" value="human:{{ p.deal.buyer_id }}">
+      {% if p.decision.code == 'VAT_LIABILITY_RISK' %}<button type="submit">Acknowledge the VAT risk for {{ p.seller.name }} in {{ p.deal.asset }} and pay</button>
+      <span class="small muted">once per seller and asset → new mandate version</span>
+      {% else %}<button type="submit" {{ '' if has_confirm else 'disabled' }}>Confirm this payment</button>
+      {% if not has_confirm %}<span class="small muted">deals.confirm is not in this build yet (integrator).</span>{% endif %}{% endif %}
+    </form>
+  </div>
+</div></div>
+{% else %}<div class="card muted">No payment is waiting for a confirmation or a VAT acknowledgement.</div>{% endfor %}
+<h2>Version history</h2>
+<table>
+  <tr><th>Version</th><th>policy_hash</th><th>Approved</th><th>By</th></tr>
+  {% for v in versions %}<tr><td>{{ v.version }}</td><td><code>{{ v.policy_hash }}</code></td><td>{{ v.approved_at|ts }}</td><td><code>{{ v.approved_by }}</code></td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endblock %}
