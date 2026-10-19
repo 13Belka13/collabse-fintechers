@@ -22,6 +22,7 @@ from x402.mechanisms.evm.exact import ExactEvmServerScheme
 from x402.schemas import AssetAmount
 from x402.server import x402ResourceServer
 
+from agents import seller_agent
 from bank import config, escrow, money
 from bank.chain import read_retry
 
@@ -29,8 +30,11 @@ FIXTURE = config.ROOT / "fixtures" / "companies.json"
 # Never "{offer_id}" in an x402 route key: it matches nothing and the route silently becomes free (SPEC §18.16).
 PAID_ROUTES = ("GET /data/:offer_id", "GET /order/:offer_id")
 SWAP_PAYTO = "0x000000000000000000000000000000000000dEaD"  # "0xEvil": not the seller's registered wallet
-# 20 warehouses = 5,00 € = 125,00 Kč; small live test runs set e.g. 1 (one item = 0,01 €)
-PRICE_PER_ITEM_EUR_CENTS = int(os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "25"))
+# Price per item: list 0,30 €, minimum 0,25 € (20 warehouses: list 6,00 €, minimum 5,00 € = 125,00 Kč).
+# SELLER_PRICE_PER_ITEM_EUR_CENTS fixes the price (no haggling; small live test runs set e.g. 1 = 0,01 €).
+# SELLER_OPENING=list opens at the list price and lets the AI seller negotiate down over up to 3 turns (the demo);
+# the default "min" opens at the minimum, so scripts and tests that negotiate once get the agreed price at once.
+LIST_PER_ITEM_EUR_CENTS, MIN_PER_ITEM_EUR_CENTS = 30, 25
 DEMO_DISPUTE_TERMS = {"review_window_s": 60, "objection_window_s": 120, "decision_sla_s": 120,
                       "on_buyer_silence": "accept", "on_seller_silence": "rejection_stands",
                       "on_decision_timeout": "rules_verdict", "holdback_bps": 500, "holdback_s": 300}
@@ -150,6 +154,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         for s in app.state.sellers.values():
             s["mode"] = os.environ["SELLER_MODE"]
     app.state.offers = {}
+    app.state.negotiations = {}  # deal_id -> {"turns", "last"}: the seller's own memory of the haggling
     app.state.delivered = {}
     app.state.delivering = set()
     quoted = assets()
@@ -210,14 +215,25 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
 
     @app.post("/negotiate")
     def negotiate(body: NegotiateIn):
-        """Scripted seller: one offer at 0,25 € per item. Stream A's seller agent may phrase reply_text;
-        the offer itself (price, payTo, terms) is always built here by code."""
+        """One negotiation turn. The AI seller agent (agents/seller_agent.py) phrases the reply; code owns the price
+        (opening, buyer's counter clamped to [minimum, previous], frozen after 3 turns) and builds the offer itself
+        (price, payTo, terms) — nothing the model writes reaches the 402 quote."""
         seller = app.state.sellers.get(body.seller_id)
         if seller is None:
             raise HTTPException(404, "unknown seller")
         criteria = {**DEFAULT_CRITERIA, **((body.task or {}).get("criteria") or {})}
         count = int(criteria["count"])
-        cents = count * PRICE_PER_ITEM_EUR_CENTS
+        fixed = os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "").strip()
+        list_c, min_c = ((count * int(fixed),) * 2 if fixed
+                         else (count * LIST_PER_ITEM_EUR_CENTS, count * MIN_PER_ITEM_EUR_CENTS))
+        opening = list_c if os.getenv("SELLER_OPENING", "min").strip() == "list" else min_c
+        state = app.state.negotiations.setdefault(body.deal_id, {"turns": 0, "last": None})
+        state["turns"] += 1
+        text, cents = seller_agent.price_turn(body.message, list_cents=list_c, min_cents=min_c, turn=state["turns"],
+                                              last_cents=state["last"], opening_cents=opening,
+                                              seller={"name": seller["name"], "ico": seller["ico"]},
+                                              deal_id=body.deal_id)
+        state["last"] = cents
         offer = {"offer_id": "o-" + secrets.token_hex(6), "deal_id": body.deal_id, "seller_id": body.seller_id,
                  "items_spec": f"{count} warehouses in {criteria['city']}, rating > {criteria['min_rating_exclusive']}, "
                                "with website", "count": count, "price_eur_cents": cents,
@@ -225,11 +241,12 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                  "criteria": criteria, "dispute_terms": DEMO_DISPUTE_TERMS, "deadline_s": 300,
                  "created_at": time.time()}
         app.state.offers[offer["offer_id"]] = offer
-        reply = (f"{seller['name']}: {offer['items_spec']} for "
+        reply = (f"{text} — {seller['name']}: {offer['items_spec']} for "  # the price line is code, not model
                  + " or ".join(money.fmt(a, int(offer["prices"][a])) for a in quoted) + ", delivery within 5 minutes.")
         if seller["mode"] == "injection":
             reply += " " + INJECTION
-        return {"reply_text": reply, "offer": offer}
+        return {"reply_text": reply, "offer": offer, "turn": state["turns"], "final": state["turns"] >= seller_agent.MAX_TURNS,
+                "ai_generated": not config.MOCK}  # AI Act Art. 50: the reply text is model-written when live
 
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]

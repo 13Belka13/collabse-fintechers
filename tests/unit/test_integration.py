@@ -419,3 +419,46 @@ def test_one_capture_booked_once_when_two_processes_send_it(bank):
     assert [s for s in bank.sender.money() if s == ("capture", 250)] == [("capture", 250)]
     assert budget()["committed_eur_cents"] - committed == money.to_eur_cents("tCZK", before + 250) - money.to_eur_cents("tCZK", before)
     assert any(e["event"] == "dispute.already_booked" for e in journal.entries(deal_id))
+
+
+# ---- L7: the AI seller negotiates, code owns the price ------------------------------------------------
+
+def test_seller_price_turns_never_below_minimum_never_up_frozen_after_three():
+    from agents import seller_agent as sa
+    kw = dict(list_cents=600, min_cents=500, opening_cents=600, seller={"name": "Beta s.r.o.", "ico": "30181020"})
+    assert sa.price_turn("Price?", turn=1, last_cents=None, **kw)[1] == 600
+    assert sa.price_turn("Can you do 1 €?", turn=2, last_cents=600, **kw)[1] == 500       # never below the minimum
+    assert sa.price_turn("OK, 5,50 € then", turn=2, last_cents=600, **kw)[1] == 550
+    assert sa.price_turn("Actually 9 €", turn=3, last_cents=550, **kw)[1] == 550          # never back up
+    assert sa.price_turn("4 €, last try", turn=4, last_cents=550, **kw)[1] == 550         # frozen after 3 turns
+    text, _ = sa.price_turn("125 Kč?", turn=3, last_cents=600, **kw)                      # 125 Kč = 5 € at 25 Kč/€
+    assert "5.00" in text or "5,00" in text
+
+
+def test_list_price_offer_is_refused_by_the_task_budget_then_negotiated_down(bank, monkeypatch):
+    """SPEC L7: "20 for 6 €" is refused by the 5 € task budget; the agent haggles to 5 € and pays."""
+    monkeypatch.setenv("SELLER_OPENING", "list")
+    deal_id = bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1", "task": TASK,
+                                                "asset": "tCZK"}).json()["deal_id"]
+    first = bank.api.post(f"/api/deals/{deal_id}/negotiate", json={"message": "20 warehouses in Brno, price?"}).json()
+    assert first["offer"]["price"] == "150,00 Kč"  # 6,00 € list price
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "AMOUNT_ABOVE_LIMIT" and bank.sender.sent == []  # the task budget stops it, code not model
+    second = bank.api.post(f"/api/deals/{deal_id}/negotiate", json={"message": "Our budget is 5 €."}).json()
+    assert second["offer"]["price"] == "125,00 Kč"
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
+    assert bank.sender.money()[0] == ("authorize", 12_500)
+
+
+def test_buyer_agent_haggles_with_the_ai_seller_through_the_bank(bank, monkeypatch):
+    from agents.buyer import Buyer, http_transport
+    monkeypatch.setenv("SELLER_OPENING", "list")
+    result = Buyer("20 warehouses in Brno, rating above 4, with a website", asset="tCZK", seller_hint="s-beta",
+                   transport=http_transport(client=bank.api)).run()
+    talks = [c for c in result["tool_calls"] if c["name"] == "negotiate"]
+    assert len(talks) >= 2 and len(talks) <= 3
+    assert result["tool_calls"][-2]["name"] == "pay" or any(c["name"] == "pay" and c["output"].get("status") == "ok"
+                                                          for c in result["tool_calls"])
+    assert ("authorize", 12_500) in bank.sender.money()  # paid the negotiated 5 €, not the 6 € list price
+    replies = [e for e in journal.entries(limit=500) if e["event"] == "seller_reply"]
+    assert replies and all(e["payload"]["source"] == "untrusted:seller" for e in replies)

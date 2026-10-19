@@ -115,6 +115,7 @@ def offer_view(offer: dict, asset: str) -> dict:
     """What the buyer agent sees of an offer: ids and terms, no addresses."""
     return {"offer_id": offer["offer_id"], "items_spec": offer.get("items_spec"), "count": offer.get("count"),
             "asset": asset, "price": money.fmt(asset, int(offer["prices"][asset])),
+            "price_eur_cents": money.to_eur_cents(asset, int(offer["prices"][asset])),  # to compare with the task budget
             "deadline_s": offer.get("deadline_s"), "criteria": offer.get("criteria"),
             "dispute_terms": offer.get("dispute_terms")}
 

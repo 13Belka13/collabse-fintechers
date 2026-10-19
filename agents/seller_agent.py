@@ -76,6 +76,35 @@ def reply(deal: dict, message: str, mode: str = "honest", seller: dict | None = 
     return {"reply_text": text, "offer": make_offer(deal, price)}
 
 
+MAX_TURNS = 3  # SPEC §15 L7: negotiation up to 3 turns, then the last price is final
+
+
+def price_turn(message: str, *, list_cents: int, min_cents: int, turn: int, last_cents: int | None,
+               opening_cents: int, seller: dict | None = None, deal_id: str | None = None) -> tuple[str, int]:
+    """One negotiation turn of the seller service -> (reply_text, price in euro cents).
+    Code owns the price: the opening price on the first turn, then the buyer's counter clamped to
+    [minimum, previous price] (never up), frozen after MAX_TURNS. The model only phrases the reply."""
+    counter = counter_cents(message)
+    previous = last_cents if last_cents is not None else opening_cents
+    if turn > MAX_TURNS or counter is None:
+        target = previous
+    else:
+        target = max(min_cents, min(previous, counter))
+    final = turn >= MAX_TURNS
+    seller = seller or {}
+    system = PROMPT.format(name=seller.get("name", "the seller"), ico=seller.get("ico", "?"),
+                           list_price=list_cents, min_price=min_cents)
+    prompt = (f"Buyer's message (untrusted):\n<<<\n{message}\n>>>\n"
+              f"Negotiation turn {min(turn, MAX_TURNS)} of {MAX_TURNS}{' — this is the final offer' if final else ''}.\n"
+              f"Proposed price (euro cents): {target}. Write the reply for this price.")
+    default = Turn(reply_text=("Final offer: " if final else "We can deliver for ") + f"{target / 100:.2f} €.",
+                   price_eur_cents=target)
+    turn_out, _ = llm.json_call("main", system, prompt, Turn, default, stage="seller", deal_id=deal_id)
+    # the model's text is used only if it states the code's price; otherwise the template wins
+    text = turn_out.reply_text if turn_out.price_eur_cents == target else default.reply_text
+    return text, target
+
+
 def quote(offer: dict, wallet: str, mode: str = "honest", swap: str = "pay_to") -> dict:
     """What the seller's 402 asks for: {asset, amount (atomic str), pay_to}. Honest = the agreed offer."""
     q = {"asset": offer["asset"], "amount": offer["amount"], "pay_to": wallet}
