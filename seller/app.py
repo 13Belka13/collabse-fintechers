@@ -29,7 +29,8 @@ FIXTURE = config.ROOT / "fixtures" / "companies.json"
 # Never "{offer_id}" in an x402 route key: it matches nothing and the route silently becomes free (SPEC §18.16).
 PAID_ROUTES = ("GET /data/:offer_id", "GET /order/:offer_id")
 SWAP_PAYTO = "0x000000000000000000000000000000000000dEaD"  # "0xEvil": not the seller's registered wallet
-PRICE_PER_ITEM_EUR_CENTS = 25  # 20 warehouses = 5,00 € = 125,00 Kč
+# 20 warehouses = 5,00 € = 125,00 Kč; small live test runs set e.g. 1 (one item = 0,01 €)
+PRICE_PER_ITEM_EUR_CENTS = int(os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "25"))
 DEMO_DISPUTE_TERMS = {"review_window_s": 60, "objection_window_s": 120, "decision_sla_s": 120,
                       "on_buyer_silence": "accept", "on_seller_silence": "rejection_stands",
                       "on_decision_timeout": "rules_verdict", "holdback_bps": 500, "holdback_s": 300}
