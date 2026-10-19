@@ -270,6 +270,20 @@ def deal_page(request: Request, deal_id: str):
                 decisions=decisions, dispute=disputes.get(deal_id), events=journal.entries(deal_id, limit=80))
 
 
+@router.post("/deals/{deal_id}/retry-delivery")
+def retry_delivery(deal_id: str):
+    """Funds are locked but no delivery came: deals.pay on an 'authorized' deal resends the escrow notice to the
+    seller (no second lock, same idempotency keys)."""
+    deal = _deal_or_404(deal_id)
+    if deal["state"] != "authorized":
+        raise HTTPException(409, f"deal is {deal['state']}, not waiting for a delivery")
+    try:
+        deals.pay(deal_id)
+    except deals.DealError as e:
+        journal.append("human:bank-officer", "delivery_retry_failed", {"error": str(e)[:200]}, deal_id=deal_id)
+    return RedirectResponse(f"/deals/{deal_id}", status_code=303)
+
+
 @router.get("/deals/{deal_id}/escrow-state", response_class=HTMLResponse)
 def escrow_state(request: Request, deal_id: str):
     deal = _deal_or_404(deal_id)

@@ -58,7 +58,10 @@
     <td>{% if it.judge %}{{ it.judge.reason }} {% if it.judge.ai_generated %}<span class="ai">{{ AI_LABEL }}</span>{% endif %}{% else %}—{% endif %}</td></tr>
   {% endfor %}
 </table>
-{% else %}<div class="card muted">No delivery yet.</div>{% endif %}
+{% else %}<div class="card flex"><span class="muted">No delivery yet.</span>
+  {% if deal.state == 'authorized' %}<form method="post" action="/deals/{{ deal.deal_id }}/retry-delivery" class="right">
+    <button type="submit" class="ghost">Remind the seller to deliver</button></form>
+  <span class="small muted">resends the escrow notice; the money stays locked, nothing is paid twice</span>{% endif %}</div>{% endif %}
 
 <h2>Journal</h2>
 <table class="small">

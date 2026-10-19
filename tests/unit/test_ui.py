@@ -120,3 +120,14 @@ def test_alarm_banner_for_an_open_deal_near_expiry(client, world):  # noqa: F811
     disputes.settle(deal_id, now=time.time())
     assert "ALARM" in client.get("/bank/feed").text
     assert escrow  # imported for the reconcile patch above
+
+
+def test_retry_delivery_resends_the_seller_notice_only_for_a_locked_deal(client, world, monkeypatch):  # noqa: F811
+    deal_id = make_deal("honest", deal_id="d-wait", state="authorized")
+    db.run("DELETE FROM deliveries WHERE deal_id=?", (deal_id,))
+    assert "Remind the seller to deliver" in client.get(f"/deals/{deal_id}").text
+    calls = []
+    monkeypatch.setattr(ui.deals, "pay", lambda d: calls.append(d) or codes.ok())
+    assert client.post(f"/deals/{deal_id}/retry-delivery").status_code == 200 and calls == [deal_id]
+    db.run("UPDATE deals SET state='closed' WHERE deal_id=?", (deal_id,))
+    assert client.post(f"/deals/{deal_id}/retry-delivery").status_code == 409 and calls == [deal_id]
