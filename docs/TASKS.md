@@ -45,7 +45,7 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       scenario asserts decision + on-chain balance/escrow deltas (read from chain) + journal; negatives
       assert "no money moved". N13/N14 = timer defaults with demo windows. Small amounts (`SCENARIO_PRICE_EUR`). N10/N11 send real reverting txs
       with manual gas.
-  - [x] Runner + stack (`scripts/stack.py`), S01–S04, N01–N12 pass 3/3 on an anvil fork of Base Sepolia (Q)
+  - [x] Runner + stack (`scripts/stack.py`), S01–S04, N01–N12 and A01 (API auth) pass 3/3 on an anvil fork of Base Sepolia (Q)
   - [ ] S05, N13, N14 — wait for stream U's dispute API and timer (xfail D2)
   - [ ] Run on Base Sepolia (`--target sepolia`, keys from .env)
 - [ ] Q4 Fault injection via `FAULTS` (`settle_fail_once`, `registry_timeout`, `llm_bad_json`,

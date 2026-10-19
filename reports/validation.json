@@ -1,23 +1,23 @@
 {
- "generated": "2026-10-19 14:57",
- "commit": "0c4810d",
+ "generated": "2026-10-19 15:06",
+ "commit": "2c60bd1",
  "target": "fork",
- "label": "anvil fork of Base Sepolia (chain id 84532) at block 48323122",
+ "label": "anvil fork of Base Sepolia (chain id 84532) at block 48323395",
  "summary": {
-  "scenarios": 24,
-  "p0": 19,
+  "scenarios": 25,
+  "p0": 20,
   "faults": 5,
-  "attack_scenarios": 10,
+  "attack_scenarios": 11,
   "runs": 3,
-  "scenario_runs": 72,
+  "scenario_runs": 75,
   "status": {
-   "pass": 57,
+   "pass": 60,
    "xfail": 15,
    "fail": 0
   },
-  "attack_runs": 30,
-  "attacks_blocked_money": 30,
-  "attacks_expected_code": 30,
+  "attack_runs": 33,
+  "attacks_blocked_money": 33,
+  "attacks_expected_code": 33,
   "wrong_debits": 0,
   "transfers_to_evil": 0,
   "reconciliation_ok": true,
@@ -120,6 +120,11 @@
     "xfail",
     "xfail"
    ],
+   "A01": [
+    "pass",
+    "pass",
+    "pass"
+   ],
    "F01": [
     "pass",
     "pass",
@@ -153,26 +158,26 @@
    "title": "Mandate decision + cached check + journal",
    "target_ms": 50,
    "n": 126,
-   "p50": 0.586,
-   "p95": 58.443,
-   "met": false
+   "p50": 0.426,
+   "p95": 31.73,
+   "met": true
   },
   {
    "stage": "facilitator_verify",
    "title": "Bank facilitator verify (with screening)",
    "target_ms": 500,
    "n": 6,
-   "p50": 15.608,
-   "p95": 568.678,
-   "met": false
+   "p50": 24.983,
+   "p95": 479.843,
+   "met": true
   },
   {
    "stage": "screening",
    "title": "New counterparty: ARES + VAT + ISIR + sanctions",
    "target_ms": 2500,
-   "n": 103,
-   "p50": 26.628,
-   "p95": 136.258,
+   "n": 108,
+   "p50": 23.664,
+   "p95": 128.671,
    "met": true
   },
   {
@@ -180,8 +185,8 @@
    "title": "Signature → tx in block (settle, authorize, capture, void)",
    "target_ms": 6000,
    "n": 82,
-   "p50": 622.309,
-   "p95": 675.529,
+   "p50": 624.734,
+   "p95": 672.364,
    "met": true
   },
   {
@@ -198,20 +203,20 @@
    "title": "Refusal → message to the client",
    "target_ms": 100,
    "n": 42,
-   "p50": 7.759,
-   "p95": 84.053,
+   "p50": 3.825,
+   "p95": 46.022,
    "met": true
   }
  ],
  "coverage": {
   "total": {
-   "lines": 91.05932203389831,
-   "branches": 83.33333333333333
+   "lines": 91.06771915247195,
+   "branches": 83.28729281767956
   },
   "targets": [
    {
     "target": "bank/ lines ≥ 80 %",
-    "value": 91.05932203389831,
+    "value": 91.06771915247195,
     "met": true
    },
    {
@@ -236,8 +241,8 @@
    },
    {
     "target": "bank/screening/__init__.py branches ≥ 90 %",
-    "value": 89.65517241379311,
-    "met": false
+    "value": 91.37931034482759,
+    "met": true
    }
   ]
  },
@@ -297,7 +302,7 @@
   "wrong_debits": [],
   "wrong_debit_count": 0,
   "transfers_to_evil": 0,
-  "first_block": 48323141,
+  "first_block": 48323414,
   "ok": true
  },
  "defects": {
