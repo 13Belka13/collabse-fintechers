@@ -1,0 +1,351 @@
+{
+ "target": "sepolia",
+ "label": "Base Sepolia (chain id 84532)",
+ "stack": {
+  "target": "sepolia",
+  "label": "Base Sepolia (chain id 84532)",
+  "rpc": "Base Sepolia",
+  "fork_block": null,
+  "funding": "funded from faucets by hand (Base Sepolia)",
+  "addresses": {
+   "relayer": "0xD23DB197CC1294b049AeDf0d9ea1BA216691de48",
+   "admin": "0xD23DB197CC1294b049AeDf0d9ea1BA216691de48",
+   "operator": "0x0469ceC178789072bc61435835D0BB38214D4e53",
+   "alfa": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
+  },
+  "tczk": "0x18245366edA63Ca583c11B27d1134F3d233A115F",
+  "run_dir": "/Users/ryabuily/dev/collabse-fintechers/data/q-runs/20261019-170327"
+ },
+ "runs": 1,
+ "started": 1792422207.6660538,
+ "finished": 1792422242.783848,
+ "scenario_price_eur": "0.10",
+ "defects": {
+  "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId"
+ },
+ "results": [
+  {
+   "id": "S04",
+   "title": "Same deal in tCZK through escrow",
+   "run": 1,
+   "status": "pass",
+   "attack": false,
+   "defects": [],
+   "checks": [
+    {
+     "name": "payee on the tCZK allowlist and not frozen (chain)",
+     "ok": true,
+     "detail": null
+    },
+    {
+     "name": "decision ok",
+     "ok": true,
+     "detail": {
+      "status": "ok",
+      "code": null,
+      "explanation": "5,00 Kč locked in escrow for Beta s.r.o.: https://sepolia.basescan.org/tx/0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366. The seller delivers; the bank pays per accepted item and returns the rest.",
+      "http_status": null,
+      "detail": null
+     }
+    },
+    {
+     "name": "settlement ran (deal settled or disputed)",
+     "ok": true,
+     "detail": "disputed"
+    },
+    {
+     "name": "dispute record opened and the bank's settlement finished",
+     "ok": true,
+     "detail": {
+      "pending": null,
+      "captured": 428
+     }
+    },
+    {
+     "name": "authorize tx mined",
+     "ok": true,
+     "detail": [
+      {
+       "tx_hash": "0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366",
+       "kind": "authorize",
+       "deal_id": "d-f2b265e70e",
+       "status": "mined",
+       "idem_key": "d-f2b265e70e:e77d29ce:authorize",
+       "sender": "0x0469ceC178789072bc61435835D0BB38214D4e53",
+       "nonce": 45,
+       "raw_tx": "0x02f902d283014a342d830f424083a7d8c08302c6ef94f96815976523e00e65be8f34ca5e64b4f41eb19c80b9026441d662020000000000000000000000000469cec178789072bc61435835d0bb38214d4e53000000000000000000000000491beccb4e26e1c5781e1e44c48ad474d04d214000000000000000000000000070e8b0ed46dc4fd558ee05bceba06e5aaf00ebd100000000000000000000000018245366eda63ca583c11b27d1134f3d233a115f00000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000000000000000000000000000000000006ad633a6000000000000000000000000000000000000000000000000000000006ad782ce000000000000000000000000000000000000000000000000000000006adf6bce0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d5f8984e8a6fe4a7df6f730f56538de93fa7e3aeddcb6441b782a1a2312fa1e00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000008612dfdc421f80336cd14e8ef9cb1e765db5ab8800000000000000000000000000000000000000000000000000000000000001e000000000000000000000000000000000000000000000000000000000000000417236db53fb4161a96b2dc37d797d0435fd33c8d2ae4274543546fe302fafe1f9509b7764010a8e6c84356b1d4b9207af06898861a3c93b97e7a27ba46ed694b51c00000000000000000000000000000000000000000000000000000000000000c001a0f27b8e190b2968ee71c85edbe544d86406cda2856fa5ee83a9d63f462d49819aa064a13dbc04ca72f63d687cd1f46a3a8f4ad563ccfe52987216027054d5a346f7",
+       "block_number": 48326969,
+       "gas_used": 160044,
+       "created_at": 1792422223.443249
+      }
+     ]
+    },
+    {
+     "name": "authorize: buyer → escrow = price (Transfer event)",
+     "ok": true,
+     "detail": {
+      "transfers": [
+       {
+        "from": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140",
+        "to": "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88",
+        "value": 500
+       }
+      ],
+      "price": 500
+     }
+    },
+    {
+     "name": "at once: accepted items minus the 5 % holdback captured (Transfer events)",
+     "ok": true,
+     "detail": {
+      "captured": 428,
+      "expected": 428,
+      "holdback": 22
+     }
+    },
+    {
+     "name": "paymentState: holdback + items in question still in escrow",
+     "ok": true,
+     "detail": {
+      "state": {
+       "collected": true,
+       "capturable": 72,
+       "refundable": 428
+      },
+      "expected": 72
+     }
+    },
+    {
+     "name": "deal closed after the timer",
+     "ok": true,
+     "detail": null
+    },
+    {
+     "name": "capture to seller in total = accepted items (Transfer events)",
+     "ok": true,
+     "detail": {
+      "captured": 450,
+      "expected": 450
+     }
+    },
+    {
+     "name": "void back to buyer = rest (Transfer events)",
+     "ok": true,
+     "detail": {
+      "voided": 50,
+      "expected": 50
+     }
+    },
+    {
+     "name": "paymentState: nothing left to capture",
+     "ok": true,
+     "detail": {
+      "collected": true,
+      "capturable": 0,
+      "refundable": 450
+     }
+    },
+    {
+     "name": "journal: dispute.holdback_released by actor timer (holdback_s…)",
+     "ok": true,
+     "detail": null
+    },
+    {
+     "name": "seller balance +captured (chain)",
+     "ok": true,
+     "detail": {
+      "tCZK:buyer": -450,
+      "tCZK:beta": 450
+     }
+    },
+    {
+     "name": "buyer balance −captured (chain)",
+     "ok": true,
+     "detail": {
+      "tCZK:buyer": -450,
+      "tCZK:beta": 450
+     }
+    },
+    {
+     "name": "escrow store back to its start (chain)",
+     "ok": true,
+     "detail": {
+      "tCZK:buyer": -450,
+      "tCZK:beta": 450
+     }
+    },
+    {
+     "name": "journal: escrow_authorized, escrow_captured, escrow_voided, dispute.opened, dispute.closed",
+     "ok": true,
+     "detail": null
+    },
+    {
+     "name": "journal hash chain verifies",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "decisions": [
+    {
+     "deal_id": "d-f2b265e70e",
+     "status": "ok",
+     "code": null,
+     "explanation": "5,00 Kč locked in escrow for Beta s.r.o.: https://sepolia.basescan.org/tx/0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366. The seller delivers; the bank pays per accepted item and returns the rest.",
+     "http_status": null,
+     "detail": null
+    }
+   ],
+   "deals": [
+    "d-f2b265e70e"
+   ],
+   "amounts": {
+    "d-f2b265e70e": {
+     "asset": "tCZK",
+     "amount": 500,
+     "price": "5,00 Kč"
+    }
+   },
+   "txs": [
+    {
+     "kind": "authorize",
+     "tx_hash": "0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366",
+     "status": "mined",
+     "deal_id": "d-f2b265e70e",
+     "link": "https://sepolia.basescan.org/tx/0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366"
+    },
+    {
+     "kind": "capture",
+     "tx_hash": "0xe2c69c963933b1cb0af9426e5af090fba7f9f3e40c369bd3e939df38665167e5",
+     "status": "mined",
+     "deal_id": "d-f2b265e70e",
+     "link": "https://sepolia.basescan.org/tx/0xe2c69c963933b1cb0af9426e5af090fba7f9f3e40c369bd3e939df38665167e5"
+    },
+    {
+     "kind": "capture",
+     "tx_hash": "0x9b129ebec52704ddd8c67911cdced2f856f80d294b2a23267cfcbeb620888f91",
+     "status": "mined",
+     "deal_id": "d-f2b265e70e",
+     "link": "https://sepolia.basescan.org/tx/0x9b129ebec52704ddd8c67911cdced2f856f80d294b2a23267cfcbeb620888f91"
+    },
+    {
+     "kind": "void",
+     "tx_hash": "0x664816e75f9252cb0471b8e454664d3da9ca80923e941228be4fc8c0ba59580a",
+     "status": "mined",
+     "deal_id": "d-f2b265e70e",
+     "link": "https://sepolia.basescan.org/tx/0x664816e75f9252cb0471b8e454664d3da9ca80923e941228be4fc8c0ba59580a"
+    }
+   ],
+   "expected_debits": [
+    {
+     "asset": "tCZK",
+     "tx_hash": "0xc92c0e11f8fc8973ec47a51cdb4e3988702ffc4449e4e097549cfab772a3f366",
+     "amount": 500
+    }
+   ],
+   "notes": [
+    "deadlines.tick(now + 301 s): 3 step(s)"
+   ],
+   "error": null,
+   "seconds": 27.72,
+   "start_block": 48326962,
+   "end_block": 48326976,
+   "profile": "main",
+   "db": "/Users/ryabuily/dev/collabse-fintechers/data/q-runs/20261019-170327/bank-main.db"
+  }
+ ],
+ "reconciliation": {
+  "deals": [
+   {
+    "deal_id": "d-f2b265e70e",
+    "asset": "tCZK",
+    "chain": {
+     "authorize": 500,
+     "capture": 450,
+     "void": 50
+    },
+    "escrow_capturable": 0,
+    "db_amount": 500,
+    "journal_captured": 450,
+    "statement_committed_eur_cents": 18,
+    "checks": {
+     "locked_chain_eq_db_amount": true,
+     "captured_chain_eq_journal": true,
+     "committed_statement_eq_captured": true,
+     "locked_eq_captured_voided_capturable": true
+    },
+    "ok": true
+   }
+  ],
+  "deals_checked": 1,
+  "deals_ok": 1,
+  "buyer_debits": {
+   "EURC": 0,
+   "tCZK": 1
+  },
+  "wrong_debits": [],
+  "wrong_debit_count": 0,
+  "transfers_to_evil": 0,
+  "first_block": 48326962,
+  "ok": true
+ },
+ "journal_verified": {
+  "bank-main.db": true
+ },
+ "stages": {
+  "negotiate_proxy": [
+   147.314
+  ],
+  "screening": [
+   340.013
+  ],
+  "quote": [
+   29.813
+  ],
+  "decision": [
+   1.086,
+   1603.439
+  ],
+  "broadcast:authorize": [
+   242.778
+  ],
+  "tx_in_block:authorize": [
+   766.399
+  ],
+  "escrow_authorize": [
+   1926.642
+  ],
+  "notify_seller": [
+   1847.011
+  ],
+  "api_pay": [
+   5432.063
+  ],
+  "broadcast:capture": [
+   221.791,
+   237.816
+  ],
+  "tx_in_block:capture": [
+   120.897,
+   121.372
+  ],
+  "escrow_capture": [
+   1024.015,
+   1223.713
+  ],
+  "broadcast:void": [
+   224.268
+  ],
+  "tx_in_block:void": [
+   139.842
+  ],
+  "escrow_void": [
+   1004.327
+  ]
+ },
+ "llm_totals": {
+  "calls": 2,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cost_usd": 0.0
+ }
+}
