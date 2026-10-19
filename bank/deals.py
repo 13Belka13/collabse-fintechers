@@ -189,7 +189,7 @@ def fetch_quote(deal: dict, seller: dict) -> tuple[dict | None, dict | None]:
     if str(accept.get("payTo", "")).lower() != registered.lower():
         return None, codes.refuse(Code.COUNTERPARTY_NOT_IN_SCOPE, [codes.reason(
             "payto_not_registered", True,
-            f"The 402 asks to pay {accept.get('payTo')}, which is not the account registered for {seller['name']}.",
+            f"The 402 asks to pay {accept.get('payTo')}, which is not the account registered for {seller['name'].rstrip('.')}.",
             None, quoted_pay_to=accept.get("payTo"), registered_pay_to=registered)])
     agreed = int(offer["prices"][asset])
     if int(accept.get("amount", -1)) != agreed:

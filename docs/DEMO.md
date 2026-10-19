@@ -1,7 +1,9 @@
 # Demo script (about 4 minutes)
 
 Commands and pages are described in the [README](../README.md#run-it). Every scene uses the five scenario
-buttons on `/bank`. The same buttons work on the live stack and on the simulated chain.
+buttons on `/story` (Live deal, the start page `/`): it tells the latest deal step by step in plain words and
+shows where the money is now. The same buttons are on `/bank` for the detailed feed. They work on the live
+stack and on the simulated chain.
 
 ## Before the demo
 
@@ -20,7 +22,7 @@ buttons on `/bank`. The same buttons work on the live stack and on the simulated
       Alfa 0.000029 ETH, 17.96 EURC, 990.50 tCZK — `python -m scripts.smoke --target sepolia` 9/9).
 - [ ] Set real values for `AGENT_TOKEN_ALFA`, `SELLER_TOKEN`, `BANK_TO_SELLER_TOKEN`, `HUMAN_TOKEN`. The bank
       prints a warning while the dev defaults are in use.
-- [ ] Open the tabs: `/bank`, `/mandate`, `/deals`, `/statement`, and the explorer for the
+- [ ] Open the tabs: `/story` (on the big screen), `/bank`, `/mandate`, `/deals`, `/statement`, and the explorer for the
       [tCZK](https://sepolia.basescan.org/address/0x18245366edA63Ca583c11B27d1134F3d233A115F).
 - [ ] Note the model mode: `MOCK=1` means scripted replies at $0. Say which mode is on.
 

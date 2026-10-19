@@ -75,7 +75,8 @@ The same deal runs in two currencies:
 | --- | --- | --- |
 | Bank service | `uvicorn bank.app:app --port 8000` | `/health`, agent API `/api/*`, x402 facilitator `/x402/supported\|verify\|settle`, the UI pages below, the dispute timer (every 5 s) |
 | Seller service | `uvicorn seller.app:app --port 8001` | `/health`, `/negotiate`, paid routes `/order/{offer_id}` and `/data/{offer_id}` (HTTP 402 with EURC and tCZK quotes), `/order/{offer_id}/escrow` |
-| Bank UI | http://localhost:8000/bank | Live feed of decisions and transfers, client / compliance view, decision time and p95, model cost, five demo buttons |
+| Bank UI | http://localhost:8000/story | Live deal for the audience (the start page): the latest deal as plain steps — mandate, the agents' talk with the seller's words marked untrusted, the bank's decision and its time, escrow, delivery check, payout — and where the money is now; same client view as the feed |
+| | http://localhost:8000/bank | Live feed of decisions and transfers, client / compliance view, decision time and p95, model cost, five demo buttons |
 | | http://localhost:8000/mandate | Mandate versions and `policy_hash`, budget, VAT acknowledgement and confirmation buttons |
 | | http://localhost:8000/deals → `/deals/{id}` → `/deals/{id}/dispute` | Deals, escrow state from the chain, the dispute card (items, violated criterion, deadlines, judge reasons, accept / reject) |
 | | http://localhost:8000/statement | Statement and the chain reconciliation (`/statement/reconcile`) |

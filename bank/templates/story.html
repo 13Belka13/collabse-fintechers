@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Live deal · Collabse bank{% endblock %}
+{% block main %}
+<div class="flex">
+  <h1>Live deal</h1>
+  <span class="muted small">Two AI agents make a deal; the bank decides whether money may move, and where it is now.</span>
+</div>
+<div class="card scen">
+  <div class="flex">
+    <strong>Run a scenario:</strong>
+    {% for key, sc in scenarios.items() %}
+      <form method="post" action="/demo/{{ key }}?next=/story" hx-boost="false"><button type="submit">{{ sc.title }}</button></form>
+    {% endfor %}
+  </div>
+  {% if recent %}
+  <div class="small muted" style="margin-top:8px">Recent deals:
+    {% for r in recent %}<a href="/story?deal_id={{ r.deal_id }}">{{ r.name or r.deal_id }} · {{ r.asset }} · {{ r.state }}</a>{% if not loop.last %} &nbsp;·&nbsp; {% endif %}{% endfor %}
+    &nbsp;·&nbsp; <a href="/story">latest</a>
+  </div>
+  {% endif %}
+</div>
+<div id="story" hx-get="/story/panel{{ '?deal_id=' ~ deal_id if deal_id else '' }}" hx-trigger="every 2s" hx-swap="innerHTML">
+  {% include "_story.html" %}
+</div>
+{% endblock %}

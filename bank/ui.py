@@ -192,11 +192,181 @@ def _items(deal_id: str) -> tuple[list[dict], dict]:
     return db.loads(delivery.get("rule_results_json")) or [], raw
 
 
+# ---- the story of one deal, for people watching the demo (/story) ----
+
+PLAIN = {  # decision codes in words for the audience; the code itself stays visible next to it
+    "MANDATE_NOT_ACTIVE": "the mandate is not active", "MANDATE_EXPIRED": "the mandate has expired",
+    "CATEGORY_NOT_IN_SCOPE": "outside what the mandate allows", "COUNTERPARTY_NOT_IN_SCOPE": "money was asked for a wrong account",
+    "COUNTERPARTY_NOT_TRUSTED": "the seller failed the bank's checks", "AMOUNT_ABOVE_LIMIT": "the amount is above the limit",
+    "BUDGET_EXCEEDED": "the monthly budget would be exceeded", "QUOTE_MISMATCH": "the payment request differs from the deal",
+    "VELOCITY_EXCEEDED": "too many payments too fast", "CONFIRMATION_REQUIRED": "a person must confirm this amount",
+    "VAT_LIABILITY_RISK": "Czech VAT liability risk (§109)", "UNDER_REVIEW": "the payment is under review at the bank",
+}
+
+
+def _name(n: str) -> str:
+    return (n or "").rstrip(".")  # "Beta s.r.o." at the end of a sentence must not end in ".."
+
+
+def _step(key, title, status, text="", ts=None, **extra) -> dict:
+    """status: done | now | blocked | wait (a human must act) | skipped (never reached: no money moved)."""
+    return {"key": key, "title": title, "status": status, "text": text, "ts": ts, **extra}
+
+
+def story(deal_id: str | None = None) -> dict | None:
+    """One deal as a sequence of plain steps + where its money is now. Decision texts go through the same
+    client view as the feed: what the audience sees is what the client may see (no tipping-off)."""
+    from bank import mandate as mandate_mod
+    row = (db.one("SELECT deal_id FROM deals WHERE deal_id=?", (deal_id,)) if deal_id
+           else db.one("SELECT deal_id FROM deals ORDER BY created_at DESC LIMIT 1"))
+    if row is None:
+        return None
+    deal = deals.get(row["deal_id"])
+    asset, did = deal["asset"] or "EURC", deal["deal_id"]
+    ev = list(reversed(journal.entries(did, limit=1000)))  # oldest first
+    seller = _seller(deal["seller_id"])
+    buyer = db.one("SELECT name FROM companies WHERE id=?", (deal["buyer_id"],)) or {"name": deal["buyer_id"]}
+    first = lambda name: next((e for e in ev if e["event"] == name), None)  # noqa: E731
+    every = lambda name: [e for e in ev if e["event"] == name]  # noqa: E731
+    steps = []
+
+    # 1. the human's mandate
+    m = mandate_mod.current(deal["mandate_id"]) if deal.get("mandate_id") else None
+    budget = ((deal.get("task") or {}).get("budget") or {}).get("value")
+    if m:
+        p = m["policy"]
+        steps.append(_step("mandate", "The human set the agent's limits", "done",
+                           f"Up to {int(p['per_deal_max']['value']) / 100:.2f} € per deal, "
+                           f"{int(p['budget']['value']) / 100:.2f} € a month, a person confirms above "
+                           f"{int(p['confirm_above']['value']) / 100:.2f} €"
+                           + (f"; this task may spend at most {int(budget) / 100:.2f} €." if budget else "."),
+                           ts=(first("deal_created") or {}).get("ts")))
+
+    # 2. the agents talk (the seller's words are untrusted data)
+    talk = []
+    for e in ev:
+        if e["event"] == "buyer_message" and e["actor"] == "agent:buyer":
+            talk.append({"who": "buyer", "text": e["payload"].get("message", ""), "ts": e["ts"]})
+        elif e["event"] == "seller_reply" and e["actor"] == "agent:seller":
+            offer = e["payload"].get("offer") or {}
+            price = (offer.get("prices") or {}).get(asset)
+            full = e["payload"].get("reply_text") or ""
+            hidden = full[full.index("SYSTEM:"):].strip(" ->") if "SYSTEM:" in full else None
+            talk.append({"who": "seller", "text": full.split(" — ")[0], "ts": e["ts"], "untrusted": True,
+                         "price": _fmt_money(price, asset) if price else None, "injected": hidden})
+    if talk:
+        offers = sum(t["who"] == "seller" for t in talk)
+        steps.append(_step("talk", f"The agents negotiated ({offers} offer{'s' if offers != 1 else ''})",
+                           "done", talk=talk, ts=talk[0]["ts"]))
+
+    # 3. the bank's decision(s) before any money moves
+    decided = db.rows("SELECT * FROM decisions WHERE deal_id=? AND kind='pay' ORDER BY id", (did,))
+    stopped = None
+    for r in decided:
+        x = explain_row(r, "client")
+        human = next((e for e in ev if e["event"] in ("vat_risk_acknowledged", "payment_confirmed")
+                      and e["ts"] >= r["created_at"]), None)
+        plain = PLAIN.get(x["code"], x["code"])
+        if x["status"] == "ok":
+            status, title = "done", "The bank approved the payment"
+            marks = [part.split("]")[0] for part in (x["text"] or "").split("[")[1:]]  # "[VAT risk acknowledged …]"
+            reasons = ["Within the mandate and the task budget; the seller passed the bank's checks."] + \
+                [f"Note: {m}." for m in marks]
+        elif x["status"] == "requires_user_action":
+            status = "done" if human else "wait"
+            title = f"The bank asked a person first: {plain}"
+            reasons = [rr["text"] for rr in x["reasons"]][:2] or [x["text"]]
+        else:
+            status, title = "blocked", f"The bank refused: {plain}"
+            stopped = x
+            reasons = [rr["text"] for rr in x["reasons"]][:2] or [x["text"]]
+        if human:
+            reasons.append(f"{human['actor'].removeprefix('human:')} "
+                           + ("acknowledged the VAT risk once." if human["event"] == "vat_risk_acknowledged"
+                              else "confirmed the payment."))
+        steps.append(_step("decision", title, status, " ".join(t for t in reasons if t), ts=r["created_at"],
+                           ms=r["ms"], code=x["code"]))
+    if not decided and talk:
+        steps.append(_step("decision", "The bank decides before any money moves", "wait",
+                           "Waiting for the agent to pay."))
+
+    # 4. money into the safe
+    lock = first("escrow_authorized")
+    if lock:
+        steps.append(_step("escrow", "The money went into the escrow safe", "done",
+                           f"{_fmt_money(lock['payload'].get('amount'), asset)} locked on chain; neither side can take "
+                           "it alone. The seller checked the safe before delivering.", ts=lock["ts"],
+                           tx=lock["payload"].get("tx_hash")))
+    # 5. the delivery checked by code rules (the AI judge only flags)
+    check = first("verifier.settlement")
+    if check:
+        c = check["payload"]
+        parts = [f"{c.get('accepted', 0)} of {c.get('ordered', 0)} items accepted by the code rules"]
+        if c.get("rejected"):
+            parts.append(f"{c['rejected']} rejected")
+        if c.get("held"):
+            parts.append(f"{c['held']} flagged by the AI judge for a person")
+        steps.append(_step("verify", f"{c.get('delivered', 0)} items delivered and checked", "done",
+                           ", ".join(parts) + ".", ts=check["ts"]))
+    # 6. payouts, the dispute, the holdback
+    lg = ledger(deal) if lock else None
+    caps = every("escrow_captured")
+    d = disputes.get(did)
+    if caps:
+        open_items = [it for it in (d or {}).get("items", []) if not it.get("outcome")]
+        text = f"{_fmt_money(lg['captured'], asset)} paid to {_name(seller['name'])}."
+        if open_items:
+            text += f" {len(open_items)} item(s) in dispute wait in the safe, with deadlines."
+        if lg["holdback"]:
+            text += f" A {_fmt_money(lg['holdback'], asset)} holdback (5 %) stays in the safe for the warranty period."
+        steps.append(_step("pay", "The seller was paid for what it delivered", "now" if open_items else "done",
+                           text, ts=caps[-1]["ts"], tx=caps[-1]["payload"].get("tx_hash"),
+                           deadline=lg["holdback_until"], dispute=bool(open_items)))
+    void = first("escrow_voided")
+    if void:
+        steps.append(_step("return", "The rest went back to the buyer", "done",
+                           f"{_fmt_money(lg['returned'], asset)} returned to {_name(buyer['name'])}.", ts=void["ts"],
+                           tx=void["payload"].get("tx_hash")))
+    if stopped and not lock:
+        steps.append(_step("money", "No money moved", "skipped",
+                           "The bank stopped this before anything was signed: balances are unchanged on chain."))
+
+    money_now = ({"buyer_out": lg["total"], "in_escrow": lg["in_escrow"], "to_seller": lg["captured"],
+                  "returned": lg["returned"], "holdback": lg["holdback"]} if lg else None)
+    if stopped and not lock:
+        headline, tone = f"Refused — {PLAIN.get(stopped['code'], stopped['code'])}. No money moved.", "bad"
+    elif money_now and money_now["in_escrow"] == 0:
+        headline, tone = f"Settled: {_fmt_money(money_now['to_seller'], asset)} to {seller['name']}", "ok"
+    elif money_now:
+        headline, tone = f"In progress: {_fmt_money(money_now['in_escrow'], asset)} still in the safe", "warn"
+    elif any(s["status"] == "wait" for s in steps):
+        headline, tone = "Waiting for a person to decide", "warn"
+    else:
+        headline, tone = "Negotiating", "info"
+    return {"deal": deal, "asset": asset, "seller": seller, "buyer": buyer, "steps": steps, "money": money_now,
+            "headline": headline, "tone": tone, "item_count": (deal.get("offer") or {}).get("count"),
+            "price": _fmt_money(deal["amount"], asset) if deal.get("amount") else None}
+
+
 # ---- pages ----
 
 @router.get("/")
 def home():
-    return RedirectResponse("/bank", status_code=303)
+    return RedirectResponse("/story", status_code=303)
+
+
+@router.get("/story", response_class=HTMLResponse)
+def story_page(request: Request, deal_id: str | None = None):
+    from scripts.demo_scenarios import SCENARIOS
+    recent = db.rows("SELECT d.deal_id, d.asset, d.state, c.name FROM deals d LEFT JOIN sellers s"
+                     " ON s.seller_id=d.seller_id LEFT JOIN companies c ON c.id=s.company_id"
+                     " ORDER BY d.created_at DESC LIMIT 8")
+    return page(request, "story.html", s=story(deal_id), deal_id=deal_id, scenarios=SCENARIOS, recent=recent)
+
+
+@router.get("/story/panel", response_class=HTMLResponse)
+def story_panel(request: Request, deal_id: str | None = None):
+    return templates.TemplateResponse(request, "_story.html", {"s": story(deal_id), "deal_id": deal_id})
 
 
 @router.get("/bank", response_class=HTMLResponse)
@@ -387,12 +557,12 @@ def reconcile(request: Request, mandate_id: str = DEMO_MANDATE):
 
 
 @router.post("/demo/{scenario}")
-def demo(scenario: str):
+def demo(scenario: str, next: str = "/bank"):
     from scripts import demo_scenarios
     if scenario not in demo_scenarios.SCENARIOS:
         raise HTTPException(404, "unknown scenario")
     threading.Thread(target=demo_scenarios.run_safe, args=(scenario,), daemon=True).start()
-    return RedirectResponse("/bank", status_code=303)
+    return RedirectResponse(next if next in ("/bank", "/story") else "/bank", status_code=303)  # no open redirect
 
 
 @router.post("/timer/tick")

@@ -70,12 +70,34 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .actor { border-top: 4px solid var(--line); padding-top: 10px; }
 .actor.buyer { border-color: #2546b8; } .actor.seller { border-color: #a04a00; } .actor.bankr { border-color: #1f2a44; }
 .actor h3 { margin: 0 0 6px; font-size: 17px; }
+/* /story: the deal for people watching the demo */
+.story-head { font-size: 24px; }
+.flow { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin: 4px 0 18px; }
+.flow-box { flex: 1 1 180px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; border-top: 6px solid var(--muted); }
+.flow-box.safe { border-top-color: var(--warn); } .flow-box.paid { border-top-color: var(--ok); } .flow-box.back { border-top-color: var(--info); }
+.flow-box .k { color: var(--muted); font-size: 15px; text-transform: uppercase; letter-spacing: .4px; }
+.flow-box .v { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.flow-arrow { align-self: center; font-size: 30px; color: var(--muted); }
+ol.steps { list-style: none; margin: 0; padding: 0; }
+.step { display: flex; gap: 14px; padding: 12px 16px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.step .dot { flex: 0 0 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; background: var(--muted); }
+.step.done .dot { background: var(--ok); } .step.now .dot { background: var(--warn); } .step.wait .dot { background: var(--warn); }
+.step.blocked { border-color: #f5c2bd; background: #fffafa; } .step.blocked .dot { background: var(--bad); }
+.step.skipped { opacity: .75; }
+.step .body { flex: 1; min-width: 0; } .step .title { font-weight: 800; font-size: 19px; }
+.chat { display: grid; gap: 8px; margin-top: 8px; }
+.msg { max-width: 760px; padding: 10px 14px; border-radius: 12px; background: var(--info-bg); }
+.msg.seller { background: #fff6ee; margin-left: 40px; border: 1px solid #f3dcc6; }
+.msg .who { font-weight: 800; margin-right: 6px; }
+.inject { margin: 8px 0 4px; padding: 8px 12px; border-left: 5px solid var(--bad); background: var(--bad-bg); color: var(--bad); font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
+@media (max-width: 640px) { .flow-arrow { display: none; } .msg.seller { margin-left: 0; } main { padding: 16px; } }
 </style>
 </head>
 <body hx-boost="true">
 <header>
   <span class="logo">Collabse bank</span>
   <nav>
+    <a href="/story" class="{{ 'on' if active == 'story' }}">Live deal</a>
     <a href="/bank" class="{{ 'on' if active == 'bank' }}">Bank feed</a>
     <a href="/mandate" class="{{ 'on' if active == 'mandate' }}">Mandate</a>
     <a href="/deals" class="{{ 'on' if active in ('deals', 'deal', 'dispute') }}">Deals</a>
