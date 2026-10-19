@@ -10,7 +10,7 @@ from eth_account import Account
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from bank import api, chain, codes, config, db, deadlines, deals, escrow, explain, journal, llm, mandate, screening, tczk
+from bank import api, chain, codes, config, db, deadlines, deals, escrow, explain, journal, llm, mandate, money, screening, tczk
 from seller import app as seller_mod
 from tests.unit.test_seller_x402 import TCZK, FakeFacilitator
 
@@ -401,3 +401,21 @@ def test_ai_text_with_any_foreign_link_is_dropped(monkeypatch, text):
                                                                  "https://bank.example/mandate")])
     monkeypatch.setitem(llm.MOCKS, "explain", lambda m, t: {"text": db.dumps({"text": text, "cited_sources": []})})
     assert explain.render(d, "client", ai=True)["ai_generated"] is False
+
+
+def test_one_capture_booked_once_when_two_processes_send_it(bank):
+    """D7: the bank's timer thread and another process both send the same pending capture. The chain moves it
+    once (same idempotency key); the dispute record and the budget must count it once too."""
+    from bank import disputes
+    deal_id, _ = deal(bank, asset="tCZK", seller_id="s-gama", mode="fake_data")
+    bank.api.post(f"/api/deals/{deal_id}/pay")
+    d = disputes.get(deal_id)
+    before, committed = d["captured"], budget()["committed_eur_cents"]
+    pending = {"kind": "capture", "amount": 250, "n": d["capture_n"] + 1}
+    db.run("UPDATE disputes SET pending_json=? WHERE deal_id=?", (db.dumps(pending), deal_id))
+    disputes._execute(deals.get(deal_id), pending, "timer", "test")   # the timer thread
+    disputes._execute(deals.get(deal_id), pending, "runner", "test")  # another process with a stale view
+    assert disputes.get(deal_id)["captured"] == before + 250
+    assert [s for s in bank.sender.money() if s == ("capture", 250)] == [("capture", 250)]
+    assert budget()["committed_eur_cents"] - committed == money.to_eur_cents("tCZK", before + 250) - money.to_eur_cents("tCZK", before)
+    assert any(e["event"] == "dispute.already_booked" for e in journal.entries(deal_id))

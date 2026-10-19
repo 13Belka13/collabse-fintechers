@@ -190,8 +190,15 @@ def _execute(deal: dict, pending: dict, actor: str, rule: str):
         journal.append(actor, "dispute.tx_failed", {"pending": pending, "error": repr(e)[:200]}, deal_id=deal_id)
         return None
     from bank import mandate
-    before = get(deal_id)["captured"]
     with db.immediate() as c:
+        # compare-and-set: book only if this exact tx is still the pending one. Another process (the bank's timer
+        # thread, a scenario runner) may have sent the same idem key and booked it already — the chain moved the
+        # money once, so it must be booked once (D7).
+        row = c.execute("SELECT pending_json, captured FROM disputes WHERE deal_id=?", (deal_id,)).fetchone()
+        if row is None or row["pending_json"] != db.dumps(pending):
+            journal.append(actor, "dispute.already_booked", {**pending, "tx_hash": tx["tx_hash"]}, deal_id=deal_id)
+            return tx
+        before = row["captured"]
         if pending["kind"] == "capture":
             c.execute("UPDATE disputes SET captured=?, pending_json=NULL WHERE deal_id=?",
                       (before + int(pending["amount"]), deal_id))
