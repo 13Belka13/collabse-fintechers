@@ -10,7 +10,7 @@ from eth_account import Account
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from bank import api, chain, codes, config, db, deals, escrow, explain, journal, llm, mandate, screening, tczk
+from bank import api, chain, codes, config, db, deadlines, deals, escrow, explain, journal, llm, mandate, screening, tczk
 from seller import app as seller_mod
 from tests.unit.test_seller_x402 import TCZK, FakeFacilitator
 
@@ -116,8 +116,11 @@ def test_honest_eurc_vat_risk_then_human_ack_then_full_payment(bank):
     assert bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}).status_code == 401  # the agent can't
     view = bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}, headers=HUMAN).json()
     assert view["status"] == "ok" and any(m.startswith("VAT risk acknowledged") for m in view["marks"])
-    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 5_000_000)]  # 20/20 accepted, no void
-    assert deals.get(deal_id)["state"] == "settled" and bank.locked["capturable"] == 0
+    # 20/20 accepted: 95 % now, the 5 % holdback stays in escrow until its window ends (SPEC §9.3)
+    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_750_000)]
+    assert deals.get(deal_id)["state"] == "settled" and bank.locked["capturable"] == 250_000
+    deadlines.tick(now=time.time() + 3600)  # holdback window over, no claim: the timer pays it to the seller
+    assert bank.sender.money()[-1] == ("capture", 250_000) and bank.locked["capturable"] == 0
     b = budget()
     assert b["committed_eur_cents"] == 500 and b["remaining_eur_cents"] == 2500 and b["reserved_eur_cents"] == 0
     # the next deal with the same seller and asset: acknowledged once, no question again
@@ -140,8 +143,11 @@ def test_gama_fake_data_18_of_20(bank):
     if view["code"] == "VAT_LIABILITY_RISK":  # Gama's recorded VAT status decides; acknowledge if needed
         view = bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}, headers=HUMAN).json()
     assert view["status"] == "ok"
-    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_500_000), ("void", None)]
-    assert bank.locked["voided"] == 500_000 and deals.get(deal_id)["state"] == "settled"
+    # 18 accepted minus the 5 % holdback now; the 2 rejected items wait for the seller's objection window
+    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_275_000)]
+    assert deals.get(deal_id)["state"] == "disputed"
+    deadlines.tick(now=time.time() + 3600)  # seller silent, holdback over: capture the holdback, then return the rest
+    assert bank.sender.money()[2:] == [("capture", 225_000), ("void", None)] and bank.locked["voided"] == 500_000
     b = budget()
     assert b["committed_eur_cents"] == 450 and b["remaining_eur_cents"] == 2550
 
@@ -206,7 +212,8 @@ def test_seller_criteria_are_ignored_the_buyers_decide_the_payment(bank, monkeyp
     deal_id, offer = deal(bank, asset="tCZK", mode="fake_data")
     assert deals.get(deal_id)["criteria"]["city"] == "Brno" and offer["criteria"]["require_website"] is True
     bank.api.post(f"/api/deals/{deal_id}/pay")
-    assert ("capture", 11_250) in bank.sender.money()  # 18 of 20 by the buyer's rules, not 20 of 20 by the seller's
+    # 18 of 20 by the buyer's rules (95 % now: 10 688 of 11 250 haléřů), not 20 of 20 by the seller's
+    assert ("capture", 10_688) in bank.sender.money()
 
 
 def test_invalid_buyer_criteria_fall_back_to_defaults():

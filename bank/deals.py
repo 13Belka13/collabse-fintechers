@@ -482,14 +482,19 @@ def ack_vat(deal_id: str, by: str) -> dict:
 
 
 def auto_settle(deal_id: str):
-    """Run the verifier after a delivery when stream S's module is present; otherwise wait for it."""
+    """After a delivery: the L5 settlement (bank.disputes: rules verdict, holdback, objection windows and the
+    timer's silence defaults) when present, else the plain capture/void of settle(); waits without a verifier."""
     try:
         _module("verifier")
     except ImportError:
         journal.append("bank", "settlement_pending", {"why": "verifier not available"}, deal_id=deal_id)
         return None
     try:
-        return settle(deal_id)
+        disputes = _module("disputes")
+    except ImportError:
+        disputes = None
+    try:
+        return disputes.settle(deal_id) if disputes else settle(deal_id)
     except Exception as e:  # noqa: BLE001 — a background task: never lose the failure, the deal stays "delivered"
         journal.append("bank", "settlement_failed", {"error": repr(e)[:300]}, deal_id=deal_id)
         return None
