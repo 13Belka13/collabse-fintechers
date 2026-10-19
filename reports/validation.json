@@ -1,6 +1,6 @@
 {
  "generated": "2026-10-19 15:37",
- "commit": "e6bd3a8",
+ "commit": "42a83de",
  "target": "fork",
  "label": "anvil fork of Base Sepolia (chain id 84532) at block 48324278",
  "summary": {
@@ -17,14 +17,25 @@
    "fail": 0
   },
   "attack_runs": 33,
+  "attacks_executed": 33,
+  "attacks_not_run": [],
   "attacks_blocked_money": 33,
   "attacks_expected_code": 33,
+  "txs_landed": 138,
+  "txs_dead": 42,
   "wrong_debits": 0,
   "transfers_to_evil": 0,
   "reconciliation_ok": true,
   "deals_reconciled": 39,
   "deals_reconciled_ok": 39,
   "journal_verified": true,
+  "cost": {
+   "paid": {
+    "EURC": 6540000,
+    "tCZK": 2100
+   },
+   "gas": 12783958
+  },
   "per_scenario": {
    "S01": [
     "pass",

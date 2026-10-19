@@ -5,12 +5,14 @@
 > The transactions are real EVM transactions on the local fork; their hashes exist only there, so they have
 > **no explorer links**. The same matrix on Base Sepolia is a separate run (`--target sepolia`, keys from .env).
 
-Generated 2026-10-19 15:37 from `reports/scenarios-fork.json` at commit `e6bd3a8` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
+Generated 2026-10-19 15:37 from `reports/scenarios-fork.json` at commit `42a83de` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
 
 ## Summary
 
 - **25 scenarios** (19 P0 from SPEC §19.2, 5 fault injections, 1 extra: A01 bank API auth), 11 of them attacks or refusals, **3 runs each** = 75 scenario runs: 69 pass, 6 xfail (pending fix named below), 0 fail.
-- **Attacks stopped before any money moved: 33/33** attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 reverted on chain); with the expected refusal code: 33/33.
+- **Attacks stopped before any money moved: 33/33** executed attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 as real reverted txs); with the expected refusal code: 33/33.
+- Transactions: 138 landed on chain; 42 signed transactions were dropped as dead after a nonce clash and re-sent under the same idempotency key (they never landed — see reconciliation).
+- Cost of these runs: 6.540000 EURC and 21.00 Kč left the buyer for good (captures + direct x402 payments, Transfer events; amounts voided back are not counted); gas used by landed txs: 12783958.
 - **Wrong debits: 0** — every buyer debit on chain since the first scenario is a lock or a payment a scenario expected. Transfers to the attacker address 0xdEaD: 0.
 - **Reconciliation chain ↔ DB ↔ statement: OK** — 39/39 escrow deals (locked = captured + voided + still capturable, from Transfer events and paymentState; captured = journal = statement). Journal hash chains: verified.
 - Injection evals: money-level block **20/20** variants (35/35 model runs). Judge (mock (keyword heuristic)): precision 0.62, recall 0.42 on 40 labelled items.
@@ -23,17 +25,17 @@ Generated 2026-10-19 15:37 from `reports/scenarios-fork.json` at commit `e6bd3a8
 |---|---|---|---|---|---|
 | S01 | x402 EURC through the bank facilitator | PASS | PASS | PASS | x402_settle `0x7ab4e0bb…cd2671` |
 | S02 | Escrow EURC, all accepted | PASS | PASS | PASS | authorize `0x7a5c7a65…76ab6d`, capture `0x0c5437e0…b4778f`, capture `0x81e5a2e8…24d79c` |
-| S03 | Escrow EURC, 18 of 20 | PASS | PASS | PASS | authorize `0xcda7c798…ae2084`, authorize `0xb4204fd7…43a6a9`, capture `0x551d0e67…1f1533`, capture `0xb47ea3b0…c18d51`, capture `0x57504380…90c811`, void `0xbd23fabf…2171fa` |
-| S04 | Same deal in tCZK through escrow | PASS | PASS | PASS | authorize `0xbf0eebbe…e3c0e7`, authorize `0xc4acacea…72c719`, capture `0x7b9e57fd…849dbb`, capture `0x362e5e39…722244`, capture `0x87402e1b…b87a39`, void `0xe3d9736d…5ed659` |
-| S05 | Dispute decided for the seller | PASS | PASS | PASS | authorize `0x8e4ae46e…35bcb6`, authorize `0xea599ff4…6d0e5c`, capture `0xbe427f61…8228e6`, capture `0x2ad92416…730bf5`, capture `0x7ae9eea7…099c2b`, capture `0x80020399…09fd4d`, capture `0xd5c449fc…ad29e6` |
+| S03 | Escrow EURC, 18 of 20 | PASS | PASS | PASS | authorize `0xb4204fd7…43a6a9`, capture `0x551d0e67…1f1533`, capture `0x57504380…90c811`, void `0xbd23fabf…2171fa` |
+| S04 | Same deal in tCZK through escrow | PASS | PASS | PASS | authorize `0xc4acacea…72c719`, capture `0x7b9e57fd…849dbb`, capture `0x87402e1b…b87a39`, void `0xe3d9736d…5ed659` |
+| S05 | Dispute decided for the seller | PASS | PASS | PASS | authorize `0xea599ff4…6d0e5c`, capture `0xbe427f61…8228e6`, capture `0x7ae9eea7…099c2b`, capture `0x80020399…09fd4d`, capture `0xd5c449fc…ad29e6` |
 | N01 | Amount above the per-deal limit | PASS | PASS | PASS | — |
-| N02 | Race: 10 parallel pay() with budget for 3 | PASS | PASS | PASS | authorize `0xb6f62ae2…380260`, authorize `0x23bcdc77…833a9b`, authorize `0x0f87bfdb…a718f2`, authorize `0x13ff1b9a…b3819a`, capture `0x49b2a854…51f439`, capture `0x71ac3a22…62a61d`, capture `0x052cf5e3…178c9b`, capture `0x77cea22e…8fcf43`, capture `0x737bdcfb…b677cf`, capture `0x2d2cb116…f6ab58`, capture `0xce04fc1b…f03b12` |
+| N02 | Race: 10 parallel pay() with budget for 3 | PASS | PASS | PASS | authorize `0x23bcdc77…833a9b`, authorize `0x0f87bfdb…a718f2`, authorize `0x13ff1b9a…b3819a`, capture `0x49b2a854…51f439`, capture `0x71ac3a22…62a61d`, capture `0x052cf5e3…178c9b`, capture `0x737bdcfb…b677cf`, capture `0x2d2cb116…f6ab58`, capture `0xce04fc1b…f03b12` |
 | N03 | payTo swapped in the 402 | PASS | PASS | PASS | — |
 | N04 | Price swapped in the 402 | PASS | PASS | PASS | — |
 | N05 | Injection in the seller's answer | PASS | PASS | PASS | — |
 | N06 | Delta: IČO on site ≠ ARES | PASS | PASS | PASS | — |
-| N07 | Garbage result → full void | PASS | PASS | PASS | authorize `0xa21e8079…4a52fc`, authorize `0x1f4aec2a…c59b38`, void `0x91c46c56…4c7032`, void `0xa796931c…fa0fea` |
-| N08 | VAT payer in EURC → acknowledged once | PASS | PASS | PASS | authorize `0x954117d0…98f822`, authorize `0x056baa63…1ea03b`, capture `0x4b97a495…d87ae8`, capture `0xe353b7cf…472cfa`, capture `0x9f3dea48…e66fef`, authorize `0xdaae6369…35c08b`, authorize `0xa260a5f5…36288a`, capture `0x90a1d1c7…ac8335`, capture `0xd3ff3eb8…1f7918`, capture `0xcd7c27ed…6634f0` |
+| N07 | Garbage result → full void | PASS | PASS | PASS | authorize `0x1f4aec2a…c59b38`, void `0xa796931c…fa0fea` |
+| N08 | VAT payer in EURC → acknowledged once | PASS | PASS | PASS | authorize `0x056baa63…1ea03b`, capture `0x4b97a495…d87ae8`, capture `0x9f3dea48…e66fef`, authorize `0xa260a5f5…36288a`, capture `0x90a1d1c7…ac8335`, capture `0xcd7c27ed…6634f0` |
 | N09 | tCZK to a payee off the allowlist | PASS | PASS | PASS | — |
 | N10 | Direct tCZK transfer bypassing the bank | PASS | PASS | PASS | attack_direct_transfer `0x42c26e39…6cb16c` |
 | N11 | Replay of the same EIP-3009 signature | PASS | PASS | PASS | x402_settle `0x1ea00642…ad3ca1`, attack_replay `0xdfc567b9…eb04d0` |

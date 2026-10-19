@@ -46,8 +46,10 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       assert "no money moved". N13/N14 = timer defaults with demo windows. Small amounts (`SCENARIO_PRICE_EUR`). N10/N11 send real reverting txs
       with manual gas.
   - [x] Runner + stack (`scripts/stack.py`), S01–S04, N01–N12 and A01 (API auth) pass 3/3 on an anvil fork of Base Sepolia (Q)
-  - [ ] S05, N13, N14 — wait for stream U's dispute API and timer (xfail D2)
-  - [ ] Run on Base Sepolia (`--target sepolia`, keys from .env)
+  - [x] S05, N13, N14 against bank.disputes + deadlines.tick(now + window), 3/3 on the fork (Q)
+  - [x] One live P0 run on Base Sepolia (`--p0 --runs 1 --target sepolia`): 18/20 pass, N10/N11 not run (prep tCZK has no
+        strict mode, buyer has no ETH); `reports/validation-sepolia.md` (Q)
+  - [ ] N10/N11 live: deploy the strict-mode TCZK on Base Sepolia (T3) and give the buyer wallet a little ETH
 - [ ] Q4 Fault injection via `FAULTS` (`settle_fail_once`, `registry_timeout`, `llm_bad_json`,
       `webhook_duplicate`, `webhook_bad_hmac`) with their scenarios; reconciliation of chain
       `Transfer` events vs DB vs statement; journal tamper test.
@@ -62,7 +64,8 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       attacks blocked X/X, wrong debits 0, p50/p95 per stage vs targets, coverage, evals, AWS cost.
       `/bank` panel: last decision ms + p95. P1 scenarios only if time is left.
   - [x] Report builder; fork-run report committed, labelled "anvil fork", tx hashes without links (Q)
-  - [ ] Base Sepolia report with explorer links; `/bank` panel (stream U)
+  - [x] Base Sepolia report with explorer links (`reports/validation-sepolia.md`) (Q)
+  - [ ] `/bank` panel: last decision ms + p95 (stream U)
 
 ## Layers
 
