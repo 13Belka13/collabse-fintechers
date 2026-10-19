@@ -23,7 +23,7 @@ import httpx
 from eth_account import Account
 from web3 import Web3
 
-from bank import chain, config, core, db, escrow, journal, mandate, money
+from bank import chain, config, core, db, escrow, journal, mandate, money, webhooks
 from scripts.stack import AGENT_TOKEN, HUMAN_TOKEN, Stack
 
 REPORTS = config.ROOT / "reports"
@@ -38,10 +38,8 @@ ERRORS = {Web3.keccak(text=s)[:4].hex(): s.split("(")[0] for s in (
     "AccountFrozen(address)")}
 
 # Pending fixes (named) that make a scenario fail today; a failing scenario listed here is reported as xfail.
-DEFECTS = {
-    "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId",
-}
-KNOWN = {"F04": ["D3"], "F05": ["D3"]}
+DEFECTS: dict[str, str] = {}
+KNOWN: dict[str, list[str]] = {}
 
 
 class Check(Exception):
@@ -904,10 +902,97 @@ def f03(ctx: Ctx):
         ctx.mode("s-gama", DEFAULT_MODES["s-gama"])
 
 
-def webhook(ctx: Ctx):
-    routes = httpx.get(f"{ctx.s.bank_url}/openapi.json", timeout=10).json().get("paths", {})
-    ctx.require("bank exposes a Tatum webhook route", any("webhook" in p for p in routes), sorted(routes)[:40])
-    ctx.require("webhook scenario wired into this runner", False, "write the call once L7 is merged")
+# Tatum webhook (L7): the runner plays Tatum and posts to the bank on localhost, signed with the stack's secret (the
+# fork uses a throwaway test secret; no tunnel, no real subscription). The bank's own RPC poller runs meanwhile.
+
+def tatum_body(tx: str, to: str, asset: str = "EURC", value: str = "0.01") -> dict:
+    """Tatum's enriched template (SPEC §11)."""
+    m = config.ASSETS[asset]
+    return {"subscriptionType": "INCOMING_FUNGIBLE_TX", "chain": "base-sepolia",
+            "data": {"txId": tx, "to": to, "value": value, "contractAddress": m["address"],
+                     "tokenMetadata": {"decimals": m["decimals"], "symbol": asset}}}
+
+
+def post_webhook(ctx: Ctx, body: dict, secret: str | None) -> httpx.Response:
+    raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
+    headers = {"content-type": "application/json"}
+    if secret is not None:
+        headers["x-payload-hash"] = webhooks.sign(secret, raw)
+    return httpx.post(f"{ctx.s.bank_url}/webhooks/tatum", content=raw, headers=headers, timeout=15)
+
+
+def incoming(tx: str) -> list[dict]:
+    return [e for e in journal.entries(limit=500) if e["event"] == "incoming_transfer"
+            and e["payload"].get("tx_hash", "").lower() == tx.lower()]
+
+
+def f04(ctx: Ctx):
+    """webhook_duplicate: a real transfer to the seller; the same signed Tatum payload is delivered four times (three
+    at once) while the bank's RPC poller sees the same tx → one notifications row, one incoming_transfer entry whose
+    amount is the Transfer on chain."""
+    secret = config.TATUM_HMAC_SECRET
+    ctx.require("TATUM_HMAC_SECRET set for the bank under test", bool(secret))
+    beta = ctx.wallet("s-beta")
+    amount = money.to_atomic("EURC", "0.01")
+    payload, req = sdk_payload(ctx, "EURC", amount, beta)
+    s = facilitator_client(ctx).settle(payload, req)
+    ctx.require("a real transfer buyer → seller (x402 settle)", bool(s.success and s.transaction), s.error_reason)
+    tx = s.transaction
+    ctx.extra_txs.append({"kind": "x402_settle", "tx_hash": tx, "status": "mined", "deal_id": None})
+    ctx.expected_debits.append({"asset": "EURC", "tx_hash": tx, "amount": amount})
+    body = tatum_body(tx, beta)
+    t0 = time.perf_counter()
+    first = post_webhook(ctx, body, secret)
+    ms = round((time.perf_counter() - t0) * 1000)
+    ctx.check("first delivery → 200 accepted, answered within 10 s",
+              first.status_code == 200 and first.json().get("accepted") is True and ms < 10_000,
+              {"status": first.status_code, "body": first.json(), "ms": ms})
+    with ThreadPoolExecutor(3) as ex:
+        again = list(ex.map(lambda _: post_webhook(ctx, body, secret), range(3)))
+    ctx.check("redeliveries → 200 duplicate=true",
+              all(r.status_code == 200 and r.json().get("duplicate") is True for r in again), [r.json() for r in again])
+    time.sleep(2 * webhooks.POLL_S)  # let the poller pass over the same block
+    rows = db.rows("SELECT verified FROM notifications WHERE tx_id=?", (tx.lower(),))
+    ctx.check("one notifications row, verified", rows == [{"verified": 1}], rows)
+    entries = incoming(tx)
+    ctx.check("one incoming_transfer journal entry", len(entries) == 1, [e["payload"] for e in entries])
+    on_chain = sum(t["value"] for t in transfers_in(tx, "EURC") if t["to"] == beta)
+    ctx.check("journal amount = Transfer on chain (not the payload's value)",
+              bool(entries) and entries[0]["payload"]["amount"] == on_chain == amount,
+              {"journal": entries and entries[0]["payload"]["amount"], "chain": on_chain})
+    if entries:
+        ctx.notes.append(f"counted first by: {entries[0]['payload']['source']}")
+    lat = db.rows("SELECT stage, ms FROM timings WHERE stage LIKE 'block_to_feed%'")
+    ctx.check("block → feed latency recorded in timings", bool(lat), lat)
+    ctx.journal_chain()
+
+
+def f05(ctx: Ctx):
+    """webhook_bad_hmac: a Tatum-shaped payload with a wrong or missing signature → 401, no row, no entry. The same
+    payload signed correctly passes the signature and is then refused by the chain check (no such tx)."""
+    secret = config.TATUM_HMAC_SECRET
+    ctx.require("TATUM_HMAC_SECRET set for the bank under test", bool(secret))
+    fake = "0x" + secrets.token_hex(32)
+    body = tatum_body(fake, ctx.wallet("s-beta"), value="50")
+    before = ctx.snapshot()
+    rejected_before = sum(e["event"] == "webhook_rejected" for e in journal.entries(limit=500))
+    bad = post_webhook(ctx, body, secret + "-wrong")
+    missing = post_webhook(ctx, body, None)
+    ctx.check("wrong signature → 401", bad.status_code == 401, bad.text[:200])
+    ctx.check("missing signature → 401", missing.status_code == 401, missing.text[:200])
+    ctx.check("no notifications row", not db.rows("SELECT 1 FROM notifications WHERE tx_id=?", (fake.lower(),)))
+    rejected = [e["payload"]["reason"] for e in journal.entries(limit=500) if e["event"] == "webhook_rejected"]
+    ctx.check("journal: webhook_rejected (bad_signature, missing_signature)",
+              len(rejected) - rejected_before == 2 and set(rejected[:2]) == {"bad_signature", "missing_signature"},
+              rejected[:4])
+    good = post_webhook(ctx, body, secret)
+    ctx.check("correctly signed claim of a tx not on chain → 200 accepted=false (not_on_chain)",
+              good.status_code == 200 and good.json().get("reason") == "not_on_chain", good.text[:200])
+    rows = db.rows("SELECT verified FROM notifications WHERE tx_id=?", (fake.lower(),))
+    ctx.check("nothing counted: no incoming_transfer, the claim kept unverified",
+              not incoming(fake) and rows == [{"verified": 0}], rows)
+    ctx.no_money_moved(before)
+    ctx.journal_chain()
 
 
 SCENARIOS = {
@@ -936,12 +1021,12 @@ FAULT_SCENARIOS = {  # id: (title, function, FAULTS for the bank profile)
     "F01": ("settle_fail_once → exactly one tx", f01, "settle_fail_once"),
     "F02": ("registry_timeout → under review (fail-closed)", f02, "registry_timeout"),
     "F03": ("llm_bad_json → to a human, no money moves", f03, "llm_bad_json"),
-    "F04": ("webhook_duplicate → counted once", webhook, "webhook_duplicate"),
-    "F05": ("webhook_bad_hmac → rejected", webhook, "webhook_bad_hmac"),
+    "F04": ("webhook_duplicate → counted once", f04, "webhook_duplicate"),
+    "F05": ("webhook_bad_hmac → rejected", f05, "webhook_bad_hmac"),
 }
 PROFILES = {"N13": "llm_bad_json"}  # P0 scenarios that need their own bank profile (FAULTS)
 # Attacks and refusals: the main claim is "no money moved" (counted in "attacks blocked X/X").
-ATTACKS = {"N01", "N03", "N04", "N05", "N06", "N09", "N10", "N11", "N12", "A01", "F02"}
+ATTACKS = {"N01", "N03", "N04", "N05", "N06", "N09", "N10", "N11", "N12", "A01", "F02", "F05"}
 
 
 def run_one(stack: Stack, sid: str, run: int, title: str, fn) -> dict:

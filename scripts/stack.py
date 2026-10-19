@@ -159,6 +159,8 @@ class Stack:
             "BANK_OPERATOR_ADDR": self.addr["operator"], "MOCK": "1",
             # a fork run never reaches live services, even when started from a checkout whose .env has real tokens
             "TATUM_API_KEY": "", "APIFY_TOKEN": "", "MOSTLYRIGHT_API_KEY": "",
+            # the runner signs F04/F05 webhooks with this throwaway secret; no public URL, so the bank's poller runs
+            "TATUM_HMAC_SECRET": "q-fork-webhook-secret", "PUBLIC_BASE_URL": "",
             **{KEY_VARS[r]: k for r, k in self.keys.items()}}
         self._apply_env({**self.base_env, "DB_PATH": str(self.run_dir / "setup.db"), "MOCK": "1", "FAULTS": ""})
         self._fund_eurc(w3, self.addr["alfa"], self.eurc_fund)
