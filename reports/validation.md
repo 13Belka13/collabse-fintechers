@@ -5,11 +5,11 @@
 > The transactions are real EVM transactions on the local fork; their hashes exist only there, so they have
 > **no explorer links**. The same matrix on Base Sepolia is a separate run (`--target sepolia`, keys from .env).
 
-Generated 2026-10-19 15:06 from `reports/scenarios-fork.json` at commit `2c60bd1` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
+Generated 2026-10-19 15:06 from `reports/scenarios-fork.json` at commit `725cbb8` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
 
 ## Summary
 
-- **25 scenarios** (20 P0 from SPEC §19.2 + 5 fault injections), 11 of them attacks or refusals, **3 runs each** = 75 scenario runs: 60 pass, 15 xfail (pending fix named below), 0 fail.
+- **25 scenarios** (19 P0 from SPEC §19.2, 5 fault injections, 1 extra: A01 bank API auth), 11 of them attacks or refusals, **3 runs each** = 75 scenario runs: 60 pass, 15 xfail (pending fix named below), 0 fail.
 - **Attacks stopped before any money moved: 33/33** attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 reverted on chain); with the expected refusal code: 33/33.
 - **Wrong debits: 0** — every buyer debit on chain since the first scenario is a lock or a payment a scenario expected. Transfers to the attacker address 0xdEaD: 0.
 - **Reconciliation chain ↔ DB ↔ statement: OK** — 30/30 escrow deals (locked = captured + voided + still capturable, from Transfer events and paymentState; captured = journal = statement). Journal hash chains: verified.

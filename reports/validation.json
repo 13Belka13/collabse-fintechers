@@ -1,12 +1,13 @@
 {
  "generated": "2026-10-19 15:06",
- "commit": "2c60bd1",
+ "commit": "725cbb8",
  "target": "fork",
  "label": "anvil fork of Base Sepolia (chain id 84532) at block 48323395",
  "summary": {
   "scenarios": 25,
-  "p0": 20,
+  "p0": 19,
   "faults": 5,
+  "extra": 1,
   "attack_scenarios": 11,
   "runs": 3,
   "scenario_runs": 75,
