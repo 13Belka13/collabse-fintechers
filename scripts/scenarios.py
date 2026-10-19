@@ -47,6 +47,8 @@ DEFECTS = {
           "human ack-vat endpoint yet (integrator fix in bank/deals.py + bank/api.py)",
     "D5": "seller injection mode keeps an honest 402: the injected 50 EURC to 0xdEaD never reaches the quote "
           "(integrator fix in seller/app.py)",
+    "D6": "verifier.settlement accepts a keyword-less item on the judge's 'plausible' alone, so words in a delivered "
+          "item can get it paid (MOCK judge); evals only (integrator's verifier change holds such items for a human)",
 }
 KNOWN = {"S02": ["D1"], "S03": ["D1"], "S04": ["D1"], "S05": ["D2"], "N01": ["D1"], "N02": ["D1"],
          "N05": ["D1", "D5"], "N06": ["D1"], "N07": ["D1"], "N08": ["D1", "D4"], "N13": ["D2"], "N14": ["D2"],
