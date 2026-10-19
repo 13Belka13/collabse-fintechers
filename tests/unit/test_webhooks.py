@@ -165,6 +165,13 @@ def test_poller_records_once_and_the_webhook_then_sees_a_duplicate(hook):
     assert all(e["payload"]["to"] != ALFA for e in incoming())  # the poller watches seller wallets only
 
 
+def test_catch_up_on_start_records_but_does_not_count_as_latency(hook):
+    tx = mint_to_beta()
+    webhooks.poll_once(None)  # first tick: re-reads the last LOOKBACK blocks
+    assert len(incoming(tx)) == 1
+    assert db.one("SELECT COUNT(*) n FROM timings WHERE stage LIKE 'block_to_feed%'")["n"] == 0
+
+
 def test_webhook_first_then_poller_adds_nothing(hook):
     tx = mint_to_beta()
     assert post(hook, payload(tx)).json()["duplicate"] is False
