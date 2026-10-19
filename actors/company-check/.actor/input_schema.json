@@ -1,0 +1,53 @@
+{
+    "$schema": "https://apify.com/schemas/v1/input.ide.json",
+    "title": "Company check input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "ico": {
+            "title": "IČO",
+            "type": "string",
+            "description": "Czech company identification number, 8 digits (the mod-11 checksum is verified).",
+            "editor": "textfield",
+            "pattern": "^\\d{8}$",
+            "prefill": "45274649"
+        },
+        "websiteUrl": {
+            "title": "Company website",
+            "type": "string",
+            "description": "Home page of the company. The Actor reads the home page, /kontakt and /obchodni-podminky.",
+            "editor": "textfield",
+            "pattern": "^https?://",
+            "prefill": "https://www.cez.cz"
+        },
+        "checkMaps": {
+            "title": "Check Google Maps",
+            "type": "boolean",
+            "description": "Look up the company's Google Maps place (one capped run of compass/crawler-google-places, about $0.004 per place).",
+            "default": true
+        },
+        "companyName": {
+            "title": "Company name for the Google Maps search",
+            "type": "string",
+            "description": "Name to search on Google Maps. Empty = the website domain.",
+            "editor": "textfield",
+            "default": ""
+        },
+        "city": {
+            "title": "City",
+            "type": "string",
+            "description": "City for the Google Maps search.",
+            "editor": "textfield",
+            "default": "Brno"
+        },
+        "maxPlaces": {
+            "title": "Max Google Maps places",
+            "type": "integer",
+            "description": "Cap on places crawled for the search (cost control).",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+        }
+    },
+    "required": ["ico", "websiteUrl"]
+}

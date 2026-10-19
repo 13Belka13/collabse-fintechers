@@ -84,6 +84,16 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       checked by the bank) + 8 evals (incl. injection text on a site); live IČO check for legal entities
       only (forms 112/121); cache; two-level
       explanations; Delta blocked before payment.
+  - [x] `bank/screening`: checksum, ARES, VAT payers SOAP, ISIR, EU sanctions (local index, non-public
+        near-match), parallel 2 s fail-closed, 1 h cache, legal forms 112/121 only; parsers tested on answers
+        recorded live 19.10; live ČEZ check passes (`LIVE=1`). Synthetic sellers from `fixtures/registries/`;
+        Delta → level `blocked`, public `ico_mismatch_on_website` (S)
+  - [x] Actor `actors/company-check` + 8 evals (mocked HTTP, injection site); ran locally with apify 4.1 (S)
+  - [ ] Push the actor to Apify, record the Google Maps dataset (`fixtures/maps/record_maps.py`) — needs `APIFY_TOKEN`
+  - [ ] Mostly Right datasets — code + tests ready, needs `MOSTLYRIGHT_API_KEY` (confirm the response shape)
+  - [ ] Delta refused before payment end to end — needs A's `mandate.decide` + P's `deals.pay` merged with S
+  - [x] L3 verifier part (S): `bank/verifier.py` rules per item, flag-only judge (invalid JSON → all to a
+        human), `settlement()` 18/20 → capture 4 500 000 / void 500 000; judge eval seed `tests/evals/judge.jsonl`
 - [ ] **L5 Dispute, UI, statement** — `dispute_terms` in the offer (§9.1); `bank/deadlines.py` timer
       thread every 5 s applying silence defaults (buyer silent → capture, seller silent → void part,
       decision timeout → rules verdict), journal `actor: timer`, never past authorizationExpiry − 1 h;

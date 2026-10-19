@@ -54,6 +54,7 @@ def reload():
     g["TATUM_HMAC_SECRET"] = _env("TATUM_HMAC_SECRET")
 
     g["APIFY_TOKEN"] = _env("APIFY_TOKEN")
+    g["APIFY_COMPANY_CHECK_ACTOR"] = _env("APIFY_COMPANY_CHECK_ACTOR", "collabse/company-check")
     g["MOSTLYRIGHT_API_KEY"] = _env("MOSTLYRIGHT_API_KEY")
 
     # Assets the bank handles. Amounts are always integers in atomic units.

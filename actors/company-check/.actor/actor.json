@@ -1,0 +1,19 @@
+{
+    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+    "actorSpecification": 1,
+    "name": "company-check",
+    "title": "Czech company web footprint check (IČO on website + Google Maps)",
+    "description": "Checks whether a Czech company's website shows its own IČO (and no other), whether the site is reachable, and whether its Google Maps place exists and is open. Returns a risk level with sourced signals for counterparty checks (KYB).",
+    "version": "0.1",
+    "buildTag": "latest",
+    "meta": {
+        "templateId": "python-empty",
+        "generatedBy": "Claude Code (claude-opus-5-5)"
+    },
+    "inputSchema": "./input_schema.json",
+    "outputSchema": "./output_schema.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    },
+    "dockerfile": "../Dockerfile"
+}
