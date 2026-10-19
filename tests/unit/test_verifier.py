@@ -54,7 +54,7 @@ def test_honest_delivery_pays_in_full():
     assert (s["capture_now"], s["held"], s["void"]) == (5_000_000, 0, 0)
     assert s["counts"]["accepted"] == 20
     moving = next(i for i in s["items"] if i["title"].startswith("Stěhování"))
-    assert not moving["category_keyword"] and moving["status"] == "accepted"   # judge vouched for the category
+    assert moving["category_keyword"] and moving["status"] == "accepted"
 
 
 def test_gama_18_of_20_capture_and_void():
@@ -98,17 +98,19 @@ def test_judge_flag_holds_item_and_missing_item_is_flagged(monkeypatch):
     assert (s["capture_now"], s["held"], s["void"]) == (4_500_000, 500_000, 0)
 
 
-def test_judge_rejects_item_without_category_keyword(monkeypatch):
+@pytest.mark.parametrize("judge_says", [True, False])
+def test_item_without_category_keyword_waits_for_a_human(monkeypatch, judge_says):
+    """The judge only flags: its "yes" never releases money for an item the rules cannot place, its "no" is no verdict."""
     def mock(messages, tools):
         batch = json.loads(messages[0]["content"].split("<items>")[1].split("</items>")[0])
-        return {"text": json.dumps([{"placeId": it["placeId"], "plausible_warehouse": "Stěhování" not in it["title"],
-                                     "reason": "r"} for it in batch])}
+        return {"text": json.dumps([{"placeId": it["placeId"], "plausible_warehouse": judge_says or "Restaurace" not in
+                                     it["title"], "reason": "r"} for it in batch])}
 
     monkeypatch.setitem(llm.MOCKS, verifier.STAGE, mock)
-    s = verifier.settlement(make_deal())
-    moving = next(i for i in s["items"] if i["title"].startswith("Stěhování"))
-    assert moving["status"] == "rejected" and moving["failed"] == ["category"]
-    assert (s["capture_now"], s["void"]) == (4_750_000, 250_000)
+    odd = {**HONEST[0], "title": "Restaurace U Skladu", "categoryName": "Restaurace"}
+    s = verifier.settlement(make_deal(items=[odd] + HONEST[1:]))
+    assert s["items"][0]["status"] == "held" and not s["items"][0]["category_keyword"]
+    assert (s["capture_now"], s["held"], s["void"]) == (4_750_000, 250_000, 0)
 
 
 def test_judge_called_once_per_delivery():
@@ -143,8 +145,9 @@ def test_buyer_agent_criteria_keys_and_raw_stored_delivery():
            " VALUES ('d2','alfa','s-gama','EURC',5000000,?,'delivered',?)", (db.dumps(crit), time.time()))
     db.run("INSERT INTO deliveries (deal_id, items_json, created_at) VALUES ('d2',?,?)", (db.dumps(raw), time.time()))
     s = verifier.settlement("d2")
-    below = sum(1 for it in GAMA[:18] if it["totalScore"] <= 4.5)
-    assert s["counts"]["accepted"] == 18 - below
+    ok_rules = [it for it in GAMA[:18] if it["totalScore"] > 4.5]  # GAMA[18:] break the rules anyway
+    assert s["counts"]["accepted"] == sum(1 for it in ok_rules if "sklad" in verifier._plain(it["categoryName"]))
+    assert s["counts"]["held"] == sum(1 for it in ok_rules if "sklad" not in verifier._plain(it["categoryName"]))
     assert "phone" not in db.one("SELECT judge_flags_json FROM deliveries WHERE deal_id='d2'")["judge_flags_json"]
     assert "phone" not in db.one("SELECT rule_results_json FROM deliveries WHERE deal_id='d2'")["rule_results_json"]
 

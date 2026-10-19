@@ -114,15 +114,19 @@ def amend(mandate_id: str, changes: dict, by: str) -> int:
 
 
 def acknowledge_vat(mandate_id: str, seller_ico: str, asset: str, by: str) -> int:
-    """The human accepts the §109 VAT risk once per (seller IČO, asset) -> new version. Idempotent."""
-    m = current(mandate_id)
-    if m is None:
-        raise ValueError(f"unknown mandate {mandate_id}")
-    acks = m["policy"]["vat_risk_acknowledged"]
-    if any(a["ico"] == seller_ico and a["asset"] == asset for a in acks):
-        return m["version"]
-    pair = {"ico": seller_ico, "asset": asset, "at": date.today().isoformat(), "by": by}
-    return amend(mandate_id, {"vat_risk_acknowledged": [*acks, pair]}, by)
+    """The human accepts the §109 VAT risk once per (seller IČO, asset) -> new version. Idempotent.
+    Read and write in one transaction, so two acknowledgements at once cannot drop each other."""
+    if asset not in config.ASSETS:
+        raise ValueError(f"unknown asset {asset}")
+    with db.immediate():
+        m = current(mandate_id)
+        if m is None:
+            raise ValueError(f"unknown mandate {mandate_id}")
+        acks = m["policy"]["vat_risk_acknowledged"]
+        if any(a["ico"] == seller_ico and a["asset"] == asset for a in acks):
+            return m["version"]
+        pair = {"ico": seller_ico, "asset": asset, "at": date.today().isoformat(), "by": by}
+        return amend(mandate_id, {"vat_risk_acknowledged": [*acks, pair]}, by)
 
 
 # ---- spend from the reservations table ----
@@ -344,8 +348,21 @@ def reserve(mandate_id: str, deal_id: str, eur_cents: int) -> dict:
                 "mandate_missing", True, f"Mandate {mandate_id} does not exist.")], deal_id=deal_id)
         row = c.execute("SELECT * FROM reservations WHERE mandate_id=? AND deal_id=?", (mandate_id, deal_id)).fetchone()
         if row and row["state"] in ("reserved", "committed"):
+            if row["amount"] != eur_cents and row["state"] == "reserved":
+                raise ValueError(f"{deal_id} is reserved for {row['amount']}, not {eur_cents}: release it first")
             return codes.ok(deal_id=deal_id, reservation_id=row["id"], eur_cents=row["amount"], idempotent=True)
-        budget, spent = cents(m["policy"]["budget"]), _spent(c, mandate_id, now)
+        p = m["policy"]
+        src = _mandate_url(mandate_id, m["version"])
+        # decide() ran outside this transaction: re-check what can change in between (version, time, parallel pays)
+        if not p.get("active", True) or datetime.fromtimestamp(now, UTC).date() > date.fromisoformat(p["valid_until"]):
+            return codes.refuse(Code.MANDATE_NOT_ACTIVE, [codes.reason(
+                "mandate_not_active", True, f"Mandate {mandate_id} v{m['version']} is not active.", src)], deal_id=deal_id)
+        vel = p.get("velocity") or {}
+        if vel and _recent(c, mandate_id, now - vel["window_s"], deal_id) >= vel["max_deals"]:
+            return codes.refuse(Code.VELOCITY_EXCEEDED, [codes.reason(
+                "velocity", True, f"More than {vel['max_deals']} payments within {vel['window_s']} s.", src)],
+                deal_id=deal_id)
+        budget, spent = cents(p["budget"]), _spent(c, mandate_id, now)
         if spent + eur_cents > budget:
             d = codes.refuse(Code.BUDGET_EXCEEDED, [codes.reason(
                 "monthly_budget", True, f"{eur_cents / 100:.2f} € would exceed the monthly budget: "

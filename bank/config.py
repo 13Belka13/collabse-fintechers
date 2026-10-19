@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from eth_account import Account
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
@@ -56,6 +57,16 @@ def reload():
     g["APIFY_TOKEN"] = _env("APIFY_TOKEN")
     g["APIFY_COMPANY_CHECK_ACTOR"] = _env("APIFY_COMPANY_CHECK_ACTOR", "collabse/company-check")
     g["MOSTLYRIGHT_API_KEY"] = _env("MOSTLYRIGHT_API_KEY")
+
+    # Shared-secret auth between the parts (prototype; a real bank would use client certificates / OAuth).
+    # Agent token -> the one company that agent acts for: the API never takes buyer_id from the caller.
+    g["AGENT_TOKENS"] = {_env("AGENT_TOKEN_ALFA", "dev-agent-alfa"): "alfa"}
+    g["SELLER_TOKEN"] = _env("SELLER_TOKEN", "dev-seller")     # seller service -> bank (deliveries)
+    g["BANK_TO_SELLER_TOKEN"] = _env("BANK_TO_SELLER_TOKEN", "dev-bank")  # bank -> seller (escrow notices)
+    g["HUMAN_TOKEN"] = _env("HUMAN_TOKEN", "dev-human")        # bank UI: confirmations, VAT acknowledgements
+    # the escrow operator the seller accepts; derived from the bank's key when this process holds it
+    derived = Account.from_key(g["BANK_OPERATOR_PK"]).address if g["BANK_OPERATOR_PK"] else ""
+    g["BANK_OPERATOR_ADDR"] = _env("BANK_OPERATOR_ADDR", derived or "0x0469ceC178789072bc61435835D0BB38214D4e53")
 
     # Assets the bank handles. Amounts are always integers in atomic units.
     g["ASSETS"] = {

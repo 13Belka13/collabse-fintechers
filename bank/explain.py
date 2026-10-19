@@ -105,6 +105,8 @@ def render(decision: dict, audience: str = "client", deal_id: str | None = None,
                               deal_id=deal_id or decision.get("deal_id"))
     if not ok or not value.text.strip() or not set(value.cited_sources) <= allowed:
         return out
+    if not set(re.findall(r"https?://[^\s)\]>\"']+", value.text)) <= allowed:  # a link not in the evidence
+        return out
     if audience == "client" and _leaks(value.text):
         return out
     return {"text": value.text, "cited_sources": value.cited_sources, "ai_generated": True, "label": AI_LABEL}

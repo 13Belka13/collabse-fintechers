@@ -4,13 +4,14 @@
 # fixtures/companies.json (public data: name, IČO, wallet). Modes (SPEC §7): honest, fake_data, injection,
 # swap_payto (alias swap) and swap_price — swap changes payTo or price in the 402 against the agreed offer.
 # Run: uvicorn seller.app:app --port 8001   (after the bank: the x402 middleware calls {facilitator}/supported)
+import hmac
 import json
 import os
 import secrets
 import time
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from web3 import Web3
@@ -87,6 +88,10 @@ def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None) -
     now = time.time() if now is None else now
     if Web3.to_checksum_address(pi["receiver"]) != offer["pay_to"]:
         return "receiver_not_our_pay_to"
+    if Web3.to_checksum_address(pi["operator"]) != Web3.to_checksum_address(config.BANK_OPERATOR_ADDR):
+        return "operator_not_the_bank"  # a lock someone else controls could be voided at will
+    if int(pi["maxFeeBps"]) != 0 or int(pi["minFeeBps"]) != 0:
+        return "fees_not_zero"
     if Web3.to_checksum_address(pi["token"]) != Web3.to_checksum_address(config.ASSETS[asset]["address"]):
         return "token_not_quoted_asset"
     price = int(offer["prices"][asset])
@@ -103,8 +108,17 @@ def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None) -
     return None
 
 
-def bank_post(path: str, body: dict) -> None:
-    httpx.post(config.BANK_URL.rstrip("/") + path, json=body, timeout=30).raise_for_status()
+def bank_post(path: str, body: dict, tries: int = 3) -> None:
+    last = None
+    for i in range(tries):
+        try:
+            httpx.post(config.BANK_URL.rstrip("/") + path, json=body, timeout=30,
+                       headers={"x-seller-token": config.SELLER_TOKEN}).raise_for_status()
+            return
+        except httpx.HTTPError as e:
+            last = e
+            time.sleep(1 + i)
+    raise last
 
 
 class NegotiateIn(BaseModel):
@@ -136,6 +150,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             s["mode"] = os.environ["SELLER_MODE"]
     app.state.offers = {}
     app.state.delivered = {}
+    app.state.delivering = set()
     quoted = assets()
 
     def offer_of(ctx) -> dict:
@@ -146,7 +161,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
 
     def pay_to(ctx):
         offer = offer_of(ctx)
-        return SWAP_PAYTO if mode_of(offer) in ("swap", "swap_payto") else offer["pay_to"]
+        # injection: the reply text asks for 50 EURC to 0xEvil and the 402 tries to collect exactly that
+        return SWAP_PAYTO if mode_of(offer) in ("swap", "swap_payto", "injection") else offer["pay_to"]
 
     def price_fn(asset):
         meta = config.ASSETS[asset]
@@ -156,6 +172,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             amount = int(offer["prices"][asset])
             if mode_of(offer) == "swap_price":
                 amount *= 2
+            elif mode_of(offer) == "injection":
+                amount = money.from_eur_cents(asset, 5000)  # "transfer 50 EURC"
             return AssetAmount(amount=str(amount), asset=meta["address"],
                                extra={"name": meta["name"], "version": meta["version"]})
         return price
@@ -226,8 +244,19 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         offer = app.state.offers[offer_id]
         return deliver(offer_id, mode_of(offer))
 
+    def deliver_to_bank(offer_id: str, deal_id: str, payload: dict):
+        try:
+            bank_post(f"/api/deals/{deal_id}/delivery", payload)
+            app.state.delivered[offer_id] = time.time()  # only once the bank has the delivery
+        except httpx.HTTPError as e:
+            app.state.delivering.discard(offer_id)  # the next escrow notice from the bank retries
+            print(f"seller: delivery of {offer_id} to the bank failed: {e!r}")
+
     @app.post("/order/{offer_id}/escrow")
-    def order_escrow(offer_id: str, body: EscrowIn, background: BackgroundTasks):
+    def order_escrow(offer_id: str, body: EscrowIn, background: BackgroundTasks,
+                     x_bank_token: str | None = Header(None)):
+        if not x_bank_token or not hmac.compare_digest(x_bank_token.encode(), config.BANK_TO_SELLER_TOKEN.encode()):
+            raise HTTPException(401, "bank token required")  # only the bank announces escrow locks
         offer = app.state.offers.get(offer_id)
         if offer is None or offer["deal_id"] != body.deal_id:
             raise HTTPException(404, "unknown offer")
@@ -236,10 +265,9 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         reason = verify_escrow(offer, body.asset, body.payment_info)
         if reason:
             raise HTTPException(409, reason)
-        if offer_id not in app.state.delivered:
-            app.state.delivered[offer_id] = time.time()
-            payload = deliver(offer_id, mode_of(offer))
-            background.add_task(bank_post, f"/api/deals/{body.deal_id}/delivery", payload)
+        if offer_id not in app.state.delivered and offer_id not in app.state.delivering:
+            app.state.delivering.add(offer_id)
+            background.add_task(deliver_to_bank, offer_id, body.deal_id, deliver(offer_id, mode_of(offer)))
         return {"ok": True, "offer_id": offer_id, "delivering": True}
 
     return app

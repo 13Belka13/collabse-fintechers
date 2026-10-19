@@ -126,11 +126,33 @@ def buyer_signature(pi: dict, asset: str, buyer_pk: str) -> bytes:
     return signed.signature
 
 
+def idem_key(deal_id: str, kind: str) -> str:
+    """Idempotency key per PaymentInfo, not per deal: a rebuilt PaymentInfo (new salt after expiry or a new price)
+    must never replay the old PaymentInfo's signed txs. kind: "authorize", "capture:<n>", "void"."""
+    h = _deal(deal_id)["payment_hash"]
+    if not h:
+        raise EscrowError(f"{deal_id}: no PaymentInfo stored")
+    return f"{deal_id}:{h[2:10]}:{kind}"
+
+
+def authorized_tx(deal_id: str) -> dict | None:
+    """The mined authorize tx of the current PaymentInfo, if any."""
+    try:
+        key = idem_key(deal_id, "authorize")
+    except EscrowError:
+        return None
+    return db.one("SELECT * FROM onchain_txs WHERE idem_key=? AND status='mined'", (key,))
+
+
 def authorize(deal_id: str) -> dict:
     """Lock maxAmount from the buyer into escrow. Reuses the stored PaymentInfo (one authorize per PaymentInfo);
     the same idem key again returns the same tx, never a second lock."""
     deal = _deal(deal_id)
     pi = db.loads(deal["payment_info_json"]) or payment_info(deal)
+    done = authorized_tx(deal_id)
+    if done:  # it already landed (an earlier call only lost the answer): report it, even after preApprovalExpiry
+        return {"tx_hash": done["tx_hash"], "status": "mined", "block_number": done["block_number"],
+                "gas_used": done["gas_used"], "link": chain.tx_link(done["tx_hash"]), "reused": True}
     if int(time.time()) >= int(pi["preApprovalExpiry"]):
         raise EscrowError(f"{deal_id}: preApprovalExpiry passed, a new PaymentInfo (new salt) is needed")
     signature = buyer_signature(pi, deal["asset"], core.wallet_key(deal["buyer_id"]))
@@ -138,7 +160,7 @@ def authorize(deal_id: str) -> dict:
                                           Web3.to_checksum_address(config.COLLECTOR), signature)
     with timing.timed("escrow_authorize", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="authorize", deal_id=deal_id,
-                                                        idem_key=f"{deal_id}:authorize")
+                                                        idem_key=idem_key(deal_id, "authorize"))
     journal.append("bank", "escrow_authorized", {"amount": int(pi["maxAmount"]), "tx_hash": tx["tx_hash"],
                                                  "link": tx["link"]}, deal_id=deal_id)
     return tx
@@ -155,7 +177,7 @@ def capture(deal_id: str, amount: int, n: int) -> dict:
     call = contract().functions.capture(as_tuple(pi), int(amount), 0, ZERO)
     with timing.timed("escrow_capture", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="capture", deal_id=deal_id,
-                                                        idem_key=f"{deal_id}:capture:{n}")
+                                                        idem_key=idem_key(deal_id, f"capture:{n}"))
     journal.append("bank", "escrow_captured", {"amount": int(amount), "n": n, "tx_hash": tx["tx_hash"],
                                                "link": tx["link"]}, deal_id=deal_id)
     return tx
@@ -167,7 +189,7 @@ def void(deal_id: str) -> dict:
     call = contract().functions.void(as_tuple(pi))
     with timing.timed("escrow_void", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="void", deal_id=deal_id,
-                                                        idem_key=f"{deal_id}:void")
+                                                        idem_key=idem_key(deal_id, "void"))
     journal.append("bank", "escrow_voided", {"tx_hash": tx["tx_hash"], "link": tx["link"]}, deal_id=deal_id)
     return tx
 

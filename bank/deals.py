@@ -12,6 +12,7 @@ import time
 from collections import defaultdict
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from bank import chain, codes, config, core, db, escrow, journal, money, timing
 from bank.codes import Code
@@ -71,6 +72,9 @@ def create(buyer_id: str, seller_id: str, mandate_id: str, task, asset: str = "E
     buyer, seller = core.company(buyer_id), core.seller(seller_id)
     if buyer is None or seller is None:
         raise DealError(404, "unknown buyer or seller")
+    owner = db.one("SELECT company_id FROM mandates WHERE mandate_id=?", (mandate_id,))
+    if owner is None or owner["company_id"] != buyer_id:  # a mandate spends only its own company's money
+        raise DealError(403, f"mandate {mandate_id} does not belong to {buyer_id}")
     if asset not in config.ASSETS or not config.ASSETS[asset]["address"]:
         raise DealError(400, f"asset {asset} is not available")
     task = task if isinstance(task, dict) else {"text": str(task)}
@@ -83,6 +87,28 @@ def create(buyer_id: str, seller_id: str, mandate_id: str, task, asset: str = "E
                                                        "asset": asset, "task": task}, deal_id=deal_id)
     _prefetch(seller)  # counterparty check runs during negotiation, never on the money path
     return deal_id
+
+
+class Criteria(BaseModel):
+    """Acceptance criteria from the human's task (SPEC §7 AcceptanceCriteria), validated: the verifier pays on these."""
+    model_config = ConfigDict(extra="ignore")
+    count: int = Field(20, ge=1, le=100)
+    city: str = Field("Brno", min_length=1, max_length=80)
+    min_rating_exclusive: float = Field(4.0, ge=0, le=5)
+    category_keywords: list[str] = Field(default_factory=lambda: ["sklad", "warehouse", "storage", "logist"],
+                                         min_length=1, max_length=20)
+    require_website: bool = True
+
+
+def buyer_criteria(task: dict | None) -> dict:
+    """Criteria from the buyer's task; anything invalid falls back to the demo defaults (never to the seller's)."""
+    raw = (task or {}).get("criteria") or {}
+    try:
+        c = Criteria.model_validate(raw).model_dump()
+    except ValidationError:
+        c = Criteria().model_dump()
+    c["postcode_prefix"] = "6" if c["city"].strip().lower() == "brno" else None  # Brno postcodes are 6xx xx
+    return c
 
 
 def offer_view(offer: dict, asset: str) -> dict:
@@ -111,11 +137,17 @@ def negotiate(deal_id: str, message: str) -> dict:
                    deal_id=deal_id)
     out = {"reply_text": reply, "offer": None}
     if offer and offer.get("offer_id") and deal["asset"] in (offer.get("prices") or {}):
+        # acceptance criteria come from the buyer's task, never from the seller (who would grade its own goods)
+        criteria = buyer_criteria(deal["task"])
+        if offer.get("count") is not None and int(offer["count"]) != criteria["count"]:
+            journal.append("bank", "offer_ignored", {"reason": "count_differs_from_task", "offer_count": offer["count"],
+                                                     "task_count": criteria["count"]}, deal_id=deal_id)
+            return out
         amount = int(offer["prices"][deal["asset"]])
         _set(deal_id, "offered", "offer_stored", {"offer_id": offer["offer_id"], "amount": amount,
                                                   "source": "untrusted:seller"},
-             offer_json=db.dumps(offer), criteria_json=db.dumps(offer.get("criteria")), amount=amount)
-        out["offer"] = offer_view(offer, deal["asset"])
+             offer_json=db.dumps(offer), criteria_json=db.dumps(criteria), amount=amount)
+        out["offer"] = {**offer_view(offer, deal["asset"]), "criteria": criteria}
     _prefetch(seller)
     return out
 
@@ -195,16 +227,43 @@ def _decide(deal: dict, seller: dict, quote: dict) -> dict:
         _prefetch(seller)
         return codes.refuse(Code.UNDER_REVIEW, [codes.reason(
             "screening_not_ready", False, "The counterparty check has not finished yet.")])
-    view = {**deal, "eur_cents": money.to_eur_cents(deal["asset"], int(quote["amount"])),
+    asset = deal["asset"]
+    offer = {**deal["offer"], "asset": asset, "amount": int(deal["offer"]["prices"][asset]),  # mandate's offer shape
+             "price": money.fmt(asset, int(deal["offer"]["prices"][asset]))}
+    view = {**deal, "offer": offer, "eur_cents": money.to_eur_cents(asset, int(quote["amount"])),
             "seller": {"seller_id": seller["seller_id"], "ico": seller["ico"], "wallet": seller["wallet_address"],
                        "category": seller.get("category")}}
     return mandate.decide(deal["mandate_id"], view, quote, result)
 
 
+def _wallet_refusal(deal: dict, seller: dict) -> dict | None:
+    """Bank-side freeze (every asset) and, for tCZK, the token's own allowlist/freeze — checked before anything is
+    reserved or signed, so a lock can never be made that the escrow could not later capture or return."""
+    from bank import tczk
+    payer, payee = core.company(deal["buyer_id"])["wallet_address"], seller["wallet_address"]
+    if tczk.bank_frozen(payer) or tczk.bank_frozen(payee):
+        return codes.refuse(Code.UNDER_REVIEW, [codes.reason("wallet_frozen_at_bank", False,
+                                                             "A wallet in this payment is frozen at the bank.")])
+    if deal["asset"] == "tCZK":
+        if not tczk.is_allowed(payee):
+            return codes.refuse(Code.COUNTERPARTY_NOT_IN_SCOPE, [codes.reason(
+                "payee_not_on_tczk_allowlist", True, f"{seller['name']} cannot receive tCZK (not a bank client account).")])
+        if not tczk.is_allowed(payer):
+            return codes.refuse(Code.CATEGORY_NOT_IN_SCOPE, [codes.reason(
+                "payer_not_on_tczk_allowlist", True, "This wallet is not enabled for tCZK.")])
+        if tczk.is_frozen(payer) or tczk.is_frozen(payee):
+            return codes.refuse(Code.UNDER_REVIEW, [codes.reason("wallet_frozen_on_chain", False,
+                                                                 "A wallet in this payment is frozen on chain.")])
+    return None
+
+
 def _reserve(deal: dict, eur_cents: int) -> dict:
-    held = db.one("SELECT state FROM reservations WHERE mandate_id=? AND deal_id=?", (deal["mandate_id"], deal["deal_id"]))
-    if held and held["state"] == "reserved":  # a retry after an ambiguous authorize: keep the same reservation
-        return codes.ok()
+    held = db.one("SELECT state, amount FROM reservations WHERE mandate_id=? AND deal_id=?",
+                  (deal["mandate_id"], deal["deal_id"]))
+    if held and held["state"] == "reserved":
+        if held["amount"] == eur_cents:  # a retry after an ambiguous authorize: keep the same reservation
+            return codes.ok()
+        _module("mandate").release(deal["deal_id"])  # the price changed before anything was locked: re-reserve
     return _module("mandate").reserve(deal["mandate_id"], deal["deal_id"], eur_cents)
 
 
@@ -228,13 +287,45 @@ def pay(deal_id: str) -> dict:
         with timing.timed("decision", deal_id):
             decision = _decide(deal, seller, quote)
             if decision["status"] == "ok":
+                decision = _wallet_refusal(deal, seller) or decision
+            if decision["status"] == "ok":
+                marks = decision.get("marks", [])
                 decision = _reserve(deal, money.to_eur_cents(deal["asset"], quote["amount"]))
+                decision["marks"] = marks + decision.get("marks", [])
         if decision["status"] != "ok":
             return _finish_refusal(deal_id, decision, t0)
-        return _authorize_and_notify(deal, seller, (time.perf_counter() - t0) * 1000)
+        _refresh_payment_info(deal, quote)
+        return _authorize_and_notify(_require(deal_id), seller, (time.perf_counter() - t0) * 1000,
+                                     decision.get("marks", []))
 
 
-def _authorize_and_notify(deal: dict, seller: dict, decision_ms: float) -> dict:
+def _refresh_payment_info(deal: dict, quote: dict):
+    """A stored PaymentInfo is reused only while it matches the accepted quote and can still be authorized.
+    Otherwise it is dropped — after the chain shows it never locked money (or after that lock is returned)."""
+    pi, deal_id = deal["payment_info"], deal["deal_id"]
+    if not pi:
+        return
+    same = (int(pi["maxAmount"]) == int(quote["amount"]) and pi["receiver"].lower() == quote["pay_to"].lower()
+            and pi["token"].lower() == config.ASSETS[deal["asset"]]["address"].lower())
+    fresh = time.time() < int(pi["preApprovalExpiry"]) - 5
+    if same and (fresh or escrow.authorized_tx(deal_id)):
+        return  # authorize() reuses it (or reports the tx that already landed)
+    pending = db.one("SELECT status FROM onchain_txs WHERE idem_key=?", (escrow.idem_key(deal_id, "authorize"),))
+    if pending and pending["status"] == "signed" and fresh:
+        raise DealError(503, "an earlier escrow authorize is still pending; call pay again shortly")
+    st = escrow.state(deal_id)
+    if st["capturable"] > 0 or st["collected"]:
+        if same:
+            return
+        escrow.void(deal_id)  # an old lock with other terms: give it back before locking anew
+        journal.append("bank", "old_lock_returned", {"payment_hash": deal["payment_hash"]}, deal_id=deal_id)
+    db.run("UPDATE deals SET payment_info_json=NULL, payment_hash=NULL, updated_at=? WHERE deal_id=?",
+           (time.time(), deal_id))
+    journal.append("bank", "payment_info_dropped", {"reason": "terms_changed" if not same else "expired",
+                                                    "payment_hash": deal["payment_hash"]}, deal_id=deal_id)
+
+
+def _authorize_and_notify(deal: dict, seller: dict, decision_ms: float, marks: list | None = None) -> dict:
     deal_id, mandate = deal["deal_id"], _module("mandate")
     try:
         tx = escrow.authorize(deal_id)
@@ -247,9 +338,11 @@ def _authorize_and_notify(deal: dict, seller: dict, decision_ms: float) -> dict:
         raise DealError(503, "escrow authorize pending, call pay again (same idempotency key)") from e
     amount, asset = int(deal["amount"]), deal["asset"]
     _set(deal_id, "authorized", "escrow_locked", {"tx_hash": tx["tx_hash"], "link": tx["link"], "amount": amount})
-    decision = codes.ok(deal_id=deal_id, explanation=(
+    marks = marks or []
+    decision = codes.ok(deal_id=deal_id, marks=marks, explanation=(
         f"{money.fmt(asset, amount)} locked in escrow for {seller['name']}: {tx['link']}. "
-        "The seller delivers; the bank pays per accepted item and returns the rest."))
+        "The seller delivers; the bank pays per accepted item and returns the rest."
+        + "".join(f" [{m}]" for m in marks)))
     _record(deal_id, decision, decision_ms)
     ack = notify_seller(deal_id)
     if ack is False:  # the seller saw something wrong in the escrow: give the money back
@@ -270,11 +363,12 @@ def notify_seller(deal_id: str) -> bool | None:
     seller = core.seller(deal["seller_id"])
     body = {"deal_id": deal_id, "asset": deal["asset"], "payment_info": deal["payment_info"],
             "payment_hash": deal["payment_hash"],
-            "tx_hash": (db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (f"{deal_id}:authorize",)) or {}).get("tx_hash")}
+            "tx_hash": (db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (escrow.idem_key(deal_id, "authorize"),)) or {}).get("tx_hash")}
     try:
         with timing.timed("notify_seller", deal_id):
             with seller_http(seller["base_url"]) as http:
-                r = http.post(f"/order/{deal['offer']['offer_id']}/escrow", json=body)
+                r = http.post(f"/order/{deal['offer']['offer_id']}/escrow", json=body,
+                              headers={"x-bank-token": config.BANK_TO_SELLER_TOKEN})
     except httpx.HTTPError as e:
         journal.append("bank", "seller_not_notified", {"error": repr(e)[:200]}, deal_id=deal_id)
         return None
@@ -298,6 +392,7 @@ def record_delivery(deal_id: str, payload: dict) -> dict:
         raise DealError(400, "items must be a list")
     if deal["state"] == "delivered":
         return {"ok": True, "items": len(items), "duplicate": True}
+    items = core.clean_delivery_items(items)  # only the Google Maps fields we use: no phones, no reviews
     db.run("INSERT OR IGNORE INTO deliveries (deal_id, items_json, created_at) VALUES (?,?,?)",
            (deal_id, db.dumps(items), time.time()))
     _set(deal_id, "delivered", "delivery_received", {"items": len(items), "source": "untrusted:seller"},
@@ -307,24 +402,53 @@ def record_delivery(deal_id: str, payload: dict) -> dict:
 
 def settle(deal_id: str, plan: dict | None = None) -> dict:
     """After delivery: capture what the verifier accepted now; void the rest only when nothing is held for a
-    dispute (void returns everything left, so it must come after the last capture)."""
+    dispute (void returns everything left, so it must come after the last capture). The budget follows the
+    chain: committed = captured, the rest released. If the capture cannot happen (seller delisted/frozen, expiry),
+    the whole lock goes back to the buyer instead of staying stuck."""
     deal = _require(deal_id)
     if deal["state"] != "delivered":
         raise DealError(409, f"deal is {deal['state']}")
     plan = plan or _module("verifier").settlement(deal_id)
     mandate, asset = _module("mandate"), deal["asset"]
     if plan["capture_now"] > 0:
-        escrow.capture(deal_id, plan["capture_now"], 1)
+        try:
+            escrow.capture(deal_id, plan["capture_now"], 1)
+        except (chain.TxReverted, escrow.EscrowError) as e:
+            escrow.void(deal_id)
+            mandate.release(deal_id)
+            _set(deal_id, "closed", "capture_failed_returned", {"error": str(e)[:300], "returned": int(deal["amount"])})
+            return {"state": "closed", "capture_now": 0, "held": 0, "void": int(deal["amount"]), "error": str(e)}
+        mandate.commit(deal_id, money.to_eur_cents(asset, plan["capture_now"]))
     if plan["held"] == 0:
         if plan["void"] > 0:
             escrow.void(deal_id)
-        if plan["capture_now"] > 0:
-            mandate.commit(deal_id, money.to_eur_cents(asset, plan["capture_now"]))
-        else:
-            mandate.release(deal_id)
+        mandate.release(deal_id)  # amount := committed (or released if nothing was captured)
     state = "settled" if plan["held"] == 0 else "verified"
     _set(deal_id, state, "settlement_applied", {k: plan[k] for k in ("capture_now", "held", "void")})
     return {"state": state, **{k: plan[k] for k in ("capture_now", "held", "void")}}
+
+
+# ---- human actions (bank UI, HUMAN_TOKEN): the agent can never call these ----
+
+def confirm(deal_id: str, by: str) -> dict:
+    """A human approves a payment above the mandate's confirmation threshold, then the bank pays it."""
+    deal = _require(deal_id)
+    if deal["state"] not in PAYABLE:
+        raise DealError(409, f"deal is {deal['state']}")
+    _set(deal_id, deal["state"], "payment_confirmed", {"by": by}, actor=by, confirmed_by=by)
+    return pay(deal_id)
+
+
+def ack_vat(deal_id: str, by: str) -> dict:
+    """A human accepts the §109 VAT risk for this seller and asset once (new mandate version), then the bank pays."""
+    deal = _require(deal_id)
+    if deal["state"] not in PAYABLE:
+        raise DealError(409, f"deal is {deal['state']}")
+    seller = core.seller(deal["seller_id"])
+    version = _module("mandate").acknowledge_vat(deal["mandate_id"], seller["ico"], deal["asset"], by)
+    journal.append(by, "vat_risk_acknowledged", {"seller_ico": seller["ico"], "asset": deal["asset"],
+                                                "mandate_version": version}, deal_id=deal_id)
+    return pay(deal_id)
 
 
 def auto_settle(deal_id: str):
@@ -334,7 +458,11 @@ def auto_settle(deal_id: str):
     except ImportError:
         journal.append("bank", "settlement_pending", {"why": "verifier not available"}, deal_id=deal_id)
         return None
-    return settle(deal_id)
+    try:
+        return settle(deal_id)
+    except Exception as e:  # noqa: BLE001 — a background task: never lose the failure, the deal stays "delivered"
+        journal.append("bank", "settlement_failed", {"error": repr(e)[:300]}, deal_id=deal_id)
+        return None
 
 
 def statement(mandate_id: str) -> dict:

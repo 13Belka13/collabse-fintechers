@@ -50,3 +50,13 @@ def wallet_key(company_id: str) -> str:
 
 def checksum(address: str) -> str:
     return Web3.to_checksum_address(address)
+
+
+# Google Maps fields a delivery may carry. Everything else (phone numbers, reviews ...) is dropped before
+# storing: no personal data in the bank (SPEC §10.2, CLAUDE.md "Data").
+DELIVERY_FIELDS = ("title", "categoryName", "totalScore", "reviewsCount", "address", "city", "postalCode", "website",
+                   "placeId", "url", "permanentlyClosed")
+
+
+def clean_delivery_items(items: list) -> list[dict]:
+    return [{k: it[k] for k in DELIVERY_FIELDS if k in it} for it in items if isinstance(it, dict)]

@@ -88,6 +88,7 @@ def tczk_bank(anvil_local, seeded, monkeypatch):
     monkeypatch.setenv("TCZK_NAME", "tCZK Deposit Token")
     config.reload()
     buyer = Account.from_key(BUYER_KEY).address
+    db.run("UPDATE companies SET wallet_address=? WHERE id='alfa'", (buyer,))  # the payer is a bank client
     tczk.allow(buyer, "9999999999/9999")
     tczk.mint(buyer, 50_000, f"dep-{addr}")  # 500.00 Kč
     yield w3
@@ -207,6 +208,7 @@ def eurc_bank(seeded, monkeypatch):
         eurc = w3.eth.contract(address=Web3.to_checksum_address(config.EURC), abi=chain.ERC20_ABI)
         w3.provider.make_request("anvil_impersonateAccount", [ALFA_REAL])
         buyer = Account.from_key(BUYER_KEY).address
+        db.run("UPDATE companies SET wallet_address=? WHERE id='alfa'", (buyer,))  # the payer is a bank client
         h = eurc.functions.transfer(buyer, 1_000_000).transact({"from": ALFA_REAL})  # 1.00 EURC to our test key
         assert w3.eth.wait_for_transaction_receipt(h)["status"] == 1
         yield w3
