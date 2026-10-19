@@ -37,6 +37,8 @@ workflow, or `aws ssm send-command --document-name AWS-RunShellScript --targets 
 
 ## Notes
 
+- GitHub's OIDC `sub` claim now carries ids: `repo:13Belka13@62833220/collabse-fintechers@1425394405:ref:refs/heads/main`
+  (seen in CloudTrail when the first deploy was refused). The deploy role accepts both the new and the old form.
 - Only one bank may use the testnet keys at a time: stop the local live stack while the AWS one runs
   (both would send from the same operator wallet).
 - Change the config: update `/collabse/env`, then deploy again (the host rereads it every deploy).

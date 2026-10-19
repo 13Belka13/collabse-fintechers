@@ -7,6 +7,10 @@ Parameters:
   Repo:
     Type: String
     Default: 13Belka13/collabse-fintechers
+  RepoWithIds:
+    Type: String
+    Default: 13Belka13@62833220/collabse-fintechers@1425394405
+    Description: "GitHub's newer sub claim carries owner@id/repo@id (seen in CloudTrail on 2026-10-19)"
   CreateProvider:
     Type: String
     Default: "true"
@@ -40,7 +44,9 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${Repo}:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${Repo}:ref:refs/heads/main
+                  - !Sub repo:${RepoWithIds}:ref:refs/heads/main
       Policies:
         - PolicyName: run-deploy
           PolicyDocument:
