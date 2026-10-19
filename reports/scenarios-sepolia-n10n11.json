@@ -1,0 +1,222 @@
+{
+ "target": "sepolia",
+ "label": "Base Sepolia (chain id 84532)",
+ "stack": {
+  "target": "sepolia",
+  "label": "Base Sepolia (chain id 84532)",
+  "rpc": "Base Sepolia",
+  "fork_block": null,
+  "funding": "funded from faucets by hand (Base Sepolia)",
+  "addresses": {
+   "relayer": "0xD23DB197CC1294b049AeDf0d9ea1BA216691de48",
+   "admin": "0xD23DB197CC1294b049AeDf0d9ea1BA216691de48",
+   "operator": "0x0469ceC178789072bc61435835D0BB38214D4e53",
+   "alfa": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
+  },
+  "tczk": "0x18245366edA63Ca583c11B27d1134F3d233A115F",
+  "run_dir": "/Users/ryabuily/dev/collabse-fintechers/data/q-runs/20261019-160708"
+ },
+ "runs": 1,
+ "started": 1792418828.512873,
+ "finished": 1792418859.997518,
+ "scenario_price_eur": "0.10",
+ "defects": {
+  "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId"
+ },
+ "results": [
+  {
+   "id": "N10",
+   "title": "Direct tCZK transfer bypassing the bank",
+   "run": 1,
+   "status": "pass",
+   "attack": true,
+   "defects": [],
+   "checks": [
+    {
+     "name": "tCZK is the stage token with strict mode (not the prep fallback)",
+     "ok": true,
+     "detail": "TCZK_NAME='tCZK Deposit Token': the strict-mode TCZK (T3) is not deployed on this chain"
+    },
+    {
+     "name": "buyer wallet has ETH to send the attack tx",
+     "ok": true,
+     "detail": "0.00000965 ETH"
+    },
+    {
+     "name": "tx reverted on chain",
+     "ok": true,
+     "detail": "reverted"
+    },
+    {
+     "name": "revert reason TransferViaBankOnly",
+     "ok": true,
+     "detail": "TransferViaBankOnly"
+    },
+    {
+     "name": "no tCZK moved (chain)",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "decisions": [
+    {
+     "deal_id": null,
+     "status": "reverted",
+     "code": "TransferViaBankOnly"
+    }
+   ],
+   "deals": [],
+   "amounts": {},
+   "txs": [
+    {
+     "kind": "attack_direct_transfer",
+     "tx_hash": "0xbe5adf590d439625c92fafca266fbe8e94b5eeb04800d141c00ba6b0b94765fd",
+     "status": "reverted",
+     "deal_id": null,
+     "link": "https://sepolia.basescan.org/tx/0xbe5adf590d439625c92fafca266fbe8e94b5eeb04800d141c00ba6b0b94765fd"
+    }
+   ],
+   "expected_debits": [],
+   "notes": [],
+   "error": null,
+   "seconds": 15.41,
+   "start_block": 48325271,
+   "end_block": 48325279,
+   "profile": "main",
+   "db": "/Users/ryabuily/dev/collabse-fintechers/data/q-runs/20261019-160708/bank-main.db"
+  },
+  {
+   "id": "N11",
+   "title": "Replay of the same EIP-3009 signature",
+   "run": 1,
+   "status": "pass",
+   "attack": true,
+   "defects": [],
+   "checks": [
+    {
+     "name": "tCZK is the stage token with strict mode (not the prep fallback)",
+     "ok": true,
+     "detail": "TCZK_NAME='tCZK Deposit Token': the strict-mode TCZK (T3) is not deployed on this chain"
+    },
+    {
+     "name": "buyer wallet has ETH to send the attack tx",
+     "ok": true,
+     "detail": "0.00000949 ETH"
+    },
+    {
+     "name": "first settle through the bank lands",
+     "ok": true,
+     "detail": null
+    },
+    {
+     "name": "replay tx reverted on chain",
+     "ok": true,
+     "detail": "reverted"
+    },
+    {
+     "name": "revert reason ERC3009UsedAuthorization",
+     "ok": true,
+     "detail": "ERC3009UsedAuthorization"
+    },
+    {
+     "name": "exactly one tCZK Transfer buyer → seller (chain)",
+     "ok": true,
+     "detail": [
+      {
+       "from": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140",
+       "to": "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1",
+       "value": 250,
+       "tx_hash": "0xb9c581a114be8ca28875b956d78f05cf858f0efde2bfaf18e0dea2178325d47d",
+       "block": 48325285
+      }
+     ]
+    }
+   ],
+   "decisions": [
+    {
+     "deal_id": null,
+     "status": "reverted",
+     "code": "ERC3009UsedAuthorization"
+    }
+   ],
+   "deals": [],
+   "amounts": {},
+   "txs": [
+    {
+     "kind": "x402_settle",
+     "tx_hash": "0xb9c581a114be8ca28875b956d78f05cf858f0efde2bfaf18e0dea2178325d47d",
+     "status": "mined",
+     "deal_id": null,
+     "link": "https://sepolia.basescan.org/tx/0xb9c581a114be8ca28875b956d78f05cf858f0efde2bfaf18e0dea2178325d47d"
+    },
+    {
+     "kind": "attack_replay",
+     "tx_hash": "0xadb85fb97bf79c0b88b5f41c2ae28e9a091e887143835454b1e37f09fa2e69c7",
+     "status": "reverted",
+     "deal_id": null,
+     "link": "https://sepolia.basescan.org/tx/0xadb85fb97bf79c0b88b5f41c2ae28e9a091e887143835454b1e37f09fa2e69c7"
+    }
+   ],
+   "expected_debits": [
+    {
+     "asset": "tCZK",
+     "tx_hash": "0xb9c581a114be8ca28875b956d78f05cf858f0efde2bfaf18e0dea2178325d47d",
+     "amount": 250
+    }
+   ],
+   "notes": [],
+   "error": null,
+   "seconds": 11.91,
+   "start_block": 48325279,
+   "end_block": 48325285,
+   "profile": "main",
+   "db": "/Users/ryabuily/dev/collabse-fintechers/data/q-runs/20261019-160708/bank-main.db"
+  }
+ ],
+ "reconciliation": {
+  "deals": [],
+  "deals_checked": 0,
+  "deals_ok": 0,
+  "buyer_debits": {
+   "EURC": 0,
+   "tCZK": 1
+  },
+  "wrong_debits": [],
+  "wrong_debit_count": 0,
+  "transfers_to_evil": 0,
+  "first_block": 48325271,
+  "ok": true
+ },
+ "journal_verified": {
+  "bank-main.db": true
+ },
+ "stages": {
+  "broadcast:attack_direct_transfer": [
+   126.325
+  ],
+  "tx_in_block:attack_direct_transfer": [
+   109.26
+  ],
+  "broadcast:x402_settle": [
+   168.874
+  ],
+  "tx_in_block:x402_settle": [
+   747.719
+  ],
+  "facilitator_settle": [
+   3114.611
+  ],
+  "broadcast:attack_replay": [
+   143.158
+  ],
+  "tx_in_block:attack_replay": [
+   115.074
+  ]
+ },
+ "llm_totals": {
+  "calls": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cost_usd": 0.0
+ }
+}

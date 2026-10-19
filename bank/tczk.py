@@ -134,10 +134,26 @@ def burn(frm: str, amount: int, ref: str) -> dict:
 
 # ---- deploy (fallback for script/Deploy.s.sol; same steps) ----
 
+SETUP_GAS = 200_000  # explicit: a gas estimate from a lagging node that has not seen the new code yet is ~23k
+
+
 def deploy(admin_pk: str | None = None, relayer: str | None = None, operator: str | None = None,
            store: str | None = None, mint_alfa: int = 100_000) -> str:
     """Deploy TCZK with the admin key and set it up like Deploy.s.sol. Returns the token address.
     store: the operator's escrow token store; read from the escrow when not given (needs Base Sepolia or a fork)."""
+    sender = chain.sender(admin_pk or config.BANK_ADMIN_PK)
+    data = artifact()["bytecode"] + encode(["address"], [sender.address]).hex()
+    address = sender.send({"data": data}, kind="tczk_deploy")["receipt"]["contractAddress"]
+    # reads lag writes on a load-balanced RPC (REFERENCE §8a): wait until the code is visible before configuring
+    chain.read_retry(lambda: chain.w3().eth.get_code(address), ok=lambda c: len(c) > 0, tries=20, delay=1.0)
+    setup(address, admin_pk, relayer, operator, store, mint_alfa)
+    return address
+
+
+def setup(address: str, admin_pk: str | None = None, relayer: str | None = None, operator: str | None = None,
+          store: str | None = None, mint_alfa: int = 100_000) -> dict:
+    """Roles, strict-mode routers, the §3.3 allowlist and the demo mint. Idempotent: every step is skipped when the
+    chain already shows it, so an interrupted setup can simply be run again."""
     sender = chain.sender(admin_pk or config.BANK_ADMIN_PK)
     admin = sender.address
     relayer = relayer or admin
@@ -145,27 +161,40 @@ def deploy(admin_pk: str | None = None, relayer: str | None = None, operator: st
         operator = operator or "0x0469ceC178789072bc61435835D0BB38214D4e53"
         esc = chain.w3().eth.contract(address=Web3.to_checksum_address(config.ESCROW), abi=ESCROW_ABI)
         store = esc.functions.getTokenStore(Web3.to_checksum_address(operator)).call()
-    data = artifact()["bytecode"] + encode(["address"], [admin]).hex()
-    address = sender.send({"data": data}, kind="tczk_deploy")["receipt"]["contractAddress"]
-    t = chain.w3().eth.contract(address=address, abi=artifact()["abi"])
+    t = chain.w3().eth.contract(address=Web3.to_checksum_address(address), abi=artifact()["abi"])
+    done = {"roles": 0, "allowed": 0, "minted": 0}
 
     def send(call, kind="tczk_setup"):
-        sender.send(call, kind=kind)
+        sender.send(call, kind=kind, gas=SETUP_GAS)
+
+    def grant(role, who):
+        who = Web3.to_checksum_address(who)
+        if not t.functions.hasRole(ROLES[role], who).call():
+            send(t.functions.grantRole(ROLES[role], who))
+            done["roles"] += 1
+
+    def allow_(who, ref):
+        who = Web3.to_checksum_address(who)
+        if not t.functions.isAllowed(who).call():
+            send(t.functions.allow(who, ref))
+            done["allowed"] += 1
 
     for role in ("ISSUER_ROLE", "COMPLIANCE_ROLE", "ENFORCER_ROLE"):
-        send(t.functions.grantRole(ROLES[role], admin))
+        grant(role, admin)
     for router in (relayer, config.COLLECTOR, store, config.REFUND_COLLECTOR):  # strict mode, §3.4
-        send(t.functions.grantRole(ROLES["ROUTER_ROLE"], Web3.to_checksum_address(router)))
-    send(t.functions.allow(admin, account_ref("bank-treasury")))  # allowlist, §3.3
+        grant("ROUTER_ROLE", router)
+    allow_(admin, account_ref("bank-treasury"))  # allowlist, §3.3
     companies = json.loads((config.ROOT / "fixtures" / "companies.json").read_text())["companies"]
     for c in companies:
-        send(t.functions.allow(Web3.to_checksum_address(c["wallet_address"]), account_ref(c["account_number"])))
-    send(t.functions.allow(Web3.to_checksum_address(config.COLLECTOR), b"\0" * 32))
-    send(t.functions.allow(Web3.to_checksum_address(store), b"\0" * 32))
+        allow_(c["wallet_address"], account_ref(c["account_number"]))
+    allow_(config.COLLECTOR, b"\0" * 32)
+    allow_(store, b"\0" * 32)
     if mint_alfa:
-        alfa = next(c["wallet_address"] for c in companies if c["id"] == "alfa")
-        send(t.functions.mint(Web3.to_checksum_address(alfa), mint_alfa, bytes32("demo-deposit-alfa")), "tczk_mint")
-    return address
+        alfa = Web3.to_checksum_address(next(c["wallet_address"] for c in companies if c["id"] == "alfa"))
+        if t.functions.balanceOf(alfa).call() == 0:
+            send(t.functions.mint(alfa, mint_alfa, bytes32("demo-deposit-alfa")), "tczk_mint")
+            done["minted"] = mint_alfa
+    return done
 
 
 def build_artifact() -> None:
@@ -206,6 +235,8 @@ if __name__ == "__main__":
     if cmd == "deploy":
         addr = deploy()
         print(f'TCZK={addr}\nTCZK_NAME="tCZK Deposit Token"\n{chain.address_link(addr)}')
+    elif cmd == "setup":  # resume an interrupted deploy: python -m bank.tczk setup 0x...
+        print(json.dumps(setup(sys.argv[2]), indent=1))
     elif cmd == "artifact":
         build_artifact()
         print("wrote", ARTIFACT)

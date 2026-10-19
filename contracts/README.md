@@ -37,7 +37,19 @@ FORK=1 python -m pytest tests/unit/test_facilitator_chain.py     # + EURC on an 
 python -m bank.tczk artifact                                     # refresh the artifact after changing TCZK.sol
 ```
 
-## Deploy to Base Sepolia (not done yet: waiting for the bank key)
+## Deployed on Base Sepolia (19.10.2026)
+
+`TCZK = 0x18245366edA63Ca583c11B27d1134F3d233A115F` — [explorer](https://sepolia.basescan.org/address/0x18245366edA63Ca583c11B27d1134F3d233A115F),
+deployed by the bank wallet `0xD23D…de48` with `python -m bank.tczk deploy` (block 48 325 135), then
+`python -m bank.tczk setup <address>`: 7 roles (ISSUER/COMPLIANCE/ENFORCER for the bank, ROUTER for the relayer,
+collector, operator token store and refund collector), 7 allowlisted wallets (treasury, Alfa, Beta, Gama, Delta,
+collector, token store), 1000.00 Kč minted to Alfa; `strictMode = true`. About 3.0 M gas in 16 txs.
+The first setup tx reverted out of gas: its gas was estimated by a node that had not seen the new contract yet
+(~23 k), so setup now waits for the code and uses explicit gas, and is idempotent (re-run to resume).
+Live proof: N10 direct transfer reverted `TransferViaBankOnly`, N11 replayed signature reverted
+`ERC3009UsedAuthorization` (`reports/scenarios-sepolia-n10n11.json`).
+
+## How to deploy to Base Sepolia
 
 Deployer = the bank admin wallet (`BANK_ADMIN_PK`; in SPEC §16 it is also the relayer `0xD23D…de48`).
 It becomes admin, issuer, compliance and enforcer, and by default the ROUTER relayer. Cost ≈ 4.0 M gas ≈

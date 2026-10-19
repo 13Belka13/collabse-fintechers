@@ -338,13 +338,22 @@ def facilitator_client(ctx: Ctx):
 
 
 def revert_name(tx_hash: str) -> str | None:
-    """Replay a reverted tx as eth_call and decode the custom error selector."""
+    """Replay a reverted tx as eth_call at the tx's own block and decode the custom error selector.
+    Not at "latest": a lagging node behind the load balancer may not have that block yet and would answer with a
+    different (earlier-state) error — the N11 replay once decoded as TransferViaBankOnly that way."""
     w3 = chain.w3()
     tx = w3.eth.get_transaction(tx_hash)
-    resp = w3.provider.make_request("eth_call", [{"from": tx["from"], "to": tx["to"], "data": tx["input"].to_0x_hex()},
-                                                 "latest"])
-    data = (resp.get("error") or {}).get("data") or ""
-    data = data if isinstance(data, str) else data.get("data", "")
+    block = hex(w3.eth.get_transaction_receipt(tx_hash)["blockNumber"])
+    data = ""
+    for _ in range(8):
+        resp = w3.provider.make_request("eth_call", [{"from": tx["from"], "to": tx["to"], "data": tx["input"].to_0x_hex(),
+                                                      "gas": hex(tx["gas"])}, block])
+        err = resp.get("error") or {}
+        data = err.get("data") or ""
+        data = data if isinstance(data, str) else data.get("data", "")
+        if data.startswith("0x"):
+            break
+        time.sleep(1)  # the node does not have the block yet ("header not found"): ask again
     return ERRORS.get(data[2:10]) if data.startswith("0x") else None
 
 
@@ -715,7 +724,8 @@ def n11(ctx: Ctx):
     ctx.check("replay tx reverted on chain", tx["status"] == "reverted", tx["status"])
     name = revert_name(tx["tx_hash"])
     ctx.check("revert reason ERC3009UsedAuthorization", name == "ERC3009UsedAuthorization", name)
-    transfers = chain.transfers(config.TCZK, before["block"] + 1, frm=ctx.s.addr["alfa"], to=beta)
+    transfers = chain.read_retry(lambda: chain.transfers(config.TCZK, before["block"] + 1, frm=ctx.s.addr["alfa"], to=beta),
+                                 ok=lambda xs: len(xs) >= 1, tries=10, delay=1.5)  # logs lag on the public RPC
     ctx.check("exactly one tCZK Transfer buyer → seller (chain)",
               len(transfers) == 1 and transfers[0]["value"] == amount, transfers)
     ctx.decisions.append({"deal_id": None, "status": "reverted", "code": name})
