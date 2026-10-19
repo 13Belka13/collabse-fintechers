@@ -294,10 +294,11 @@ so they have no explorer links.
 
 ## How we use AWS
 
-- **Claude on Amazon Bedrock** runs both agents (`bank/llm.py`, client `AnthropicBedrockMantle`). The models
-  come from `.env` and are never hard-coded: `MODEL_MAIN` (Claude Opus 5.5, fallback Opus 4.8) for
-  negotiation, and `MODEL_FAST` (Claude Haiku 5.5, fallback Haiku 4.5) for frequent steps such as the
-  judge. There are no structured outputs on Bedrock, so each JSON answer is validated with pydantic and
+- **Claude on Amazon Bedrock** runs both agents (`bank/llm.py`, client `AnthropicBedrock`). The models
+  come from `.env` and are never hard-coded. The hackathon's team account offers Claude 4.5 through EU
+  inference profiles in eu-central-1, so `MODEL_MAIN` is Claude Opus 4.5 (or Sonnet 4.5) for
+  negotiation and `MODEL_FAST` is Claude Haiku 4.5 for frequent steps such as the judge. The system
+  prompt is cached. There are no structured outputs on Bedrock, so each JSON answer is validated with pydantic and
   retried once. The tool loop is manual, and a model refusal is handled.
 - **Every model call is logged** with its model, input/output and cache tokens, latency and cost estimate
   (the `timings` table, `bank/timing.py`). The total shows on `/bank` and in the reports.

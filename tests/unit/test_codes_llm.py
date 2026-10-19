@@ -128,15 +128,18 @@ def test_real_request_shape_respects_model_rules(monkeypatch):
                       usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=0, cache_creation_input_tokens=0))
 
     monkeypatch.setenv("MOCK", "0")
-    monkeypatch.setenv("MODEL_FAST", "anthropic.claude-haiku-4-5")
+    monkeypatch.setenv("MODEL_MAIN", "anthropic.claude-opus-5-5")
+    monkeypatch.setenv("MODEL_FAST", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
     config.reload()
     monkeypatch.setattr(llm, "_client", type("C", (), {"messages": FakeMessages()})())
     llm.create("main", "sys", [{"role": "user", "content": "x"}], stage="s", effort="low", tools=[{"name": "pay"}])
     llm.create("fast", "sys", [{"role": "user", "content": "x"}], stage="s", effort="low")
     main, fast = sent
     assert main["model"] == "anthropic.claude-opus-5-5" and main["output_config"] == {"effort": "low"}
-    assert "tool_choice" not in main and "thinking" not in main and main["cache_control"] == {"type": "ephemeral"}
-    assert fast["model"] == "anthropic.claude-haiku-4-5" and "output_config" not in fast
+    assert "tool_choice" not in main and "thinking" not in main and "cache_control" not in main
+    assert main["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]
+    assert fast["model"].startswith("eu.anthropic.claude-haiku-4-5") and "output_config" not in fast
+    assert not llm.accepts_effort("eu.anthropic.claude-opus-4-5-20251101-v1:0")
     assert db.one("SELECT SUM(cost_usd) c FROM timings WHERE stage='s'")["c"] > 0
 
 
@@ -144,3 +147,15 @@ def test_extract_json_handles_prose():
     assert llm.extract_json('Result: {"a": [1, 2]} trailing') == {"a": [1, 2]}
     with pytest.raises(ValueError):
         llm.extract_json("no json here")
+
+
+def test_bedrock_client_ignores_empty_aws_lines_from_dotenv(monkeypatch):
+    import os
+    from anthropic import AnthropicBedrock
+    monkeypatch.setenv("MOCK", "0")
+    monkeypatch.setenv("AWS_REGION", "eu-central-1")
+    monkeypatch.setenv("AWS_PROFILE", "")  # what `AWS_PROFILE=` in .env becomes
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+    config.reload()
+    monkeypatch.setattr(llm, "_client", None)
+    assert isinstance(llm.client(), AnthropicBedrock) and "AWS_PROFILE" not in os.environ

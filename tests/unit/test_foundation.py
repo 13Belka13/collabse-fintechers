@@ -65,9 +65,12 @@ def test_negative_or_zero_amounts_rejected():
 
 
 def test_bedrock_inference_profile_prefixes_priced_right():
-    for model in ("anthropic.claude-haiku-5-5", "us.anthropic.claude-haiku-5-5", "global.anthropic.claude-haiku-5-5",
-                  "eu.anthropic.claude-haiku-5-5"):
+    for model in ("anthropic.claude-haiku-5-5", "us.anthropic.claude-haiku-5-5", "global.anthropic.claude-haiku-5-5"):
         assert timing.price_of(model) == (0.10, 0.50), model
+    # EU inference profiles: +10 %, the prices in the hackathon account's guide
+    assert timing.price_of("eu.anthropic.claude-haiku-4-5-20251001-v1:0") == (1.10, 5.50)
+    assert timing.price_of("eu.anthropic.claude-sonnet-4-5-20250929-v1:0") == (3.30, 16.50)
+    assert timing.price_of("eu.anthropic.claude-opus-4-5-20251101-v1:0") == (5.50, 27.50)
     assert timing.price_of("claude-opus-5-5") == (4.00, 20.00)
 
 

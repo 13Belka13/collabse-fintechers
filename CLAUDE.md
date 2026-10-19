@@ -69,7 +69,9 @@ bank's **tokenized deposit tCZK** (125,00 Kč = 5 € at the demo rate) it passe
 5. **Persist PaymentInfo before `authorize`.** Never branch on a read right after a write (RPC lag).
 6. `eth_getLogs` on the public RPC: ≤ 50 blocks per call (or Tatum RPC).
    A tx that must revert (scenarios N10/N11) needs manual `gas=300_000`: `estimate_gas` raises on revert.
-7. **Claude on Bedrock:** client `AnthropicBedrockMantle`, models from `.env` (`MODEL_MAIN` /
+7. **Claude on Bedrock:** client `AnthropicBedrock` (InvokeModel; `BEDROCK_CLIENT=mantle` for Mantle). The
+   hackathon account has only Claude 4.5 via EU profiles in eu-central-1 (`eu.anthropic.claude-…-4-5-…`,
+   no `output_config.effort`; see docs/REFERENCE.md). Models from `.env` (`MODEL_MAIN` /
    `MODEL_FAST`), never hard-coded. **No `messages.parse`/structured outputs on Bedrock** → JSON in the
    answer + pydantic validation + one retry. Manual tool loop (`while stop_reason == "tool_use"`);
    check `stop_reason == "refusal"`; no prefill.

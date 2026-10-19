@@ -31,8 +31,10 @@ def reload():
     g["AWS_REGION"] = _env("AWS_REGION")
     g["AWS_PROFILE"] = _env("AWS_PROFILE")  # SSO profile (`aws configure sso` + `aws sso login`); not used with an API key
     g["BEDROCK_API_KEY"] = _env("AWS_BEARER_TOKEN_BEDROCK")  # short-term Bedrock API key from the console
-    g["MODEL_MAIN"] = _env("MODEL_MAIN", "anthropic.claude-opus-5-5")
-    g["MODEL_FAST"] = _env("MODEL_FAST", "anthropic.claude-haiku-5-5")
+    # the hackathon account (AWS Participant Guide): Claude 4.5 via EU inference profiles only, eu-central-1
+    g["BEDROCK_CLIENT"] = _env("BEDROCK_CLIENT", "invoke")  # invoke = AnthropicBedrock (InvokeModel), or mantle
+    g["MODEL_MAIN"] = _env("MODEL_MAIN", "eu.anthropic.claude-opus-4-5-20251101-v1:0")
+    g["MODEL_FAST"] = _env("MODEL_FAST", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
 
     g["CZK_PER_EUR_DEMO"] = int(_env("CZK_PER_EUR_DEMO", "25"))
     g["SCENARIO_PRICE_EUR"] = _env("SCENARIO_PRICE_EUR", "0.10")

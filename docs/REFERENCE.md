@@ -168,7 +168,24 @@ ARES legal form of ČEZ (IČO 45274649) = `121` [V 2026-10-19].
   `output_config={"effort": ...}`; forced `tool_choice` → 400; no assistant prefill.
 - Tools: `additionalProperties: false`, optional fields allowed; don't rely on `strict` on Bedrock.
   `beta.messages.tool_runner` exists but is unverified on Bedrock → manual `stop_reason` loop.
-- `stop_reason == "refusal"` exists (HTTP 200). Top-level `cache_control` works on the Mantle path.
+- `stop_reason == "refusal"` exists (HTTP 200). Top-level `cache_control` works on the Mantle path;
+  we put `cache_control` on the system block instead, which works on both paths.
+- [V 2026-10-19, AWS Participant Guide of the hackathon, thefintechers.notion.site] The team account:
+  build in **eu-central-1**; SSO sign-in lives in eu-north-1 (`aws configure sso`: SSO region eu-north-1,
+  client region eu-central-1), role `ai-hackathon-TeamAdmin`, sessions 12 h, USD 800 per team.
+  **No IAM users or long-lived access keys** — temporary keys from the access portal or an SSO profile.
+  **Claude 5 is not available** ("not available for this account"); Claude runs only through EU
+  inference profiles, IDs with the `eu.` prefix: `eu.anthropic.claude-haiku-4-5-20251001-v1:0`
+  (USD 1.10 / 5.50, 50 req/min), `eu.anthropic.claude-sonnet-4-5-20250929-v1:0` (3.30 / 16.50, 50/min),
+  `eu.anthropic.claude-opus-4-5-20251101-v1:0` (5.50 / 27.50, 25/min); limits shared by the team.
+  A bare `anthropic.claude-…` ID is a ValidationException. Spend via `aws ce get-cost-and-usage
+  --region us-east-1` (lags up to 24 h). Shared read-only datasets: `s3://ai-hackathon-datasets-422928733782/`
+  (`MostlyRIght/`: ČNB and ESMA MiCA registers, EPC SEPA Instant / VoP participants, EU sanctions).
+  Code freeze: a repo link by **Tue 20.10 13:30**; accounts are frozen after the event.
+  → We use `AnthropicBedrock` (InvokeModel, `bedrock-runtime.eu-central-1…/model/eu.anthropic…/invoke`,
+  checked offline with a mock transport); `BEDROCK_CLIENT=mantle` switches back. No `output_config.effort`
+  for any Claude 4.5. An empty `AWS_PROFILE=` line in `.env` is a boto3 ProfileNotFound → `llm.client()`
+  drops empty `AWS_*` variables.
   No server-side MCP connector on Bedrock → call Apify via `apify-client` inside tools.
 - SDK is built on `httpx2`; don't pass `httpx` objects into the Anthropic client.
 

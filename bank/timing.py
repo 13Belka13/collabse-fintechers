@@ -7,25 +7,30 @@ from contextlib import contextmanager
 from bank import db
 
 # USD per 1M tokens (input, output). Anthropic list prices as of 2026-10 (claude-api skill);
-# Bedrock bills separately and may differ, so the report labels these as estimates.
+# Bedrock bills separately and may differ, so the report labels these as estimates. EU inference profiles
+# (eu.anthropic.…) cost 10 % more: the hackathon account's guide lists Haiku 4.5 at 1.10 / 5.50.
 PRICES = {
     "claude-opus-5-5": (4.00, 20.00),
     "claude-opus-4-8": (5.00, 25.00),
     "claude-opus-4-7": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-haiku-5-5": (0.10, 0.50),
+    "claude-opus-4-5": (5.00, 25.00),
+    "claude-sonnet-4-5": (3.00, 15.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-fable-5": (10.00, 50.00),
     "mock": (0.0, 0.0),
 }
 CACHE_WRITE, CACHE_READ = 1.25, 0.10  # multipliers of the input price
+EU_PREMIUM = 1.10
 
 
 def price_of(model: str) -> tuple[float, float]:
     name = re.sub(r"^(?:[a-z-]+\.)*?anthropic\.", "", model)  # us./eu./global. inference profiles, anthropic. prefix
+    k = EU_PREMIUM if model.startswith("eu.") else 1.0
     for key in sorted(PRICES, key=len, reverse=True):
         if name.startswith(key):
-            return PRICES[key]
+            return tuple(round(p * k, 4) for p in PRICES[key])
     return PRICES["claude-opus-4-8"]  # unknown model: count it at a high price rather than free
 
 

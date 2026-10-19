@@ -1,10 +1,13 @@
-# Claude on Amazon Bedrock (SPEC §7): AnthropicBedrockMantle, models from .env, every call logged
+# Claude on Amazon Bedrock (SPEC §7): AnthropicBedrock (InvokeModel; Mantle via BEDROCK_CLIENT=mantle), models
+# from .env, every call logged
 # with tokens and cost. MOCK=1 -> scripted replies registered per stage (offline dev, CI, stage fallback).
 # No messages.parse / structured outputs on Bedrock: json_call = JSON in the answer + pydantic + one retry.
 # Opus 5.5 / Haiku 5.5: no `thinking` param, no forced tool_choice, effort set explicitly.
-# Haiku 4.5 takes no output_config.effort. Never send assistant prefill.
+# Claude 4.5 (the only Claude in the hackathon account) takes no output_config.effort. Never send assistant prefill.
+# The prompt cache sits on the system block: it works on both the InvokeModel and the Mantle path.
 import itertools
 import json
+import os
 import time
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -27,18 +30,22 @@ def model_for(role: str) -> str:
 
 
 def accepts_effort(model: str) -> bool:
-    return "haiku-4-5" not in model
+    return not any(f"{fam}-4-5" in model for fam in ("haiku", "sonnet", "opus"))
 
 
 def client():
     global _client
     if _client is None:
-        from anthropic import AnthropicBedrockMantle
+        from anthropic import AnthropicBedrock, AnthropicBedrockMantle
         if not config.AWS_REGION:
             raise RuntimeError("AWS_REGION is empty (TODO(credential)): run with MOCK=1 until the AWS Toolbox")
-        # credentials: a Bedrock API key (AWS_BEARER_TOKEN_BEDROCK, read by the SDK) or an SSO profile — never both
+        # credentials: temporary keys from the access portal (AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY/_SESSION_TOKEN,
+        # read by boto3), an SSO profile (aws sso login), or a Bedrock API key — the profile only when it is set
         profile = None if config.BEDROCK_API_KEY else (config.AWS_PROFILE or None)
-        _client = AnthropicBedrockMantle(aws_region=config.AWS_REGION, aws_profile=profile)
+        for k in [k for k, v in os.environ.items() if k.startswith("AWS_") and not v]:
+            del os.environ[k]  # an empty AWS_PROFILE= line in .env is a ProfileNotFound in boto3
+        cls = AnthropicBedrockMantle if config.BEDROCK_CLIENT == "mantle" else AnthropicBedrock
+        _client = cls(aws_region=config.AWS_REGION, aws_profile=profile)
     return _client
 
 
@@ -74,8 +81,9 @@ def create(role: str, system: str, messages: list, *, stage: str, deal_id: str |
         if config.MOCK:
             resp = _mock_response(stage, messages, tools)
         else:
-            kwargs: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "system": system,
-                                      "messages": messages, "cache_control": {"type": "ephemeral"}}
+            kwargs: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": messages,
+                                      "system": [{"type": "text", "text": system,
+                                                  "cache_control": {"type": "ephemeral"}}]}
             if tools:
                 kwargs["tools"] = tools  # tool_choice stays "auto": forced choice is a 400 on Opus 5.5
             if effort and accepts_effort(model):
