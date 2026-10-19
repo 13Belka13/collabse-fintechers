@@ -23,3 +23,7 @@ app = FastAPI(title="Collabse bank", lifespan=lifespan)
 def health():
     return {"ok": True, "service": "bank", "mock": config.MOCK, "network": config.NETWORK,
             "tczk": bool(config.TCZK), "llm": "mock" if config.MOCK else config.MODEL_MAIN}
+
+
+from bank import facilitator  # noqa: E402  (stream T: x402 facilitator for EURC and tCZK)
+app.include_router(facilitator.router)

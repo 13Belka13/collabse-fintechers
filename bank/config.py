@@ -44,6 +44,7 @@ def reload():
     g["COLLECTOR"] = _env("COLLECTOR", "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88")
     g["REFUND_COLLECTOR"] = _env("REFUND_COLLECTOR", "0x7a03443724d14798c4AB4622F1DAAcA761Fea486")
     g["OPERATOR_TOKEN_STORE"] = _env("OPERATOR_TOKEN_STORE", "0xd2b0C305F62427414e9624a2beD72a3792e15cf8")
+    g["ACCOUNT_REF_SALT"] = _env("ACCOUNT_REF_SALT", "collabse-demo")  # tCZK accountRef = keccak(salt ‖ account)
 
     g["BANK_URL"] = _env("BANK_URL", "http://localhost:8000")
     g["BANK_FACILITATOR_URL"] = _env("BANK_FACILITATOR_URL", "http://localhost:8000/x402")

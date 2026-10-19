@@ -9,6 +9,8 @@ addopts = "-q"
 markers = [
   "chain: uses the in-memory eth-tester chain",
   "live: needs network/testnet credentials (skipped unless LIVE=1)",
+  "anvil: needs the anvil binary from Foundry (skipped if missing)",
+  "fork: anvil fork of Base Sepolia, needs network (skipped unless FORK=1)",
 ]
 
 [tool.coverage.run]
