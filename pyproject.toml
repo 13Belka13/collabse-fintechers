@@ -1,0 +1,20 @@
+[project]
+name = "collabse-fintechers"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "chain: uses the in-memory eth-tester chain",
+  "live: needs network/testnet credentials (skipped unless LIVE=1)",
+]
+
+[tool.coverage.run]
+source = ["bank"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = true

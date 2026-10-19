@@ -1,0 +1,32 @@
+{
+  "_note": "Synthetic demo companies (SPEC §14). IČO pass the mod-11 checksum and returned 404 in ARES on 2026-10-19, so they belong to no real company. Bank code 9999 = fictional demo bank. Websites use the reserved .example TLD. No personal data.",
+  "companies": [
+    {"id": "alfa", "name": "Alfa s.r.o.", "ico": "64146103", "dic": "CZ64146103", "role": "buyer",
+     "account_number": "1803729684/9999", "iban": "CZ4499990000001803729684",
+     "wallet_address": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140", "wallet_key_ref": "ALFA_PK"},
+    {"id": "beta", "name": "Beta s.r.o.", "ico": "30181020", "dic": "CZ30181020", "role": "seller",
+     "account_number": "5638829718/9999", "iban": "CZ1399990000005638829718",
+     "wallet_address": "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1", "wallet_key_ref": null},
+    {"id": "gama", "name": "Gama s.r.o.", "ico": "59093994", "dic": "CZ59093994", "role": "seller",
+     "account_number": "3707634174/9999", "iban": "CZ2699990000003707634174",
+     "wallet_address": "0x19d12f1e3869e75D819aD9190065D3B77b4c7Ac1", "wallet_key_ref": null},
+    {"id": "delta", "name": "Delta s.r.o.", "ico": "54763363", "dic": "CZ54763363", "role": "seller",
+     "account_number": "8452341718/9999", "iban": "CZ6599990000008452341718",
+     "wallet_address": "0xeCFf7a2FF48b85eE48150D94f6FAe9338A1D4388", "wallet_key_ref": null}
+  ],
+  "sellers": [
+    {"seller_id": "s-beta", "company_id": "beta", "category": "data", "mode": "honest",
+     "base_url": "http://localhost:8001", "website_url": "https://beta-data.example",
+     "profile_url": "https://beta-data.example/o-nas",
+     "story": "Honest seller of warehouse data. VAT payer; its tCZK wallet is bound to the account published in the VAT register."},
+    {"seller_id": "s-gama", "company_id": "gama", "category": "data", "mode": "fake_data",
+     "base_url": "http://localhost:8001", "website_url": "https://gama-data.example",
+     "profile_url": "https://gama-data.example/o-nas",
+     "story": "Delivers 2 fake items out of 20 -> rules reject them -> dispute."},
+    {"seller_id": "s-delta", "company_id": "delta", "category": "data", "mode": "honest",
+     "base_url": "http://localhost:8001", "website_url": "https://delta-data.example",
+     "profile_url": "https://delta-data.example/o-nas",
+     "story": "Website shows a different IČO than ARES -> COUNTERPARTY_NOT_TRUSTED before payment."}
+  ],
+  "spare_icos": ["14645441", "33116172"]
+}
