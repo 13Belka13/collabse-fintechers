@@ -188,9 +188,17 @@ class Ctx:
         row = db.one("SELECT state FROM deals WHERE deal_id=?", (deal_id,))
         return row and row["state"]
 
-    def escrow_state(self, deal_id: str) -> dict | None:
+    def escrow_state(self, deal_id: str, ok=None) -> dict | None:
+        """paymentState from the chain; with ok=, retried while the public RPC still serves a stale read."""
         row = db.one("SELECT payment_hash FROM deals WHERE deal_id=?", (deal_id,))
-        return escrow.read_state(row["payment_hash"]) if row and row["payment_hash"] else None
+        if not row or not row["payment_hash"]:
+            return None
+        return chain.read_retry(lambda: escrow.read_state(row["payment_hash"]), ok=ok or (lambda st: True), tries=8,
+                                delay=1.5)
+
+    def delta_after(self, before: dict, ok) -> dict:
+        """Balance changes since `before`, retried until ok(delta) or the reads stop lagging (load-balanced RPC)."""
+        return chain.read_retry(lambda: Ctx.delta(before, self.snapshot()), ok=ok, tries=8, delay=1.5)
 
     def asset_of(self, deal_id: str) -> str:
         return db.one("SELECT asset FROM deals WHERE deal_id=?", (deal_id,))["asset"]
@@ -277,7 +285,7 @@ def settled_escrow(ctx: Ctx, deal_id: str, asset: str, seller_id: str, to_seller
     first = captured(ctx, deal_id, asset, seller_id)
     ctx.check("at once: accepted items minus the 5 % holdback captured (Transfer events)", first == to_seller - holdback,
               {"captured": first, "expected": to_seller - holdback, "holdback": holdback})
-    st = ctx.escrow_state(deal_id)
+    st = ctx.escrow_state(deal_id, ok=lambda st: st["capturable"] == amount - first)
     ctx.check("paymentState: holdback + items in question still in escrow", st is not None
               and st["capturable"] == amount - first, {"state": st, "expected": amount - first})
     timer(ctx, max(int(terms[k]) for k in ("review_window_s", "objection_window_s", "holdback_s")) + 1)
@@ -288,12 +296,12 @@ def settled_escrow(ctx: Ctx, deal_id: str, asset: str, seller_id: str, to_seller
     back = voided(ctx, deal_id, asset)
     ctx.check("void back to buyer = rest (Transfer events)", back == amount - to_seller,
               {"voided": back, "expected": amount - to_seller})
-    st = ctx.escrow_state(deal_id)
+    st = ctx.escrow_state(deal_id, ok=lambda st: st["capturable"] == 0)
     ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
     if holdback:
         timer_journal(ctx, deal_id, "dispute.holdback_released", "holdback_s")
-    d = Ctx.delta(before, ctx.snapshot())
     name = seller_id.removeprefix("s-")
+    d = ctx.delta_after(before, lambda d: d.get(f"{asset}:{name}", 0) == to_seller and d.get(f"{asset}:buyer", 0) == -to_seller)
     ctx.check("seller balance +captured (chain)", d.get(f"{asset}:{name}", 0) == to_seller, d)
     ctx.check("buyer balance −captured (chain)", d.get(f"{asset}:buyer", 0) == -to_seller, d)
     ctx.check("escrow store back to its start (chain)", d.get(f"{asset}:escrow_store", 0) == 0, d)
@@ -361,7 +369,7 @@ def s01(ctx: Ctx):
     moved = transfers_in(tx, "EURC")
     ctx.check("one Transfer buyer → seller = price in the tx (chain)",
               moved == [{"from": ctx.s.addr["alfa"], "to": ctx.wallet("s-beta"), "value": amount}], moved)
-    d = Ctx.delta(before, ctx.snapshot())
+    d = ctx.delta_after(before, lambda d: d == {"EURC:beta": amount, "EURC:buyer": -amount})
     ctx.check("seller +price, buyer −price (chain)", d == {"EURC:beta": amount, "EURC:buyer": -amount}, d)
     settled = [e for e in journal.entries(limit=50) if e["event"] == "x402_settled"
                and e["payload"].get("transaction") == tx]
@@ -427,7 +435,7 @@ def fake_data_deal(ctx: Ctx) -> tuple[str, int, int, dict, dict] | None:
     first = captured(ctx, deal, "EURC", "s-gama")
     ctx.check("at once: 18 items minus the 5 % holdback captured (Transfer events)", first == to18 - holdback,
               {"captured": first, "expected": to18 - holdback})
-    st = ctx.escrow_state(deal)
+    st = ctx.escrow_state(deal, ok=lambda st: st["capturable"] == amount - first)
     ctx.check("paymentState: 2 disputed items + holdback wait in escrow", st is not None
               and st["capturable"] == amount - first, st)
     return deal, amount, to18, d, before
@@ -457,9 +465,9 @@ def s05(ctx: Ctx):
     ctx.check("deal closed after the holdback", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
     ctx.check("seller got the whole price, nothing voided (Transfer events)",
               captured(ctx, deal, "EURC", "s-gama") == amount and voided(ctx, deal, "EURC") == 0)
-    st = ctx.escrow_state(deal)
+    st = ctx.escrow_state(deal, ok=lambda st: st["capturable"] == 0)
     ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
-    dd = Ctx.delta(before, ctx.snapshot())
+    dd = ctx.delta_after(before, lambda dd: dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount)
     ctx.check("seller +price, buyer −price (chain)", dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount, dd)
     ctx.journal_chain()
 
@@ -658,9 +666,20 @@ def n09(ctx: Ctx):
     ctx.journal_chain()
 
 
+def attack_preconditions(ctx: Ctx):
+    """N10/N11 need the stage tCZK (strict mode, custom errors) and gas in the attacker's (buyer's) wallet. Checked
+    before anything is signed: on the prep fallback token a direct transfer would really move money."""
+    from bank import tczk
+    ctx.require("tCZK is the stage token with strict mode (not the prep fallback)", not tczk.is_prep(),
+                f"TCZK_NAME={config.TCZK_NAME!r}: the strict-mode TCZK (T3) is not deployed on this chain")
+    eth = chain.w3().eth.get_balance(ctx.s.addr["alfa"])
+    ctx.require("buyer wallet has ETH to send the attack tx", eth > 0, f"{eth / 1e18:.8f} ETH")
+
+
 def n10(ctx: Ctx):
     """Direct tCZK transfer bypassing the bank (strict mode): a real reverted tx; the contract refuses."""
     from bank import tczk
+    attack_preconditions(ctx)
     before = ctx.snapshot()
     call = tczk.token().functions.transfer(ctx.wallet("s-beta"), money.from_eur_cents("tCZK", 10))
     tx = chain.sender(ctx.s.keys["alfa"]).send(call, kind="attack_direct_transfer", expect_revert=True, gas=300_000)
@@ -676,6 +695,7 @@ def n10(ctx: Ctx):
 def n11(ctx: Ctx):
     """Replay of the same EIP-3009 signature: the first settle lands, the replay reverts ERC3009UsedAuthorization."""
     from bank import tczk
+    attack_preconditions(ctx)
     beta = ctx.wallet("s-beta")
     amount = money.from_eur_cents("tCZK", 10)
     payload, req = sdk_payload(ctx, "tCZK", amount, beta)
@@ -733,7 +753,7 @@ def n13(ctx: Ctx):
     ctx.require("all 20 items flagged to the buyer's review", len(review) == 20, len(review))
     ctx.check("nothing captured or voided before the deadline", not ctx.deal_tx(deal, "capture")
               and not ctx.deal_tx(deal, "void"))
-    st = ctx.escrow_state(deal)
+    st = ctx.escrow_state(deal, ok=lambda st: st["capturable"] == amount)
     ctx.check("paymentState: the whole price waits in escrow", st is not None and st["capturable"] == amount, st)
     early = timer(ctx, int(d["terms"]["review_window_s"]) - 5)
     ctx.check("a tick before the deadline does nothing", not [x for x in early if x.get("deal_id") == deal])
@@ -742,9 +762,9 @@ def n13(ctx: Ctx):
     ctx.check("deal closed", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
     ctx.check("timer captured the whole price to the seller (Transfer events)",
               captured(ctx, deal, "EURC", "s-gama") == amount and voided(ctx, deal, "EURC") == 0)
-    st = ctx.escrow_state(deal)
+    st = ctx.escrow_state(deal, ok=lambda st: st["capturable"] == 0)
     ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
-    dd = Ctx.delta(before, ctx.snapshot())
+    dd = ctx.delta_after(before, lambda dd: dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount)
     ctx.check("seller +price, buyer −price (chain)", dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount, dd)
     ctx.journal_chain()
 
@@ -766,9 +786,9 @@ def n14(ctx: Ctx):
     ctx.check("void returned the 2 disputed items to the buyer (Transfer event)", voided(ctx, deal, "EURC") == amount - to18,
               {"voided": voided(ctx, deal, "EURC"), "expected": amount - to18})
     ctx.check("seller got the 18 accepted items in total (Transfer events)", captured(ctx, deal, "EURC", "s-gama") == to18)
-    st = ctx.escrow_state(deal)
+    st = ctx.escrow_state(deal, ok=lambda st: st["capturable"] == 0)
     ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
-    dd = Ctx.delta(before, ctx.snapshot())
+    dd = ctx.delta_after(before, lambda dd: dd.get("EURC:gama") == to18 and dd.get("EURC:buyer") == -to18)
     ctx.check("seller +18 items, buyer −18 items (chain)", dd.get("EURC:gama") == to18 and dd.get("EURC:buyer") == -to18, dd)
     ctx.journal_chain()
 
