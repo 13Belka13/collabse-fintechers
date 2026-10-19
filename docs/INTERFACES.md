@@ -104,6 +104,30 @@ asserts against the chain (`chain.balance`, `escrow.state`, `chain.transfers`), 
 | GET | `/api/statement?mandate_id=` | → mandate summary |
 | POST | `/api/deals/{deal_id}/delivery` | seller → bank, `{items}` |
 
+## Integration rules added after the stream review (19.10, integrator)
+
+- **Auth.** `/api/*` for agents needs `x-agent-token` (config.AGENT_TOKENS → company); the buyer is the token's
+  company, never the body's. A mandate spends only its own company's money (`deals.create` checks
+  `mandates.company_id`). Seller → bank deliveries need `x-seller-token`; bank → seller escrow notices need
+  `x-bank-token`; human actions need `x-human-token`: `POST /api/deals/{id}/confirm {by}`,
+  `POST /api/deals/{id}/ack-vat {by}`, `POST /api/mandates/{id}/ack-vat {seller_ico, asset, by}`.
+- **Criteria** come from the buyer's task (`deals.buyer_criteria`, pydantic-validated), never from the seller's
+  offer; an offer whose `count` differs from the task is ignored.
+- **Deliveries** are cleaned before storage: `core.clean_delivery_items` (no phones, no reviews).
+- **Escrow idem keys are per PaymentInfo:** `escrow.idem_key(deal_id, "authorize" | "capture:<n>" | "void")` =
+  `f"{deal_id}:{payment_hash[2:10]}:{kind}"`. A PaymentInfo that no longer matches the quote or has expired is
+  dropped (after the chain shows no lock, or after the old lock is voided) and rebuilt with a new salt.
+- **Budget follows the chain:** after each capture `mandate.commit(captured)`; after the final void
+  `mandate.release` (amount := committed). A failed capture voids the whole lock and releases the budget.
+- **Before reserving:** bank-side freeze for payer and payee; for tCZK the token's allowlist/freeze too.
+- **Judge only flags:** an item without the category keyword is always held for a human, whatever the judge says.
+- **AI explanations** may contain only URLs from the decision's own sources.
+- **Seller** pins the escrow operator (`config.BANK_OPERATOR_ADDR`) and zero fees before delivering; injection mode
+  also points its 402 at 0xEvil for 50 EURC, so the refusal is visible on the money path.
+- **Disputes (stream U):** when `settle` leaves `held > 0`, the deal is `verified`, the captured part is already
+  committed, the held part stays in escrow. Resolve with `escrow.capture(deal_id, amount, n)` (n ≥ 2) for what the
+  seller gets, then `escrow.void(deal_id)` once at the end, then `mandate.commit(captured)` + `mandate.release`.
+
 ## Ownership (to avoid merge conflicts)
 
 `bank/app.py` is shared: each stream adds **one** `app.include_router(...)` line. `bank/db.py` schema changes:
