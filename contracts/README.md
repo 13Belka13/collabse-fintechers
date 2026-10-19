@@ -40,6 +40,7 @@ python -m bank.tczk artifact                                     # refresh the a
 ## Deployed on Base Sepolia (19.10.2026)
 
 `TCZK = 0x18245366edA63Ca583c11B27d1134F3d233A115F` — [explorer](https://sepolia.basescan.org/address/0x18245366edA63Ca583c11B27d1134F3d233A115F),
+**source verified** on [Blockscout](https://base-sepolia.blockscout.com/address/0x18245366edA63Ca583c11B27d1134F3d233A115F?tab=contract) (`forge verify-contract`, solc 0.8.31, cancun, optimizer 200),
 deployed by the bank wallet `0xD23D…de48` with `python -m bank.tczk deploy` (block 48 325 135), then
 `python -m bank.tczk setup <address>`: 7 roles (ISSUER/COMPLIANCE/ENFORCER for the bank, ROUTER for the relayer,
 collector, operator token store and refund collector), 7 allowlisted wallets (treasury, Alfa, Beta, Gama, Delta,
