@@ -97,6 +97,32 @@ def executed(r: dict) -> bool:
     return any(any(w in c["name"] for w in MONEY_CHECK_WORDS) for c in r["checks"])
 
 
+def run_cost(raw: dict) -> dict:
+    """What left the buyer for good (captures to sellers + direct x402 payments, from Transfer events in the
+    reconciliation and the settle receipts) and the gas of every landed tx (receipts stored in the run's DBs)."""
+    import sqlite3
+    paid = {"EURC": 0, "tCZK": 0}
+    for d in raw["reconciliation"].get("deals", []):
+        paid[d["asset"]] += d["chain"]["capture"]
+    settles = {t["tx_hash"].lower() for r in raw["results"] for t in r["txs"] if t["kind"] == "x402_settle"}
+    for r in raw["results"]:
+        for e in r.get("expected_debits", []):
+            if e["tx_hash"].lower() in settles:
+                paid[e["asset"]] += e["amount"]
+    landed = {t["tx_hash"].lower() for r in raw["results"] for t in r["txs"] if t["status"] in ("mined", "reverted")}
+    gas, seen = 0, set()
+    for path in {r.get("db") for r in raw["results"]}:
+        if not path or not Path(path).exists():
+            return {"paid": paid, "gas": None}
+        c = sqlite3.connect(path)
+        for h, g in c.execute("SELECT tx_hash, gas_used FROM onchain_txs WHERE gas_used IS NOT NULL"):
+            if h.lower() in landed and h.lower() not in seen:
+                seen.add(h.lower())
+                gas += g
+        c.close()
+    return {"paid": paid, "gas": gas}
+
+
 def summarize(raw: dict) -> dict:
     results = raw["results"]
     ids = list(dict.fromkeys(r["id"] for r in results))
@@ -117,6 +143,7 @@ def summarize(raw: dict) -> dict:
         "wrong_debits": recon["wrong_debit_count"], "transfers_to_evil": recon["transfers_to_evil"],
         "reconciliation_ok": recon["ok"], "deals_reconciled": recon["deals_checked"], "deals_reconciled_ok": recon["deals_ok"],
         "journal_verified": all(raw.get("journal_verified", {}).values()),
+        "cost": run_cost(raw),
         "per_scenario": {i: [r["status"] for r in sorted((x for x in results if x["id"] == i), key=lambda x: x["run"])]
                          for i in ids},
     }
@@ -207,6 +234,10 @@ def build(target: str) -> tuple[str, dict]:
               else "") + ".",
            f"- Transactions: {s['txs_landed']} landed on chain; {s['txs_dead']} signed transactions were dropped as dead "
            "after a nonce clash and re-sent under the same idempotency key (they never landed — see reconciliation).",
+           f"- Cost of {'this run' if s['runs'] == 1 else 'these runs'}: {s['cost']['paid']['EURC'] / 1e6:.6f} EURC and "
+           f"{s['cost']['paid']['tCZK'] / 100:.2f} Kč left the buyer for good (captures + direct x402 payments, Transfer "
+           f"events; amounts voided back are not counted); gas used by landed txs: "
+           f"{s['cost']['gas'] if s['cost']['gas'] is not None else 'n/a (run DBs not present)'}.",
            f"- **Wrong debits: {s['wrong_debits']}** — every buyer debit on chain since the first scenario is a lock or a "
            f"payment a scenario expected. Transfers to the attacker address 0xdEaD: {s['transfers_to_evil']}.",
            f"- **Reconciliation chain ↔ DB ↔ statement: {'OK' if s['reconciliation_ok'] else 'MISMATCH'}** — "

@@ -21,7 +21,7 @@ def _raw(target="fork"):
                         _result("N13", 1, "xfail", defects=["D2"]), _result("N13", 2, "xfail", defects=["D2"])],
             "reconciliation": {"wrong_debit_count": 0, "transfers_to_evil": 0, "ok": True, "deals_checked": 2,
                                "deals_ok": 2},
-            "journal_verified": {"bank-main.db": True}}
+            "journal_verified": {"bank-main.db": True}}  # no "db" paths: cost gas is n/a
 
 
 def test_summary_counts_attacks_blocked_at_money_level_and_with_the_code():
