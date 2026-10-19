@@ -27,6 +27,8 @@ def reload():
     g["EXPLORER"] = _env("EXPLORER", "https://sepolia.basescan.org")
 
     g["AWS_REGION"] = _env("AWS_REGION")
+    g["AWS_PROFILE"] = _env("AWS_PROFILE")  # SSO profile (`aws configure sso` + `aws sso login`); not used with an API key
+    g["BEDROCK_API_KEY"] = _env("AWS_BEARER_TOKEN_BEDROCK")  # short-term Bedrock API key from the console
     g["MODEL_MAIN"] = _env("MODEL_MAIN", "anthropic.claude-opus-5-5")
     g["MODEL_FAST"] = _env("MODEL_FAST", "anthropic.claude-haiku-5-5")
 
