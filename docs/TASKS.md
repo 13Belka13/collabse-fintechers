@@ -18,18 +18,20 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
 
 ## Stream T — bank token tCZK (SPEC §3)
 
-- [ ] T1 Foundry project, OZ v5.7.0 (`draft-ERC3009.sol` exists in that tag), `TCZK is ERC3009, AccessControl`,
+- [x] T1 Foundry project, OZ v5.7.0 (`draft-ERC3009.sol` exists in that tag), `TCZK is ERC3009, AccessControl`,
       roles, allowlist + `accountRef`, freeze, `forcedTransfer`, `decimals=2`, `bytes` overloads incl.
       `receiveWithAuthorization(..., bytes)`. Windows: if `foundryup` is slow to install, use py-solc-x
       + web3 like `prep/spikes/deploy_tczk.py` and keep going.
-- [ ] T2 Tests (§3.6): both overloads, replay, expiry, receive-not-to, allowlist/freeze, cancel, burn
+- [x] T2 Tests (§3.6): both overloads, replay, expiry, receive-not-to, allowlist/freeze, cancel, burn
       of delisted, forcedTransfer, strict mode; fork test of authorize → capture → void via collector.
-- [ ] T3 Deploy + allowlist per §3.3 (treasury, clients, collector `0x8612…ab88`, operator token
+- [x] T3 Deploy + allowlist per §3.3 (treasury, clients, collector `0x8612…ab88`, operator token
       store `0xd2b0C305F62427414e9624a2beD72a3792e15cf8`) + roles + demo mint. Fallback for the stage:
       the prep token `0x6a99C9e95DD220172d07D5f730f2e82B466D4B67` (already allowlisted, buyer holds 845.00).
-- [ ] T4 Bank facilitator (§4.3): `/x402/verify`, `/x402/settle`, `/x402/supported` for EURC **and**
+- [x] T4 Bank facilitator (§4.3): `/x402/verify`, `/x402/settle`, `/x402/supported` for EURC **and**
       tCZK; screening in `on_before_verify` **and** `on_before_settle`; refusal = HTTP 200 `isValid:false`;
       sync `def` endpoints, one process, lock on settle, own retry with idempotency key.
+      (T3: deploy proven on an anvil fork; the Base Sepolia broadcast waits for the bank key —
+      command in `contracts/README.md`.)
 
 ## Stream Q — validation on real testnet transactions (SPEC §19)
 
