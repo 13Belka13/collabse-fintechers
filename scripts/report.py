@@ -176,7 +176,7 @@ def build(target: str) -> tuple[str, dict]:
         md += ["> **Network: anvil fork of Base Sepolia (local), not the public testnet.** The real deployed contracts (EURC,",
                "> AuthCaptureEscrow, ERC-3009 collector) forked at the block above, a freshly deployed tCZK, throwaway keys.",
                "> The transactions are real EVM transactions on the local fork; their hashes exist only there, so they have",
-               "> **no explorer links**. The Base Sepolia run (`--target sepolia`) waits for testnet keys.", ""]
+               "> **no explorer links**. The same matrix on Base Sepolia is a separate run (`--target sepolia`, keys from .env).", ""]
     else:
         md += ["> **Network: Base Sepolia (public testnet).** Every transaction links to the explorer.", ""]
     md += [f"Generated {when} from `{raw_path.relative_to(config.ROOT)}` at commit `{head}` by `scripts/report.py`. "
@@ -214,7 +214,10 @@ def build(target: str) -> tuple[str, dict]:
     if fork:
         md += ["Fork caveat: anvil mines on demand, so *tx in block* here is local and says nothing about Base's 2 s "
                "blocks; registry checks use the recorded fixtures of the synthetic companies.", ""]
-    md += ["| Stage | Target p95 | n | p50 | p95 | Met |", "|---|---|---|---|---|---|"]
+    md += ["The `decision` samples include N02, where 10 concurrent pay() calls queue on one SQLite write lock "
+           "(BEGIN IMMEDIATE) by design; `facilitator_verify` includes the first call of each bank process, which "
+           "builds the facilitator.", "",
+           "| Stage | Target p95 | n | p50 | p95 | Met |", "|---|---|---|---|---|---|"]
     for r in stages:
         met = "not measured" if r["n"] == 0 else ("yes" if r["met"] else "no")
         md.append(f"| {r['title']} (`{r['stage']}`) | ≤ {r['target_ms']} ms | {r['n']} | {f(r['p50'])} | {f(r['p95'])} "
