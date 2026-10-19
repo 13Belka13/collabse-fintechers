@@ -38,6 +38,25 @@ def local_chain():
     chain.set_w3(None)
 
 
+@pytest.fixture
+def clock(monkeypatch):
+    """Fake clock: time.time() returns clock.now; clock.tick(s) moves it. For deadlines, expiries, windows."""
+    import time
+
+    class Clock:
+        now = 1_790_000_000.0  # 2026-09-21, fixed
+
+        def tick(self, seconds: float):
+            self.now += seconds
+
+    c = Clock()
+    monkeypatch.setattr(time, "time", lambda: c.now)
+    return c
+
+
 def pytest_runtest_setup(item):
     if "live" in item.keywords and os.getenv("LIVE") != "1":
         pytest.skip("live test: set LIVE=1 with testnet credentials")
+    # CI sets FORK=0: tests that fork Base Sepolia over the public RPC are skipped there (flaky, network)
+    if os.getenv("FORK") == "0" and ("fork" in item.keywords or item.path.name.endswith("_fork.py")):
+        pytest.skip("anvil fork of Base Sepolia: skipped with FORK=0 (CI)")

@@ -35,24 +35,34 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
 
 ## Stream Q — validation on real testnet transactions (SPEC §19)
 
-- [ ] Q1 Test scaffolding: `pytest` + `pytest-cov` config, `tests/unit/` fixtures (temp SQLite, fake
+- [x] Q1 Test scaffolding: `pytest` + `pytest-cov` config, `tests/unit/` fixtures (temp SQLite, fake
       clock, fake chain for unit level), `timed(stage, deal_id)` → `timings` table (§19.4), CI workflow
-      (MOCK=1, no secrets, coverage report).
-- [ ] Q2 `scripts/smoke.py` (< 60 s): `/health` of bank and seller, facilitator `/supported` lists EURC
+      (MOCK=1, no secrets, coverage report). (`.github/workflows/ci.yml`: pytest + branch coverage, forge without fork)
+- [x] Q2 `scripts/smoke.py` (< 60 s): `/health` of bank and seller, facilitator `/supported` lists EURC
       and tCZK, RPC reachable, ETH/EURC/tCZK above thresholds, unpaid request → 402, one Bedrock call
-      (or MOCK), ARES reachable, one 0.01 EURC payment lands.
+      (or MOCK), ARES reachable, one 0.01 EURC payment lands. (9/9 on the anvil fork; `--target running|fork|sepolia`)
 - [ ] Q3 `scripts/scenarios.py --runs 3 [--only N05] [--p0]`: P0 matrix §19.2 on Base Sepolia; each
       scenario asserts decision + on-chain balance/escrow deltas (read from chain) + journal; negatives
       assert "no money moved". N13/N14 = timer defaults with demo windows. Small amounts (`SCENARIO_PRICE_EUR`). N10/N11 send real reverting txs
       with manual gas.
+  - [x] Runner + stack (`scripts/stack.py`), S01–S04, N01–N12 and A01 (API auth) pass 3/3 on an anvil fork of Base Sepolia (Q)
+  - [ ] S05, N13, N14 — wait for stream U's dispute API and timer (xfail D2)
+  - [ ] Run on Base Sepolia (`--target sepolia`, keys from .env)
 - [ ] Q4 Fault injection via `FAULTS` (`settle_fail_once`, `registry_timeout`, `llm_bad_json`,
       `webhook_duplicate`, `webhook_bad_hmac`) with their scenarios; reconciliation of chain
       `Transfer` events vs DB vs statement; journal tamper test.
+  - [x] settle_fail_once, registry_timeout, llm_bad_json (F01–F03, 3/3 on the fork + unit tests); reconciliation;
+        `scripts/verify_journal.py` + tamper test (Q)
+  - [ ] webhook_duplicate / webhook_bad_hmac — wait for the Tatum webhook (L7, xfail D3)
 - [ ] Q5 Evals: `tests/evals/injections.jsonl` (20), `judge.jsonl` (40 labelled), explanation checks
       (sources subset, no non-public reason in client text, AI label); MOCK in CI, live Bedrock once.
+  - [x] 20 injections through the buyer tool loop (money-level block 20/20), judge 40 items, explanations; MOCK in CI (Q)
+  - [ ] Live Bedrock once (`LIVE=1 MOCK=0 pytest tests/evals/test_live_bedrock.py`)
 - [ ] Q6 `scripts/report.py` → `reports/validation.md|json`: scenarios × runs with explorer links,
       attacks blocked X/X, wrong debits 0, p50/p95 per stage vs targets, coverage, evals, AWS cost.
       `/bank` panel: last decision ms + p95. P1 scenarios only if time is left.
+  - [x] Report builder; fork-run report committed, labelled "anvil fork", tx hashes without links (Q)
+  - [ ] Base Sepolia report with explorer links; `/bank` panel (stream U)
 
 ## Layers
 

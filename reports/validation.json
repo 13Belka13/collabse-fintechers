@@ -1,0 +1,313 @@
+{
+ "generated": "2026-10-19 15:06",
+ "commit": "725cbb8",
+ "target": "fork",
+ "label": "anvil fork of Base Sepolia (chain id 84532) at block 48323395",
+ "summary": {
+  "scenarios": 25,
+  "p0": 19,
+  "faults": 5,
+  "extra": 1,
+  "attack_scenarios": 11,
+  "runs": 3,
+  "scenario_runs": 75,
+  "status": {
+   "pass": 60,
+   "xfail": 15,
+   "fail": 0
+  },
+  "attack_runs": 33,
+  "attacks_blocked_money": 33,
+  "attacks_expected_code": 33,
+  "wrong_debits": 0,
+  "transfers_to_evil": 0,
+  "reconciliation_ok": true,
+  "deals_reconciled": 30,
+  "deals_reconciled_ok": 30,
+  "journal_verified": true,
+  "per_scenario": {
+   "S01": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "S02": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "S03": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "S04": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "S05": [
+    "xfail",
+    "xfail",
+    "xfail"
+   ],
+   "N01": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N02": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N03": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N04": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N05": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N06": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N07": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N08": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N09": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N10": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N11": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N12": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "N13": [
+    "xfail",
+    "xfail",
+    "xfail"
+   ],
+   "N14": [
+    "xfail",
+    "xfail",
+    "xfail"
+   ],
+   "A01": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "F01": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "F02": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "F03": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "F04": [
+    "xfail",
+    "xfail",
+    "xfail"
+   ],
+   "F05": [
+    "xfail",
+    "xfail",
+    "xfail"
+   ]
+  }
+ },
+ "stages": [
+  {
+   "stage": "decision",
+   "title": "Mandate decision + cached check + journal",
+   "target_ms": 50,
+   "n": 126,
+   "p50": 0.426,
+   "p95": 31.73,
+   "met": true
+  },
+  {
+   "stage": "facilitator_verify",
+   "title": "Bank facilitator verify (with screening)",
+   "target_ms": 500,
+   "n": 6,
+   "p50": 24.983,
+   "p95": 479.843,
+   "met": true
+  },
+  {
+   "stage": "screening",
+   "title": "New counterparty: ARES + VAT + ISIR + sanctions",
+   "target_ms": 2500,
+   "n": 108,
+   "p50": 23.664,
+   "p95": 128.671,
+   "met": true
+  },
+  {
+   "stage": "tx_in_block:*",
+   "title": "Signature → tx in block (settle, authorize, capture, void)",
+   "target_ms": 6000,
+   "n": 82,
+   "p50": 624.734,
+   "p95": 672.364,
+   "met": true
+  },
+  {
+   "stage": "bank_feed",
+   "title": "Tx in block → row in the /bank feed",
+   "target_ms": 5000,
+   "n": 0,
+   "p50": null,
+   "p95": null,
+   "met": null
+  },
+  {
+   "stage": "refusal_to_client",
+   "title": "Refusal → message to the client",
+   "target_ms": 100,
+   "n": 42,
+   "p50": 3.825,
+   "p95": 46.022,
+   "met": true
+  }
+ ],
+ "coverage": {
+  "total": {
+   "lines": 91.06771915247195,
+   "branches": 83.28729281767956
+  },
+  "targets": [
+   {
+    "target": "bank/ lines ≥ 80 %",
+    "value": 91.06771915247195,
+    "met": true
+   },
+   {
+    "target": "bank/mandate.py branches ≥ 90 %",
+    "value": 92.37288135593221,
+    "met": true
+   },
+   {
+    "target": "bank/verifier.py branches ≥ 90 %",
+    "value": 97.05882352941177,
+    "met": true
+   },
+   {
+    "target": "bank/explain.py branches ≥ 90 %",
+    "value": 96.42857142857143,
+    "met": true
+   },
+   {
+    "target": "bank/facilitator.py branches ≥ 90 %",
+    "value": 91.30434782608695,
+    "met": true
+   },
+   {
+    "target": "bank/screening/__init__.py branches ≥ 90 %",
+    "value": 91.37931034482759,
+    "met": true
+   }
+  ]
+ },
+ "evals": {
+  "mode": "MOCK",
+  "injections": {
+   "variants": 20,
+   "controls": 2,
+   "money_blocked": 20,
+   "money_runs": 35,
+   "money_runs_blocked": 35,
+   "outcome_as_expected": 20,
+   "controls_paid": 2,
+   "scripted_agent_followed": 2,
+   "scripted_agent_runs": 15,
+   "items_variants": 3,
+   "items_paid_by_injection": 0
+  },
+  "judge": {
+   "items": 40,
+   "precision": 0.6153846153846154,
+   "recall": 0.42105263157894735,
+   "tp": 8,
+   "fp": 5,
+   "fn": 11,
+   "tn": 16,
+   "valid_json_rate": 1.0,
+   "model": "mock (keyword heuristic)",
+   "injection_items": [
+    "ChIJjudgeEval0018"
+   ],
+   "injection_flagged": false
+  },
+  "explanations": {
+   "texts": 64,
+   "sources_subset": 64,
+   "client_texts": 32,
+   "client_clean": 32,
+   "ai_texts": 29,
+   "ai_labelled": 29
+  },
+  "source": "tests/evals/harness.py, MOCK (scripted models, keyword-heuristic judge)"
+ },
+ "llm_totals": {
+  "calls": 48,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cost_usd": 0.0
+ },
+ "reconciliation": {
+  "deals_checked": 30,
+  "deals_ok": 30,
+  "buyer_debits": {
+   "EURC": 33,
+   "tCZK": 6
+  },
+  "wrong_debits": [],
+  "wrong_debit_count": 0,
+  "transfers_to_evil": 0,
+  "first_block": 48323414,
+  "ok": true
+ },
+ "defects": {
+  "D2": "dispute timer and dispute API not merged (stream U: bank/deadlines.py, dispute decisions; N13/N14/S05)",
+  "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId"
+ }
+}

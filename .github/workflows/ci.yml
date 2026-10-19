@@ -1,0 +1,56 @@
+# CI (SPEC §19.1): levels 1-3 on every push — unit tests, contract tests, evals — in MOCK mode, no secrets.
+# The scenario matrix and the smoke test run locally with testnet keys; only their report is committed.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: pytest + coverage (MOCK=1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MOCK: "1"
+      FAULTS: ""
+      LIVE: "0"
+      FORK: "0"   # anvil fork tests need the public RPC: skipped in CI
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Foundry (anvil for the local-chain tests, no fork)
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: pytest (unit + evals, MOCK)
+        run: >-
+          pytest --cov=bank --cov-branch --cov-report=term
+          --cov-report=json:reports/coverage.json --cov-report=xml:reports/coverage.xml
+      - name: Coverage targets (SPEC §19.5 — reported, not a gate)
+        if: always()
+        run: python -m scripts.report --coverage-only reports/coverage.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: reports/coverage.*
+
+  forge:
+    name: forge unit tests (no fork)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: forge test
+        working-directory: contracts
+        run: forge test --no-match-contract Fork -vv
