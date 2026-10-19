@@ -245,3 +245,17 @@ def test_human_actor_is_required(world):
     disputes.settle(deal_id, now=T0)
     with pytest.raises(disputes.DisputeError):
         disputes.buyer_review(deal_id, "demo-place-02", "accept", "agent:buyer", now=T0 + 1)
+
+
+def test_a_reverted_capture_returns_the_whole_lock_and_releases_the_budget(world):
+    world.flagged.add("demo-place-06")
+    deal_id = make_deal("honest")
+    disputes.settle(deal_id, now=T0)  # 19 accepted paid now (minus holdback), the flagged item waits
+    world.sender.fail_next = chain.TxReverted("seller frozen", None)  # e.g. the payee was delisted meanwhile
+    deadlines.tick(now=T0 + 61)
+    assert fns(world)[-2:] == ["capture", "void"]
+    e = next(e for e in journal.entries(deal_id) if e["event"] == "dispute.capture_impossible")
+    assert e["actor"] == "timer" and "frozen" in e["payload"]["error"]
+    assert state(deal_id) == "closed" and disputes.get(deal_id)["voided"] == 1
+    r = reservation(deal_id)
+    assert r["amount"] == r["committed"] == 452  # only the first capture (4,5125 € rounded up) stays spent

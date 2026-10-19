@@ -9,7 +9,7 @@ import threading
 import time
 from collections import defaultdict
 
-from bank import db, deals, escrow, journal, money
+from bank import chain, db, deals, escrow, journal, money
 
 DEMO_TERMS = {"review_window_s": 60, "objection_window_s": 120, "decision_sla_s": 120,
               "on_buyer_silence": "accept", "on_seller_silence": "rejection_stands",
@@ -177,15 +177,16 @@ def _execute(deal: dict, pending: dict, actor: str, rule: str):
     deal_id, asset = deal["deal_id"], deal["asset"]
     try:
         tx = _send(deal, pending)
-    except escrow.EscrowError as e:
-        if pending["kind"] == "capture" and "authorizationExpiry" in str(e):
-            # too late to pay anyone: the lock can only go back to the buyer (§9.5)
-            journal.append(actor, "dispute.capture_impossible", {"error": str(e), "rule": rule}, deal_id=deal_id)
+    except (escrow.EscrowError, chain.TxReverted) as e:
+        if pending["kind"] == "capture" and (isinstance(e, chain.TxReverted) or "authorizationExpiry" in str(e)):
+            # the seller can no longer be paid (expiry, seller delisted/frozen): like deals.settle, the whole
+            # remaining lock goes back to the buyer and the budget is released (§9.5, INTERFACES integration rules)
+            journal.append(actor, "dispute.capture_impossible", {"error": str(e)[:300], "rule": rule}, deal_id=deal_id)
             db.run("UPDATE disputes SET pending_json=? WHERE deal_id=?", (db.dumps({"kind": "void"}), deal_id))
-            return _execute(deal, {"kind": "void"}, actor, "authorization_expiry")
+            return _execute(deal, {"kind": "void"}, actor, "capture_impossible")
         journal.append(actor, "dispute.tx_failed", {"pending": pending, "error": str(e)[:200]}, deal_id=deal_id)
         return None
-    except Exception as e:  # noqa: BLE001 — revert or ambiguous RPC error: retry later with the same idem key
+    except Exception as e:  # noqa: BLE001 — ambiguous RPC error: retry later with the same idem key
         journal.append(actor, "dispute.tx_failed", {"pending": pending, "error": repr(e)[:200]}, deal_id=deal_id)
         return None
     from bank import mandate
@@ -224,11 +225,14 @@ def advance(deal_id: str, actor: str = "bank", rule: str = "", now: float | None
                 if _execute(deal, d["pending"], actor, rule) is None:
                     break
                 continue
+            if d["voided"]:  # the lock went back to the buyer (final void or a failed capture): nothing left to pay
+                _close(deal_id, actor, rule, now)
+                break
             nxt, due = None, owed(deal, d)
             if due > d["captured"]:
                 nxt = {"kind": "capture", "amount": due - d["captured"], "n": d["capture_n"] + 1}
             elif all(it["outcome"] for it in d["items"]) and d["holdback_released"]:
-                if d["captured"] < int(deal["amount"]) and not d["voided"]:
+                if d["captured"] < int(deal["amount"]):
                     nxt = {"kind": "void"}
                 else:
                     _close(deal_id, actor, rule, now)
