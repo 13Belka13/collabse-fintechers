@@ -101,6 +101,16 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       dispute card (items, rule results + violated criterion, deadlines and silence outcome, judge reasons with sources,
       seller statement, accept/reject per item) → `capture`/`void`; pages `/bank` (client/compliance
       toggle), `/mandate`, `/deals`, `/deals/{id}/dispute`, `/statement`; AI-generated label.
+  - [x] `bank/disputes.py` (U): items in question wait in escrow, the rest captured at once minus the 5% holdback;
+        buyer review (reject only with an agreed criterion + evidence), seller objection, bank decision; every
+        step journalled `human:<who>`/`timer`; captures written down before sending (idem key per n), final void last
+  - [x] `bank/deadlines.py` (U): timer thread every 5 s from the UI router's lifespan; silence defaults, holdback
+        release, deadlines clamped to authorizationExpiry − 30 s, expiry alarm; fake-clock tests N13, N14,
+        holdback, no double capture on repeated ticks / lost tx answer
+  - [x] Pages (U): `/bank` (client view only via `codes.client_view`, compliance view, decision ms + p95, model
+        cost), `/mandate` (versions + policy_hash, budget, VAT ack / confirm buttons), `/deals`, `/deals/{id}`,
+        dispute card, `/statement` + chain reconcile; five §13 demo buttons; `DEMO_SIM=1` simulated chain (labelled)
+  - [ ] Wire `deals.auto_settle` → `disputes.settle` (integrator), then a live Base Sepolia run with real timer windows
 - [ ] **L6 Bank answer** — same deal in tCZK through escrow + bank facilitator; strict mode; VAT
       rule (§6.5): EURC → "VAT risk acknowledged" mark (acknowledged in scene 1), tCZK 125,00 Kč → passes
       (account published). `TCZK_NAME` must match the token in use.
