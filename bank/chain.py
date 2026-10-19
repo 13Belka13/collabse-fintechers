@@ -51,7 +51,10 @@ def w3() -> Web3:
     global _w3
     with _w3_lock:
         if _w3 is None:
-            headers = {"x-api-key": config.TATUM_API_KEY} if "tatum" in config.RPC_URL and config.TATUM_API_KEY else {}
+            # custom headers replace web3's defaults: keep Content-Type (anvil answers "Invalid request" without it)
+            headers = {"Content-Type": "application/json"}
+            if "tatum" in config.RPC_URL and config.TATUM_API_KEY:
+                headers["x-api-key"] = config.TATUM_API_KEY
             _w3 = Web3(Web3.HTTPProvider(config.RPC_URL, request_kwargs={"headers": headers, "timeout": 30}))
         return _w3
 
