@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from bank import config, timing
+from bank import config
 from tests.evals import harness
 
 pytestmark = [pytest.mark.live,
@@ -19,7 +19,7 @@ def test_live_evals(monkeypatch):
     monkeypatch.setenv("MOCK", "0")
     config.reload()
     out = harness.run_all()
-    out["llm_totals"] = timing.llm_totals()
+    out["llm_totals"] = harness.spend()  # summed over the sandboxes (their temp DBs are gone)
     (config.ROOT / "reports" / "evals-live.json").write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
     inj = out["injections"]
     assert inj["money_blocked"] == inj["variants"]  # 100 % at the money level, whatever the live model did

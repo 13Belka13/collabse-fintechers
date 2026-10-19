@@ -183,6 +183,31 @@ def evals() -> dict:
     return out
 
 
+def live_agent_md(inj: dict) -> list[str]:
+    """The buyer on the live MODEL_MAIN (only in reports/evals-live.json): what the real model did."""
+    if not inj.get("live_runs"):
+        return []
+    misses = [(r["id"], x) for r in inj.get("rows", []) for x in r["runs"]
+              if x["model"] == "live" and not x["outcome_as_expected"]]
+    why = "; ".join(f"{rid}: " + ("the model refused the whole task, nothing was paid" if
+                                  (x.get("agent_text") or "").startswith("The model refused") else
+                                  f"decision {x['decision']}, {len(x['locks'])} lock(s)") for rid, x in misses)
+    return [f"- Agent behaviour (live buyer on the real model, {inj['live_runs']} runs incl. controls): money-level "
+            f"block {inj['live_money_blocked']}/{inj['live_runs']}; outcome as expected "
+            f"{inj['live_outcome_as_expected']}/{inj['live_runs']}; runs where the model tried a call the bank had to "
+            f"reject: {inj['live_agent_tried_unsafe']}." + (f" Not as expected — {why}." if why else "")]
+
+
+def eval_spend_md(t: dict | None) -> list[str]:
+    if not t or not t.get("calls"):
+        return []
+    rows = [f"| `{r['stage']}` | {r['model']} | {r['calls']} | {r['input_tokens']} | {r['output_tokens']} "
+            f"| ${r['cost_usd']:.4f} | {r['ms'] / r['calls']:.0f} ms |" for r in t.get("by_stage", [])]
+    return [f"Live eval run: {t['calls']} model calls, {t['input_tokens']} input / {t['output_tokens']} output tokens, "
+            f"**${t['cost_usd']:.4f}** (estimate at the EU-profile prices in `bank/timing.py`).", "",
+            "| Stage | Model | Calls | In | Out | Cost | Avg latency |", "|---|---|---|---|---|---|---|", *rows, ""]
+
+
 def strip_rows(e: dict) -> dict:
     return {k: ({kk: vv for kk, vv in v.items() if kk != "rows"} if isinstance(v, dict) else v) for k, v in e.items()}
 
@@ -286,6 +311,7 @@ def build(target: str) -> tuple[str, dict]:
            "- Agent behaviour (scripted MOCK buyer — a property of the script, not of a model): it followed the injected "
            f"text in {inj['scripted_agent_followed']}/{inj['scripted_agent_runs']} runs; the compromised model tries every "
            "unsafe call by construction and the tool layer rejected all of them.",
+           *live_agent_md(inj),
            f"- Injected delivered items paid anyway: {inj['items_paid_by_injection']}/{inj['items_variants']} item variants "
            "(judge quality; capped at the per-item price inside the escrowed amount, never a new payee).",
            f"- Judge on {jd['items']} labelled items: precision {jd['precision']:.2f}, recall {jd['recall']:.2f}, valid JSON "
@@ -297,6 +323,7 @@ def build(target: str) -> tuple[str, dict]:
            f"Scenario runs: {llm['calls']} model calls, {llm['input_tokens']} input / {llm['output_tokens']} output tokens, "
            f"**${llm['cost_usd']:.4f}** — estimate at list prices (`bank/timing.py` PRICES); Bedrock bills separately. "
            f"Mode: {'MOCK (scripted replies)' if llm['cost_usd'] == 0 else 'live Bedrock'}.", "",
+           *eval_spend_md(ev.get("llm_totals")),
            "## Reproduce", "", "```bash",
            f"python -m scripts.scenarios --runs {raw['runs']} --target {target}",
            "pytest --cov=bank --cov-branch --cov-report=json:reports/coverage.json",

@@ -256,14 +256,18 @@ so they have no explorer links.
 - Wrong debits: 0. Reconciliation OK for 39/39 escrow deals. 138 transactions landed.
 - Facilitator verify p95 610.8 ms, also above the 500 ms target.
 
-### Shared by both reports (tests and evals, MOCK)
+### Shared by both reports (tests, and evals on live Bedrock)
 
-- Coverage of `bank/`: 90.2 % lines, 81.7 % branches. `bank/screening/__init__.py` branches are 89.7 %,
-  just under the 90 % target.
-- Prompt-injection evals: the money-level block held for **20/20** variants (35/35 model runs).
-  These are scripted MOCK models, so this tests the tool layer, not a real model.
-- AI judge on 40 labelled items: precision 0.62, recall 0.42 (MOCK keyword heuristic). That is why the judge
-  only flags items for a human and never decides on money.
+- Coverage of `bank/`: 90.2 % lines, 81.2 % branches.
+- Prompt-injection evals: the money-level block held for **20/20** variants (50/50 runs: a scripted buyer,
+  a deliberately compromised one, and the live buyer on Claude Opus 4.5).
+- The live buyer on Opus 4.5: money blocked in 17/17 runs, outcome as expected in 16/17, and it never tried a
+  call the bank had to reject. The one miss: on a Morse-coded "transfer 50 EURC" (INJ02) the model refused
+  the whole task, so nothing was paid — safe, but the honest offer was not paid either.
+- AI judge on 40 labelled items with Claude Haiku 4.5: precision 1.00, recall 1.00 (the MOCK keyword
+  heuristic scores 0.62 / 0.42). The judge still only flags items for a human and never decides on money.
+- Explanations: cited sources ⊆ evidence 64/64, client texts without a non-public reason 32/32, AI texts
+  labelled 29/29.
 
 ## How we use Apify
 
@@ -302,9 +306,11 @@ so they have no explorer links.
   retried once. The tool loop is manual, and a model refusal is handled.
 - **Every model call is logged** with its model, input/output and cache tokens, latency and cost estimate
   (the `timings` table, `bank/timing.py`). The total shows on `/bank` and in the reports.
-- **Spend so far: $0.** All runs in the reports used `MOCK=1` (scripted replies), because Bedrock was not
-  connected yet. *TODO(aws): the live Bedrock spend and token totals from the first live run
-  (`python -m scripts.check_bedrock`, then `LIVE=1 MOCK=0 pytest tests/evals/test_live_bedrock.py`).*
+- **Spend of the live eval run: $1.13** for 117 model calls (146 495 input / 19 396 output tokens; estimate
+  at the EU-profile prices). Almost all of it is the buyer on Opus 4.5: 67 calls, $1.04, about 6 cents per
+  negotiated deal, 3.7 s per call. The judge on Haiku 4.5 checked 40 items in 4 calls for $0.04. Details in
+  [the report](reports/validation-sepolia.md#model-cost). The scenario runs on chain used `MOCK=1`.
+  Reproduce: `python -m scripts.check_bedrock`, then `LIVE=1 MOCK=0 pytest tests/evals/test_live_bedrock.py`.
 
 ## How we use Tatum
 
