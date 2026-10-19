@@ -397,3 +397,12 @@ def test_revert_at_gas_estimation_is_a_tx_would_revert(local_chain):
         s.send({"to": addr, "data": "0x"}, kind="capture", idem_key="d7:capture:1")  # no gas given -> estimated
     assert db.one("SELECT COUNT(*) n FROM onchain_txs WHERE idem_key='d7:capture:1'")["n"] == 0  # nothing signed
     assert issubclass(chain.TxWouldRevert, chain.TxReverted)
+
+
+def test_empty_env_values_fall_back_to_defaults(monkeypatch):
+    """`cp .env.example .env` leaves TOKEN= lines empty: they must mean "use the default", not ""."""
+    for name in ("AGENT_TOKEN_ALFA", "SELLER_TOKEN", "HUMAN_TOKEN", "BANK_TO_SELLER_TOKEN", "BANK_OPERATOR_ADDR", "MOCK"):
+        monkeypatch.setenv(name, "")
+    config.reload()
+    assert config.SELLER_TOKEN == "dev-seller" and config.HUMAN_TOKEN == "dev-human" and config.MOCK is True
+    assert "dev-agent-alfa" in config.AGENT_TOKENS and config.BANK_OPERATOR_ADDR.startswith("0x")

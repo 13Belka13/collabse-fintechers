@@ -11,8 +11,9 @@ if os.getenv("COLLABSE_NO_DOTENV") != "1":  # tests run hermetic: never the real
 
 
 def _env(name, default=""):
-    # python-dotenv already drops inline " # comments"; don't cut values (an HMAC secret may contain '#')
-    return os.getenv(name, default).strip().strip('"')
+    # python-dotenv already drops inline " # comments"; don't cut values (an HMAC secret may contain '#').
+    # An empty value ("TOKEN=" copied from .env.example) means "not set": the default applies.
+    return os.getenv(name, "").strip().strip('"') or default
 
 
 def reload():
