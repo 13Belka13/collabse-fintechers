@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS timings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, deal_id TEXT, stage TEXT NOT NULL,
   ms REAL NOT NULL, ok INTEGER NOT NULL, model TEXT, input_tokens INTEGER, output_tokens INTEGER,
   cache_read_tokens INTEGER, cache_write_tokens INTEGER, cost_usd REAL);
+CREATE TABLE IF NOT EXISTS frozen_wallets (
+  address TEXT PRIMARY KEY, case_ref TEXT, frozen_at REAL NOT NULL);
 """
 
 _local = threading.local()
