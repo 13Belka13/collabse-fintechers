@@ -386,3 +386,14 @@ def test_read_retry_returns_when_ok(monkeypatch):
 
 def test_tx_link():
     assert chain.tx_link("abc").endswith("/tx/0xabc")
+
+
+@pytest.mark.chain
+def test_revert_at_gas_estimation_is_a_tx_would_revert(local_chain):
+    w3, keys = local_chain
+    s = chain.sender(keys[0])
+    addr = s.send({"data": REVERTER_INITCODE, "gas": 100_000}, kind="deploy")["receipt"]["contractAddress"]
+    with pytest.raises(chain.TxWouldRevert):
+        s.send({"to": addr, "data": "0x"}, kind="capture", idem_key="d7:capture:1")  # no gas given -> estimated
+    assert db.one("SELECT COUNT(*) n FROM onchain_txs WHERE idem_key='d7:capture:1'")["n"] == 0  # nothing signed
+    assert issubclass(chain.TxWouldRevert, chain.TxReverted)

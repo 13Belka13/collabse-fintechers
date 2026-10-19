@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from eth_account import Account
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+if os.getenv("COLLABSE_NO_DOTENV") != "1":  # tests run hermetic: never the real keys or the live RPC from .env
+    load_dotenv(ROOT / ".env")
 
 
 def _env(name, default=""):

@@ -30,13 +30,20 @@ class ChainSender:
 
     def send(self, call, **kw):
         fn = call.fn_name
+        prior = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=? AND status='mined'", (kw["idem_key"],))
+        if prior:  # like chain.Sender: the same idempotency key returns the same tx, nothing moves twice
+            return {"tx_hash": prior["tx_hash"], "link": chain.tx_link(prior["tx_hash"]), "status": "mined", "reused": True}
         if fn == "authorize":
             self.locked["capturable"] = int(call.args[1])
         elif fn == "capture":
+            if self.locked.get("fail_capture") == "estimate":  # a delisted/frozen receiver: refused at gas estimation
+                raise chain.TxWouldRevert("execution reverted: NotAllowlisted")
             if self.locked.get("fail_capture"):
                 raise chain.TxReverted("0x" + "ee" * 32, {"status": 0})
             self.locked["capturable"] -= int(call.args[1])
         elif fn == "void":
+            if self.locked.pop("fail_void_once", False):
+                raise TimeoutError("rpc timeout on void")
             self.locked["voided"] = self.locked["capturable"]
             self.locked["capturable"] = 0
         self.sent.append((fn, call.args[1] if fn in ("authorize", "capture") else None, kw["idem_key"]))
@@ -301,3 +308,89 @@ def test_buyer_agent_cannot_reach_another_companys_deal(bank):
     call = http_transport(client=TestClient(bank.app))
     with pytest.raises(Exception, match="404"):
         call("POST", f"/api/deals/{deal_id}/pay", json={})
+
+
+# ---- second review round ------------------------------------------------------------------------------
+
+def test_capture_refused_at_gas_estimation_still_returns_the_lock(bank):
+    bank.locked["fail_capture"] = "estimate"
+    deal_id, _ = deal(bank, asset="tCZK")
+    bank.api.post(f"/api/deals/{deal_id}/pay")
+    assert deals.get(deal_id)["state"] == "closed" and [s[0] for s in bank.sender.sent] == ["authorize", "void"]
+    assert budget()["remaining_eur_cents"] == 3000
+
+
+def test_a_new_offer_needs_a_new_human_confirmation(bank, monkeypatch):
+    task = {**TASK, "budget": {"value": "1000", "currency": "EUR"}, "criteria": {**TASK["criteria"], "count": 32}}
+    deal_id, _ = deal(bank, asset="tCZK", task=task)
+    with monkeypatch.context() as m:
+        m.setattr(screening, "cached", lambda ico: None)  # the confirmed pay is refused for another reason
+        view = bank.api.post(f"/api/deals/{deal_id}/confirm", json={"by": "anna"}, headers=HUMAN).json()
+        assert view["code"] == "UNDER_REVIEW"
+    bank.api.post(f"/api/deals/{deal_id}/negotiate", json={"message": "and 38?"})  # the seller re-quotes
+    assert deals.get(deal_id)["confirmed_by"] is None
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["code"] == "CONFIRMATION_REQUIRED"
+    assert bank.sender.sent == []
+
+
+def test_settle_can_be_retried_after_a_failed_void(bank, monkeypatch):
+    monkeypatch.setattr(deals, "auto_settle", lambda deal_id: None)
+    deal_id, _ = deal(bank, asset="tCZK", seller_id="s-gama", mode="fake_data")
+    bank.api.post(f"/api/deals/{deal_id}/pay")
+    bank.locked["fail_void_once"] = True
+    with pytest.raises(TimeoutError):
+        deals.settle(deal_id)
+    out = deals.settle(deal_id)  # the retry: same capture (idem key), no second commit, then the void
+    assert out["state"] == "settled" and [s[0] for s in bank.sender.sent] == ["authorize", "capture", "void"]
+    b = budget()
+    assert b["committed_eur_cents"] == 450 and b["remaining_eur_cents"] == 2550
+
+
+def test_late_authorize_after_expiry_is_recognised_as_the_lock(bank, monkeypatch):
+    deal_id, _ = deal(bank, asset="tCZK")
+    real_send = bank.sender.send
+
+    def lands_but_answer_lost(call, **kw):
+        if call.fn_name == "authorize":
+            bank.locked["capturable"] = int(call.args[1])  # it landed on chain ...
+            raise TimeoutError("rpc timeout")              # ... but we never saw the receipt
+        return real_send(call, **kw)
+
+    monkeypatch.setattr(bank.sender, "send", lands_but_answer_lost)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").status_code == 503
+    db.run("UPDATE deals SET payment_info_json=json_set(payment_info_json, '$.preApprovalExpiry', ?) WHERE deal_id=?",
+           (int(time.time()) - 60, deal_id))
+    monkeypatch.setattr(bank.sender, "send", real_send)
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and not any(s[0] == "authorize" for s in bank.sender.sent)  # no second lock
+    assert budget()["reserved_eur_cents"] + budget()["committed_eur_cents"] == 500
+
+
+def test_payment_info_amount_is_the_accepted_quote(bank):
+    deal_id, _ = deal(bank, asset="tCZK")
+    bank.seller.post("/mode", json={"seller_id": "s-beta", "mode": "honest"})
+    deals.fetch_quote(deals.get(deal_id), deals.core.seller("s-beta"))
+    db.run("UPDATE deals SET quote_json=?, amount=99999 WHERE deal_id=?", (db.dumps({"amount": 12_500, "pay_to":
+           wallet_of("30181020")}), deal_id))
+    assert escrow.payment_info(escrow._deal(deal_id))["maxAmount"] == 12_500
+
+
+def test_pay_again_resends_a_lost_seller_notice(bank, monkeypatch):
+    real = deals.notify_seller
+    monkeypatch.setattr(deals, "notify_seller", lambda d: None)  # the seller was down
+    deal_id, _ = deal(bank, asset="tCZK")
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
+    assert deals.get(deal_id)["state"] == "authorized"
+    monkeypatch.setattr(deals, "notify_seller", real)
+    again = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert "asked again" in again["explanation"] and deals.get(deal_id)["state"] == "settled"
+    assert [s[0] for s in bank.sender.sent].count("authorize") == 1
+
+
+@pytest.mark.parametrize("text", ["HTTPS://evil.example/pay", "www.evil.example/pay", "visit evil.example/pay now",
+                                  "[x](//evil.example)"])
+def test_ai_text_with_any_foreign_link_is_dropped(monkeypatch, text):
+    d = codes.refuse(codes.Code.AMOUNT_ABOVE_LIMIT, [codes.reason("per_deal_max", True, "12 € > 10 €",
+                                                                 "https://bank.example/mandate")])
+    monkeypatch.setitem(llm.MOCKS, "explain", lambda m, t: {"text": db.dumps({"text": text, "cited_sources": []})})
+    assert explain.render(d, "client", ai=True)["ai_generated"] is False

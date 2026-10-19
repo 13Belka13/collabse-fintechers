@@ -11,7 +11,13 @@ import time
 
 from eth_account import Account
 from web3 import Web3
-from web3.exceptions import TransactionNotFound
+from web3.exceptions import ContractLogicError, TransactionNotFound
+
+try:  # eth-tester (local test chain) reports a revert during gas estimation with its own exception
+    from eth_tester.exceptions import TransactionFailed as _TesterRevert
+except ImportError:  # pragma: no cover
+    _TesterRevert = ContractLogicError
+WOULD_REVERT = (ContractLogicError, _TesterRevert)
 
 from bank import config, db, timing
 
@@ -45,6 +51,14 @@ class TxReverted(Exception):
     def __init__(self, tx_hash, receipt):
         super().__init__(f"transaction reverted: {tx_link(tx_hash)}")
         self.tx_hash, self.receipt = tx_hash, receipt
+
+
+class TxWouldRevert(TxReverted):
+    """The contract refused already at gas estimation (e.g. a frozen or delisted receiver): nothing was sent."""
+
+    def __init__(self, reason: str):
+        Exception.__init__(self, f"transaction would revert: {reason[:200]}")
+        self.tx_hash, self.receipt = None, None
 
 
 def w3() -> Web3:
@@ -229,7 +243,11 @@ class Sender:
             if self.nonce is None:
                 self.nonce = self._pending()
             nonce = self.nonce
-            signed = self.acct.sign_transaction(self._build(call, nonce, gas))
+            try:
+                built = self._build(call, nonce, gas)
+            except WOULD_REVERT as e:
+                raise TxWouldRevert(str(e)) from e
+            signed = self.acct.sign_transaction(built)
             tx_hash, raw = _hex(signed.hash), _hex(signed.raw_transaction)
             existing = db.one("SELECT status, idem_key FROM onchain_txs WHERE tx_hash=?", (tx_hash,))
             if existing and existing["status"] in ("mined", "reverted"):

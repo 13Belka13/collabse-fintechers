@@ -1,9 +1,11 @@
 # Shared fixtures: every test gets its own temp SQLite, MOCK=1, no faults; optional in-memory chain.
 import os
 
-import pytest
+os.environ["COLLABSE_NO_DOTENV"] = "1"  # before bank.config is imported: tests never see the real .env
 
-from bank import chain, config, db
+import pytest  # noqa: E402
+
+from bank import chain, config, db  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

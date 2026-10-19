@@ -105,11 +105,27 @@ def render(decision: dict, audience: str = "client", deal_id: str | None = None,
                               deal_id=deal_id or decision.get("deal_id"))
     if not ok or not value.text.strip() or not set(value.cited_sources) <= allowed:
         return out
-    if not set(re.findall(r"https?://[^\s)\]>\"']+", value.text)) <= allowed:  # a link not in the evidence
+    if not _links_allowed(value.text, allowed):  # a link or domain that is not one of the decision's sources
         return out
     if audience == "client" and _leaks(value.text):
         return out
     return {"text": value.text, "cited_sources": value.cited_sources, "ai_generated": True, "label": AI_LABEL}
+
+
+_LINK = re.compile(r"(?i)(?:[a-z][a-z0-9+.-]*:)?//[^\s)\]>\"'<]+|\bwww\.[^\s)\]>\"'<]+"
+                   r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:/[^\s)\]>\"'<]*)?")
+
+
+def _norm_link(s: str) -> str:
+    s = re.sub(r"(?i)^(?:[a-z][a-z0-9+.-]*:)?//", "", s.strip()).lower().rstrip(".,;:!?")
+    return s.removeprefix("www.").rstrip("/")
+
+
+def _links_allowed(text: str, allowed: set[str]) -> bool:
+    """Every link-like token in model text (any scheme or case, '//x', 'www.x', bare 'domain.tld/path') must be
+    one of the decision's own source URLs. Czech legal suffixes like 's.r.o.' have no 2-letter TLD and pass."""
+    ok = {_norm_link(a) for a in allowed}
+    return all(_norm_link(m) in ok for m in _LINK.findall(text))
 
 
 def _mock_explain(messages, tools):

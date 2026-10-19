@@ -120,6 +120,12 @@ def offer_view(offer: dict, asset: str) -> dict:
 
 
 def negotiate(deal_id: str, message: str) -> dict:
+    """Under the same per-deal lock as pay(): an offer can never change between the decision and the lock."""
+    with _locks[deal_id]:
+        return _negotiate(deal_id, message)
+
+
+def _negotiate(deal_id: str, message: str) -> dict:
     deal = _require(deal_id)
     if deal["state"] in PAID:
         raise DealError(409, f"deal is {deal['state']}")
@@ -146,7 +152,8 @@ def negotiate(deal_id: str, message: str) -> dict:
         amount = int(offer["prices"][deal["asset"]])
         _set(deal_id, "offered", "offer_stored", {"offer_id": offer["offer_id"], "amount": amount,
                                                   "source": "untrusted:seller"},
-             offer_json=db.dumps(offer), criteria_json=db.dumps(criteria), amount=amount)
+             offer_json=db.dumps(offer), criteria_json=db.dumps(criteria), amount=amount,
+             confirmed_by=None)  # a human confirmed the previous offer, not this one
         out["offer"] = {**offer_view(offer, deal["asset"]), "criteria": criteria}
     _prefetch(seller)
     return out
@@ -271,8 +278,8 @@ def pay(deal_id: str) -> dict:
     """The money path. Returns a Decision (status ok/refused/requires_user_action), never moves money twice."""
     with _locks[deal_id]:
         deal = _require(deal_id)
-        if deal["state"] in PAID:
-            return codes.ok(deal_id=deal_id, explanation="Already paid: the funds are locked in escrow for this deal.")
+        if deal["state"] in PAID or deal["state"] == "closed":
+            return _already_paid(deal)
         if deal["state"] not in PAYABLE or not deal["offer"]:
             raise DealError(409, "no offer to pay yet: negotiate first")
         seller = core.seller(deal["seller_id"])
@@ -346,15 +353,35 @@ def _authorize_and_notify(deal: dict, seller: dict, decision_ms: float, marks: l
     _record(deal_id, decision, decision_ms)
     ack = notify_seller(deal_id)
     if ack is False:  # the seller saw something wrong in the escrow: give the money back
-        escrow.void(deal_id)
-        mandate.release(deal_id)
-        _set(deal_id, "closed", "escrow_returned", {"reason": "seller_rejected_escrow"})
-        refusal = codes.refuse(Code.QUOTE_MISMATCH, [codes.reason(
-            "seller_rejected_escrow", True, "The seller did not accept the escrow terms; the lock was returned.")],
-            deal_id=deal_id)
-        _record(deal_id, refusal, decision_ms)
-        return refusal
+        return _return_lock(deal_id, decision_ms)
     return decision
+
+
+def _return_lock(deal_id: str, decision_ms: float = 0.0) -> dict:
+    escrow.void(deal_id)
+    _module("mandate").release(deal_id)
+    _set(deal_id, "closed", "escrow_returned", {"reason": "seller_rejected_escrow"})
+    refusal = codes.refuse(Code.QUOTE_MISMATCH, [codes.reason(
+        "seller_rejected_escrow", True, "The seller did not accept the escrow terms; the lock was returned.")],
+        deal_id=deal_id)
+    _record(deal_id, refusal, decision_ms)
+    return refusal
+
+
+def _already_paid(deal: dict) -> dict:
+    """pay() again on a deal past the lock never locks twice. If the seller has not delivered yet (its notice was
+    lost or it was down), the notice is sent again — that is the retry path for a stuck 'authorized' deal."""
+    deal_id, state = deal["deal_id"], deal["state"]
+    if state == "authorized" and db.one("SELECT 1 FROM deliveries WHERE deal_id=?", (deal_id,)) is None:
+        ack = notify_seller(deal_id)
+        if ack is False:
+            return _return_lock(deal_id)
+        return codes.ok(deal_id=deal_id, explanation="The funds are locked in escrow; the seller was asked again to "
+                        "deliver." if ack else "The funds are locked in escrow; the seller is not reachable yet — "
+                        "call pay again later.")
+    if state == "closed":
+        return codes.ok(deal_id=deal_id, explanation="This deal is closed; its escrow lock was settled or returned.")
+    return codes.ok(deal_id=deal_id, explanation=f"Already paid ({state}): the funds are in escrow for this deal.")
 
 
 def notify_seller(deal_id: str) -> bool | None:
@@ -418,7 +445,10 @@ def settle(deal_id: str, plan: dict | None = None) -> dict:
             mandate.release(deal_id)
             _set(deal_id, "closed", "capture_failed_returned", {"error": str(e)[:300], "returned": int(deal["amount"])})
             return {"state": "closed", "capture_now": 0, "held": 0, "void": int(deal["amount"]), "error": str(e)}
-        mandate.commit(deal_id, money.to_eur_cents(asset, plan["capture_now"]))
+        target = money.to_eur_cents(asset, plan["capture_now"])
+        done = (db.one("SELECT committed FROM reservations WHERE deal_id=?", (deal_id,)) or {}).get("committed") or 0
+        if done < target:  # a retry after a failed void must not commit the same capture twice
+            mandate.commit(deal_id, target - done)
     if plan["held"] == 0:
         if plan["void"] > 0:
             escrow.void(deal_id)

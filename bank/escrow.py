@@ -100,7 +100,7 @@ def payment_info(deal: dict, now: int | None = None) -> dict:
     now = int(time.time()) if now is None else now
     pi = {"operator": operator_address(), "payer": core.company(deal["buyer_id"])["wallet_address"],
           "receiver": quote["pay_to"], "token": config.ASSETS[deal["asset"]]["address"],
-          "maxAmount": int(deal["amount"]), "preApprovalExpiry": now + PRE_APPROVAL_S,
+          "maxAmount": int(quote["amount"]), "preApprovalExpiry": now + PRE_APPROVAL_S,
           "authorizationExpiry": now + AUTHORIZATION_S, "refundExpiry": now + REFUND_S,
           "minFeeBps": 0, "maxFeeBps": 0, "feeReceiver": ZERO, "salt": str(secrets.randbits(256))}
     pi = {k: (Web3.to_checksum_address(v) if k in ADDRESS_FIELDS else v) for k, v in pi.items()}
@@ -154,6 +154,14 @@ def authorize(deal_id: str) -> dict:
         return {"tx_hash": done["tx_hash"], "status": "mined", "block_number": done["block_number"],
                 "gas_used": done["gas_used"], "link": chain.tx_link(done["tx_hash"]), "reused": True}
     if int(time.time()) >= int(pi["preApprovalExpiry"]):
+        landed = read_state(payment_hash(pi))
+        if landed["capturable"] > 0 or landed["collected"]:  # an earlier authorize landed late: it is the lock
+            prior = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (idem_key(deal_id, "authorize"),)) or {}
+            if prior.get("tx_hash"):
+                db.run("UPDATE onchain_txs SET status='mined' WHERE tx_hash=?", (prior["tx_hash"],))
+            journal.append("bank", "escrow_authorized_late", {"capturable": landed["capturable"]}, deal_id=deal_id)
+            return {"tx_hash": prior.get("tx_hash"), "status": "mined",
+                    "link": chain.tx_link(prior["tx_hash"]) if prior.get("tx_hash") else None, "reused": True}
         raise EscrowError(f"{deal_id}: preApprovalExpiry passed, a new PaymentInfo (new salt) is needed")
     signature = buyer_signature(pi, deal["asset"], core.wallet_key(deal["buyer_id"]))
     call = contract().functions.authorize(as_tuple(pi), int(pi["maxAmount"]),
