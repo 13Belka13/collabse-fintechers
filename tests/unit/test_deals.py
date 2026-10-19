@@ -91,6 +91,8 @@ def world(monkeypatch, seeded):
     screening.prefetch = lambda ico, wallet=None, website_url=None: None
     monkeypatch.setitem(sys.modules, "bank.mandate", mandate)
     monkeypatch.setitem(sys.modules, "bank.screening", screening)
+    # settlement is driven explicitly in these tests; the real verifier (stream S) is covered in test_verifier
+    monkeypatch.setitem(sys.modules, "bank.verifier", None)
     return types.SimpleNamespace(bank=bank, seller=seller_client, sender=sender, mandate=mandate,
                                  screening=screening, locked=locked)
 
