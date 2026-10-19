@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from eth_account import Account
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+if os.getenv("COLLABSE_NO_DOTENV") != "1":  # tests run hermetic: never the real keys or the live RPC from .env
+    load_dotenv(ROOT / ".env")
 
 
 def _env(name, default=""):
@@ -27,6 +28,8 @@ def reload():
     g["EXPLORER"] = _env("EXPLORER", "https://sepolia.basescan.org")
 
     g["AWS_REGION"] = _env("AWS_REGION")
+    g["AWS_PROFILE"] = _env("AWS_PROFILE")  # SSO profile (`aws configure sso` + `aws sso login`); not used with an API key
+    g["BEDROCK_API_KEY"] = _env("AWS_BEARER_TOKEN_BEDROCK")  # short-term Bedrock API key from the console
     g["MODEL_MAIN"] = _env("MODEL_MAIN", "anthropic.claude-opus-5-5")
     g["MODEL_FAST"] = _env("MODEL_FAST", "anthropic.claude-haiku-5-5")
 

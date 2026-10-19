@@ -36,7 +36,9 @@ def client():
         from anthropic import AnthropicBedrockMantle
         if not config.AWS_REGION:
             raise RuntimeError("AWS_REGION is empty (TODO(credential)): run with MOCK=1 until the AWS Toolbox")
-        _client = AnthropicBedrockMantle(aws_region=config.AWS_REGION)
+        # credentials: a Bedrock API key (AWS_BEARER_TOKEN_BEDROCK, read by the SDK) or an SSO profile — never both
+        profile = None if config.BEDROCK_API_KEY else (config.AWS_PROFILE or None)
+        _client = AnthropicBedrockMantle(aws_region=config.AWS_REGION, aws_profile=profile)
     return _client
 
 

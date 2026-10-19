@@ -13,6 +13,11 @@ async def lifespan(app: FastAPI):
     db.conn()
     if config.MOCK:
         print("\n*** MOCK=1: scripted LLM replies, $0 model cost. Set MOCK=0 for live Bedrock. ***\n", flush=True)
+    dev = [n for n, v in (("AGENT_TOKEN_ALFA", next(iter(config.AGENT_TOKENS))), ("SELLER_TOKEN", config.SELLER_TOKEN),
+                          ("HUMAN_TOKEN", config.HUMAN_TOKEN), ("BANK_TO_SELLER_TOKEN", config.BANK_TO_SELLER_TOKEN))
+           if v.startswith("dev-")]
+    if dev:
+        print(f"*** dev default tokens in use: {', '.join(dev)} — set them in .env before a live demo ***", flush=True)
     yield
 
 
