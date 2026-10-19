@@ -1,7 +1,6 @@
 # FAULTS injection at unit level (SPEC §19.2); the same faults run end to end on a chain in scripts/scenarios.py
-# (F01-F05). settle_fail_once is covered on anvil in test_facilitator_chain.py.
-import pytest
-
+# (F01-F05). settle_fail_once is covered on anvil in test_facilitator_chain.py; webhook_duplicate and
+# webhook_bad_hmac in test_webhooks.py.
 from bank import codes, config, db, screening, verifier
 from bank.codes import Code
 
@@ -44,20 +43,3 @@ def test_llm_bad_json_flags_everything_to_a_human_and_captures_nothing(seeded, m
     assert all(it["status"] == "held" and it["judge"]["reason"] == "judge_invalid_json" for it in plan["items"])
     calls = db.one("SELECT COUNT(*) n FROM timings WHERE stage='judge' AND model IS NOT NULL")["n"]
     assert calls == 2  # one retry, then the safe default
-
-
-def _routes():
-    from bank import app
-    return [getattr(r, "path", "") for r in app.app.routes]
-
-
-@pytest.mark.xfail(reason="D3: Tatum webhook /webhooks/tatum not built yet (L7)", strict=False)
-def test_webhook_duplicate_is_counted_once():
-    assert any("webhook" in p for p in _routes())
-    raise AssertionError("write the duplicate-delivery check once the webhook route exists")
-
-
-@pytest.mark.xfail(reason="D3: Tatum webhook /webhooks/tatum not built yet (L7)", strict=False)
-def test_webhook_bad_hmac_is_rejected():
-    assert any("webhook" in p for p in _routes())
-    raise AssertionError("write the bad-HMAC check once the webhook route exists")
