@@ -98,7 +98,8 @@ def summarize(raw: dict) -> dict:
     attacks = [r for r in results if r["attack"]]
     recon = raw["reconciliation"]
     return {
-        "scenarios": len(ids), "p0": sum(not i.startswith("F") for i in ids), "faults": sum(i.startswith("F") for i in ids),
+        "scenarios": len(ids), "p0": sum(i[0] in "SN" for i in ids), "faults": sum(i.startswith("F") for i in ids),
+        "extra": sum(i[0] not in "SNF" for i in ids),
         "attack_scenarios": len({r["id"] for r in attacks}), "runs": raw["runs"], "scenario_runs": len(results),
         "status": {s: sum(r["status"] == s for r in results) for s in ("pass", "xfail", "fail")},
         "attack_runs": len(attacks),
@@ -183,7 +184,8 @@ def build(target: str) -> tuple[str, dict]:
            f"A prototype validated on {'a fork of ' if fork else ''}the testnet, ready for a bank sandbox pilot — "
            "not production-ready.", "",
            "## Summary", "",
-           f"- **{s['scenarios']} scenarios** ({s['p0']} P0 from SPEC §19.2 + {s['faults']} fault injections), "
+           f"- **{s['scenarios']} scenarios** ({s['p0']} P0 from SPEC §19.2, {s['faults']} fault injections, "
+           f"{s['extra']} extra: A01 bank API auth), "
            f"{s['attack_scenarios']} of them attacks or refusals, **{s['runs']} runs each** = {s['scenario_runs']} scenario "
            f"runs: {s['status']['pass']} pass, {s['status']['xfail']} xfail (pending fix named below), "
            f"{s['status']['fail']} fail.",
