@@ -78,19 +78,40 @@ IČO on another page (for example `cez.cz` has no `/kontakt`). Medium means "loo
 **Can I run it locally?** Yes: `pip install -r requirements.txt`, put `INPUT.json` into
 `storage/key_value_stores/default/`, then `python -m my_actor`.
 
+## On the Apify platform
+
+Pushed on 2026-10-19 to the team account as **`savvy_sauger/company-check`** (Actor id `LBLUo7ixHlcyIjNSU`,
+build 0.1.1, private): <https://console.apify.com/actors/LBLUo7ixHlcyIjNSU>. It runs under **Limited
+permissions** (`actorPermissionLevel: LIMITED_PERMISSIONS`, so the Apify MCP server can call it), and
+`actor.json` carries `meta.generatedBy`. Default run options: 512 MB, timeout 300 s, build `latest` (now 0.1.2).
+
+Live runs (2026-10-19, 512 MB):
+
+| Input | Run | Result | Cost |
+| --- | --- | --- | --- |
+| ČEZ, IČO 45274649, `https://www.cez.cz`, Maps in Praha, 3 places | [BZXkhNLHWn1GdqFbE](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/BZXkhNLHWn1GdqFbE) | `medium` (30): site reachable, IČO not on the home page, `/kontakt` (404) or `/obchodni-podminky`; Maps place found, open, 3.9 | $0.0002 + $0.0122 (child crawler-google-places run Vp1xOhdg7vnhD0NXp, 3 places) |
+| Synthetic Gama s.r.o., IČO 59093994, `https://gama-sklad.invalid`, no Maps | [VMWtKXHYycP9leChx](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/VMWtKXHYycP9leChx) | run SUCCEEDED, `medium` (50): `website_reachable=false` (ConnectError) | $0.0002 |
+
+The ČEZ result is the honest one for the three pages we read: cez.cz keeps its IČO elsewhere, and the first
+Maps hit for "ČEZ" in Praha is a ČEZ charging station, not the head office. Pass `companyName` and `city`
+for a sharper Maps match.
+
+The Brno warehouse dataset the seller delivers was recorded with the same account
+(`fixtures/maps/record_maps.py`, compass/crawler-google-places run w9XlXOBtETIUObLGm, $0.37, 74 places);
+see `fixtures/maps/brno_warehouses_recorded.json`. Total Apify spend for the push, the two runs and the
+recording: about **$0.38** of the $105 monthly limit.
+
 ## Develop, validate, push
 
-No `APIFY_TOKEN` was available during the build, so the Actor has not been pushed yet. With a token:
-
 ```bash
-npm install -g apify-cli          # apify-cli 1.10+
-apify login                       # paste the APIFY_TOKEN
+npm install -g apify-cli@1.10.0   # or prefix each command with npx apify-cli@1.10.0
+apify login                       # paste the APIFY_TOKEN (stored in ~/.apify/auth.json, never in git)
 cd actors/company-check
 apify validate-schema             # before every push
 apify push                        # builds on the platform
-apify call company-check -i '{"ico": "45274649", "websiteUrl": "https://www.cez.cz", "checkMaps": false}'
+apify call savvy_sauger/company-check -i '{"ico": "45274649", "websiteUrl": "https://www.cez.cz", "checkMaps": false}'
 ```
 
-Then set **Limited permissions** in the Actor settings (with full permissions the Actor is not visible to the
-MCP server) and put `APIFY_COMPANY_CHECK_ACTOR=<username>/company-check` into the bank's `.env`.
-Tests: `pytest tests/evals/test_company_check.py` from the repository root (8 eval cases, mocked HTTP).
+The bank calls it with `APIFY_COMPANY_CHECK_ACTOR=savvy_sauger/company-check` (the default in
+`bank/config.py`). Tests: `pytest tests/evals/test_company_check.py` from the repository root (8 eval cases,
+mocked HTTP).
