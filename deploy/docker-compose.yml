@@ -1,0 +1,25 @@
+# The AWS host runs this (deploy/deploy.sh). app = bank + seller; caddy = HTTPS (Let's Encrypt) + a password.
+# /opt/collabse/.env comes from SSM Parameter Store at every deploy; AWS credentials come from the instance role.
+services:
+  app:
+    build: ..
+    image: collabse-app:latest
+    env_file: /opt/collabse/.env
+    environment:
+      DB_PATH: /app/data/bank.db
+    volumes:
+      - appdata:/app/data
+    restart: unless-stopped
+    expose: ["8000"]
+  caddy:
+    image: caddy:2.8.4
+    env_file: /opt/collabse/caddy.env
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on: [app]
+    restart: unless-stopped
+volumes:
+  appdata:
+  caddydata:

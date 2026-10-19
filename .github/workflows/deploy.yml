@@ -1,0 +1,54 @@
+# CD: after CI is green on main, the AWS demo host deploys that commit (deploy/deploy.sh via SSM Run Command).
+# No AWS keys in GitHub: the job assumes collabse-github-deploy through OIDC (infra/aws/github-oidc.yaml).
+# The host also checks main every 2 minutes on its own (infra/aws/stack.yaml, PullTimer), so a deploy still happens
+# if this job cannot reach AWS.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  ROLE_ARN: arn:aws:iam::833116001493:role/collabse-github-deploy
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Run the deploy on the host
+        run: |
+          set -euo pipefail
+          IID=$(aws ec2 describe-instances --filters Name=tag:app,Values=collabse Name=instance-state-name,Values=running \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          [ "$IID" != "None" ] || { echo "no running host tagged app=collabse"; exit 1; }
+          CID=$(aws ssm send-command --instance-ids "$IID" --document-name AWS-RunShellScript \
+            --comment "deploy ${GITHUB_SHA::7}" --parameters 'commands=["/usr/local/bin/collabse-deploy"]' \
+            --timeout-seconds 900 --query Command.CommandId --output text)
+          echo "command $CID on $IID"
+          for i in $(seq 1 90); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 10
+          done
+          aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" \
+            --query '[StandardOutputContent,StandardErrorContent]' --output text | tail -40
+          [ "$STATUS" = "Success" ] && echo "### Deployed: $(aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" --query StandardOutputContent --output text | grep -o 'https://[^ ]*' | tail -1)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$STATUS" = "Success" ]

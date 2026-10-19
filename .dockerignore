@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+.git/
+data/
+private/
+**/__pycache__/
+.pytest_cache/
+.coverage
+reports/coverage.*
+contracts/out/
+contracts/cache/
+contracts/lib/
+actors/**/node_modules/
+.claude/

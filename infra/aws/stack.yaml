@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Collabse demo host: one EC2 instance (Docker: bank + seller + Caddy with HTTPS on <ip>.sslip.io), an instance role
+  for Bedrock and SSM (no access keys), config from SSM Parameter Store. Deploys main from GitHub on boot, on every
+  CD run (SSM Run Command from GitHub Actions) and, as a fallback, from a pull timer. Testnet only.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues: [t4g.small, t4g.medium, t4g.large]
+  RepoUrl:
+    Type: String
+    Default: https://github.com/13Belka13/collabse-fintechers.git
+  Branch:
+    Type: String
+    Default: main
+  EnvParam:
+    Type: String
+    Default: /collabse/env
+    Description: "SecureString with the app's .env (no AWS keys; the instance role is used)"
+  UiParam:
+    Type: String
+    Default: /collabse/ui
+    Description: SecureString "user:<bcrypt hash>" for the password in front of the UI
+  PullTimer:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Also deploy new commits on main every 2 minutes (works without GitHub Actions credentials)
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Conditions:
+  WithTimer: !Equals [!Ref PullTimer, "true"]
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Collabse demo - HTTP(S) only; shell access through SSM Session Manager
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+      Tags: [{Key: Name, Value: collabse-demo}]
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - {Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: collabse-app
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ClaudeOnBedrock  # EU inference profiles route to several EU regions
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/anthropic.*
+                  - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/eu.anthropic.*
+              - Sid: Config
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${EnvParam}
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${UiParam}
+              - Sid: DecryptConfig
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition: {StringEquals: {kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"}}
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref Role]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt SecurityGroup.GroupId]
+      MetadataOptions: {HttpTokens: required, HttpPutResponseHopLimit: 2}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: {VolumeSize: 30, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true}
+      Tags:
+        - {Key: Name, Value: collabse-demo}
+        - {Key: app, Value: collabse}
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf install -y docker git
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+              https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-buildx \
+              https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-arm64
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+            systemctl enable --now docker
+            mkdir -p /opt/collabse
+            git clone --branch ${Branch} ${RepoUrl} /opt/collabse/repo
+            cat > /etc/collabse.env <<CONF
+            BRANCH=${Branch}
+            AWS_REGION=${AWS::Region}
+            ENV_PARAM=${EnvParam}
+            UI_PARAM=${UiParam}
+            CONF
+            cat > /usr/local/bin/collabse-deploy <<'SH'
+            #!/bin/bash
+            set -a; . /etc/collabse.env; set +a
+            exec /opt/collabse/repo/deploy/deploy.sh "$@"
+            SH
+            chmod +x /usr/local/bin/collabse-deploy
+            if [ "${Timer}" = "true" ]; then
+              cat > /etc/systemd/system/collabse-pull.service <<'UNIT'
+            [Unit]
+            Description=Deploy new commits of Collabse main
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/local/bin/collabse-deploy --if-changed
+            UNIT
+              cat > /etc/systemd/system/collabse-pull.timer <<'UNIT'
+            [Unit]
+            Description=Check GitHub for new commits every 2 minutes
+            [Timer]
+            OnBootSec=3min
+            OnUnitActiveSec=2min
+            [Install]
+            WantedBy=timers.target
+            UNIT
+              systemctl daemon-reload
+              systemctl enable --now collabse-pull.timer
+            fi
+            /usr/local/bin/collabse-deploy || true
+          - Timer: !If [WithTimer, "true", "false"]
+
+  Eip:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Instance
+      Tags: [{Key: Name, Value: collabse-demo}]
+
+Outputs:
+  Url:
+    Description: The demo (after the first deploy finishes, ~5 minutes)
+    Value: !Sub
+      - https://${Dashed}.sslip.io
+      - Dashed: !Join ["-", !Split [".", !Ref Eip]]
+  InstanceId:
+    Value: !Ref Instance
+  RoleName:
+    Value: !Ref Role

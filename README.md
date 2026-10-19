@@ -298,6 +298,9 @@ so they have no explorer links.
 
 ## How we use AWS
 
+- **Hosting and CD:** the demo runs on one EC2 host in eu-central-1 (Docker: bank + seller + Caddy with
+  HTTPS). A green CI run on `main` deploys it through GitHub OIDC and SSM Run Command, with no access keys; the
+  instance role calls Bedrock. See [docs/DEPLOY.md](docs/DEPLOY.md).
 - **Claude on Amazon Bedrock** runs both agents (`bank/llm.py`, client `AnthropicBedrock`). The models
   come from `.env` and are never hard-coded. The hackathon's team account offers Claude 4.5 through EU
   inference profiles in eu-central-1, so `MODEL_MAIN` is Claude Opus 4.5 (or Sonnet 4.5) for

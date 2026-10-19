@@ -1,0 +1,15 @@
+# SITE_HOST = <elastic-ip-with-dashes>.sslip.io: a real hostname without a domain, so Let's Encrypt works.
+# Everything but /health sits behind a password: the demo buttons spend Bedrock and testnet funds.
+{$SITE_HOST} {
+	encode gzip
+	@health path /health
+	handle @health {
+		reverse_proxy app:8000
+	}
+	handle {
+		basic_auth {
+			{$UI_USER} {$UI_HASH}
+		}
+		reverse_proxy app:8000
+	}
+}

@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Lets GitHub Actions of one repository (main branch only) deploy the Collabse demo host without access keys:
+  OIDC provider + a role that may only run the deploy command on instances tagged app=collabse.
+
+Parameters:
+  Repo:
+    Type: String
+    Default: 13Belka13/collabse-fintechers
+  CreateProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: false if the account already has the token.actions.githubusercontent.com provider
+
+Conditions:
+  NewProvider: !Equals [!Ref CreateProvider, "true"]
+
+Resources:
+  Provider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: NewProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: collabse-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${Repo}:ref:refs/heads/main
+      Policies:
+        - PolicyName: run-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: RunOnTaggedHost
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition: {StringEquals: {ssm:resourceTag/app: collabse}}
+              - Sid: ShellDocument
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Sid: Read
+                Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations, ec2:DescribeInstances]
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt DeployRole.Arn
