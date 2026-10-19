@@ -267,9 +267,10 @@ def main(argv=None) -> int:
         print(coverage_md(coverage(Path(a.coverage_only))))
         return 0
     md, out = build(a.target)
-    (REPORTS / "validation.md").write_text(md, encoding="utf-8")
-    (REPORTS / "validation.json").write_text(json.dumps(out, indent=1, default=str, ensure_ascii=False), encoding="utf-8")
-    print(f"wrote reports/validation.md and reports/validation.json ({out['label']})")
+    name = "validation" if a.target == "fork" else f"validation-{a.target}"  # the fork report stays validation.md
+    (REPORTS / f"{name}.md").write_text(md, encoding="utf-8")
+    (REPORTS / f"{name}.json").write_text(json.dumps(out, indent=1, default=str, ensure_ascii=False), encoding="utf-8")
+    print(f"wrote reports/{name}.md and reports/{name}.json ({out['label']})")
     return 0
 
 
