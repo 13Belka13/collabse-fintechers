@@ -47,6 +47,14 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def price_per_item_cents() -> int:
+    """Small amounts for the matrix (SPEC §19.2): SCENARIO_PRICE_EUR per 20-item deal, at least 1 cent per item
+    (the seller prices whole euro cents per item, so 0.10 € becomes 20 × 0.01 € = 0.20 €)."""
+    if os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS"):
+        return int(os.environ["SELLER_PRICE_PER_ITEM_EUR_CENTS"])
+    return max(1, round(float(config.SCENARIO_PRICE_EUR) * 100) // 20)
+
+
 def fork_key(role: str) -> str:
     """Deterministic throwaway key for the fork (never used on a public chain)."""
     return Web3.keccak(text=f"collabse-q-fork-{role}").to_0x_hex()
@@ -203,8 +211,8 @@ class Stack:
         return {**self.base_env, "DB_PATH": db_path, "FAULTS": faults, "MOCK": os.getenv("MOCK", "1"),
                 "BANK_URL": self.bank_url, "BANK_FACILITATOR_URL": f"{self.bank_url}/x402", "SELLER_URL": self.seller_url,
                 "SELLER_FACILITATOR_URL": f"{self.bank_url}/x402",
-                "SCENARIO_PRICE_EUR": os.getenv("SCENARIO_PRICE_EUR", config.SCENARIO_PRICE_EUR),
-                "PYTHONPATH": str(ROOT)}
+                "SCENARIO_PRICE_EUR": config.SCENARIO_PRICE_EUR,
+                "SELLER_PRICE_PER_ITEM_EUR_CENTS": str(price_per_item_cents()), "PYTHONPATH": str(ROOT)}
 
     def _apply_env(self, env: dict):
         """The runner reads the same chain and DB as the bank (journal, onchain_txs, timings)."""

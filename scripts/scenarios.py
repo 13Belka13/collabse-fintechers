@@ -39,20 +39,10 @@ ERRORS = {Web3.keccak(text=s)[:4].hex(): s.split("(")[0] for s in (
 
 # Pending fixes (named) that make a scenario fail today; a failing scenario listed here is reported as xfail.
 DEFECTS = {
-    "D1": "offer shape deals→mandate: deals.pay passes the seller offer {prices:{...}} to mandate.decide, which reads "
-          "offer.asset/offer.amount, so every honest pay() is QUOTE_MISMATCH (integrator fix in bank/deals.py)",
     "D2": "dispute timer and dispute API not merged (stream U: bank/deadlines.py, dispute decisions; N13/N14/S05)",
     "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId",
-    "D4": "VAT-ack mark lost: deals.pay replaces mandate.decide's marks with the reserve() result, and there is no "
-          "human ack-vat endpoint yet (integrator fix in bank/deals.py + bank/api.py)",
-    "D5": "seller injection mode keeps an honest 402: the injected 50 EURC to 0xdEaD never reaches the quote "
-          "(integrator fix in seller/app.py)",
-    "D6": "verifier.settlement accepts a keyword-less item on the judge's 'plausible' alone, so words in a delivered "
-          "item can get it paid (MOCK judge); evals only (integrator's verifier change holds such items for a human)",
 }
-KNOWN = {"S02": ["D1"], "S03": ["D1"], "S04": ["D1"], "S05": ["D2"], "N01": ["D1"], "N02": ["D1"],
-         "N05": ["D1", "D5"], "N06": ["D1"], "N07": ["D1"], "N08": ["D1", "D4"], "N13": ["D2"], "N14": ["D2"],
-         "F02": ["D1"], "F03": ["D1"], "F04": ["D3"], "F05": ["D3"]}
+KNOWN = {"S05": ["D2"], "N13": ["D2"], "N14": ["D2"], "F04": ["D3"], "F05": ["D3"]}
 
 
 class Check(Exception):
@@ -364,11 +354,19 @@ def s05(ctx: Ctx):
     ctx.require("dispute API wired into this runner", False, "write the call once stream U's API is merged")
 
 
+def offer_cents(ctx: Ctx, seller_id: str = "s-gama") -> int:
+    """The seller's price for the task's 20 items, in euro cents (asked directly, no deal)."""
+    return int(ctx.seller.post("/negotiate", json={"deal_id": "q-probe", "seller_id": seller_id,
+                                                   "task": {"criteria": CRITERIA}}).json()["offer"]["price_eur_cents"])
+
+
 def n01(ctx: Ctx):
-    """Amount above the per-deal limit (60 items = 15 € > 10 €): AMOUNT_ABOVE_LIMIT, no money moved."""
+    """Amount above the mandate's per-deal limit (limit = price − 1 cent): AMOUNT_ABOVE_LIMIT, no money moved."""
     ctx.mode("s-gama", "honest")
-    m = ctx.mandate()
-    deal, _ = ctx.open_deal("s-gama", m, criteria={**CRITERIA, "count": 60}, budget_cents=2000)
+    eur = offer_cents(ctx)
+    m = ctx.mandate(per_deal_max={"value": str(eur - 1), "currency": "EUR"},
+                    confirm_above={"value": str(eur - 2), "currency": "EUR"})
+    deal, _ = ctx.open_deal("s-gama", m)
     before = ctx.snapshot()
     refused(ctx, ctx.pay(deal), "AMOUNT_ABOVE_LIMIT")
     ctx.no_money_moved(before)
@@ -378,9 +376,7 @@ def n01(ctx: Ctx):
 def n02(ctx: Ctx):
     """Race: 10 parallel pay() with budget for 3 → exactly 3 locks, 7 × BUDGET_EXCEEDED, no extra debit."""
     ctx.mode("s-gama", "honest")
-    probe = ctx.seller.post("/negotiate", json={"deal_id": "q-probe", "seller_id": "s-gama",
-                                                "task": {"criteria": CRITERIA}}).json()["offer"]
-    eur = int(probe["price_eur_cents"])
+    eur = offer_cents(ctx)
     budget = 3 * eur
     per_deal = max(eur + 1, min(1000, budget))
     m = ctx.mandate(budget={"value": str(budget), "currency": "EUR", "period": "month"},

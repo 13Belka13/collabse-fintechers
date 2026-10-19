@@ -12,11 +12,6 @@ def result():
     return harness.injections()
 
 
-def _d1(result) -> bool:
-    """Pending integrator fix D1: every honest pay() is QUOTE_MISMATCH (offer shape deals→mandate)."""
-    return any(x["decision"].get("code") == "QUOTE_MISMATCH" for r in result["rows"] if r["control"] for x in r["runs"])
-
-
 def test_twenty_variants_cover_the_spec_techniques():
     variants = [v for v in harness.load("injections.jsonl") if not v.get("control")]
     assert len(variants) == 20 and len({v["id"] for v in variants}) == 20
@@ -52,20 +47,13 @@ def test_website_text_is_only_data(result):
 
 
 def test_every_attack_outcome_as_expected(result):
-    if _d1(result):
-        pytest.xfail("D1: honest pay() is QUOTE_MISMATCH until the integrator's deals→mandate offer fix lands")
     assert result["outcome_as_expected"] == result["variants"]
 
 
 def test_controls_are_paid_to_the_registered_wallet(result):
     """The guard is not 'refuse everything': an honest seller (also with its wallet in lower case) gets paid."""
-    if _d1(result):
-        pytest.xfail("D1: honest pay() is QUOTE_MISMATCH until the integrator's deals→mandate offer fix lands")
     assert result["controls_paid"] == result["controls"] == 2
 
 
 def test_item_injections_never_get_an_item_paid(result):
-    if result["items_paid_by_injection"]:
-        pytest.xfail("D6: verifier.settlement accepts a keyword-less item on the judge's 'plausible' alone; the MOCK "
-                     "judge is fooled by words in the item text (integrator's verifier change holds them for a human)")
     assert result["items_paid_by_injection"] == 0
