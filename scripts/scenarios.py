@@ -39,10 +39,9 @@ ERRORS = {Web3.keccak(text=s)[:4].hex(): s.split("(")[0] for s in (
 
 # Pending fixes (named) that make a scenario fail today; a failing scenario listed here is reported as xfail.
 DEFECTS = {
-    "D2": "dispute timer and dispute API not merged (stream U: bank/deadlines.py, dispute decisions; N13/N14/S05)",
     "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId",
 }
-KNOWN = {"S05": ["D2"], "N13": ["D2"], "N14": ["D2"], "F04": ["D3"], "F05": ["D3"]}
+KNOWN = {"F04": ["D3"], "F05": ["D3"]}
 
 
 class Check(Exception):
@@ -193,6 +192,9 @@ class Ctx:
         row = db.one("SELECT payment_hash FROM deals WHERE deal_id=?", (deal_id,))
         return escrow.read_state(row["payment_hash"]) if row and row["payment_hash"] else None
 
+    def asset_of(self, deal_id: str) -> str:
+        return db.one("SELECT asset FROM deals WHERE deal_id=?", (deal_id,))["asset"]
+
     def deal_amount(self, deal_id: str) -> int:
         return int(db.one("SELECT amount FROM deals WHERE deal_id=?", (deal_id,))["amount"])
 
@@ -212,28 +214,84 @@ class Ctx:
 
 # ---- shared flows ----
 
+def captured(ctx: Ctx, deal_id: str, asset: str, seller_id: str) -> int:
+    """Σ Transfer escrow → seller in the deal's capture txs (read from the chain)."""
+    seller = ctx.wallet(seller_id)
+    return sum(t["value"] for c in ctx.deal_tx(deal_id, "capture") for t in transfers_in(c["tx_hash"], asset)
+               if t["to"] == seller)
+
+
+def voided(ctx: Ctx, deal_id: str, asset: str) -> int:
+    return sum(t["value"] for v in ctx.deal_tx(deal_id, "void") for t in transfers_in(v["tx_hash"], asset)
+               if t["to"] == ctx.s.addr["alfa"])
+
+
+def timer(ctx: Ctx, seconds: float) -> list[dict]:
+    """Drive the dispute timer (bank/deadlines.py) to now + seconds instead of sleeping through the windows."""
+    from bank import deadlines
+    done = deadlines.tick(now=time.time() + seconds)
+    ctx.notes.append(f"deadlines.tick(now + {seconds:.0f} s): {len(done)} step(s)")
+    return done
+
+
+def dispute_of(ctx: Ctx, deal_id: str, timeout: float = 60) -> dict:
+    """The dispute record once the bank's own settlement is done: no tx pending and the booked capture on chain.
+    (The deal state changes before the first capture is sent; ticking the timer from this process while the bank
+    still sends would race it.)"""
+    from bank import disputes
+    end, d = time.time() + timeout, None
+    while time.time() < end:
+        d = disputes.get(deal_id)
+        if d and not d["pending"] and d["captured"] == sum(
+                t["value"] for c in ctx.deal_tx(deal_id, "capture") for t in transfers_in(c["tx_hash"], ctx.asset_of(deal_id))
+                if t["from"] != ctx.s.addr["alfa"]):
+            break
+        time.sleep(0.3)
+    ctx.require("dispute record opened and the bank's settlement finished", d is not None and not d["pending"],
+                d and {"pending": d["pending"], "captured": d["captured"]})
+    return d
+
+
+def timer_journal(ctx: Ctx, deal_id: str, event: str, rule_prefix: str = "") -> bool:
+    hits = [e for e in journal.entries(deal_id, limit=500) if e["event"] == event and e["actor"] == "timer"
+            and str(e["payload"].get("rule", "")).startswith(rule_prefix)]
+    return ctx.check(f"journal: {event} by actor timer" + (f" ({rule_prefix}…)" if rule_prefix else ""), bool(hits))
+
+
 def settled_escrow(ctx: Ctx, deal_id: str, asset: str, seller_id: str, to_seller: int, before: dict):
-    """After an ok pay: the deal settles; chain shows lock, capture to the seller, void of the rest."""
+    """After an ok pay (SPEC §9.2-9.3): the accepted part minus the 5 % holdback is captured at once, the holdback
+    and the items in question wait in escrow; after the windows the timer captures the holdback and voids the rest.
+    Every amount is read from Transfer events and paymentState."""
     amount = ctx.deal_amount(deal_id)
     ctx.expect_lock(deal_id, asset)
-    state = ctx.wait_state(deal_id)
-    ctx.check("deal settled", state == "settled", state)
+    state = ctx.wait_state(deal_id, ("settled", "disputed", "closed"))
+    ctx.check("settlement ran (deal settled or disputed)", state in ("settled", "disputed", "closed"), state)
+    d = dispute_of(ctx, deal_id)
+    terms = d["terms"]
+    holdback = to_seller * int(terms["holdback_bps"]) // 10_000
     lock = ctx.deal_tx(deal_id, "authorize")
     ctx.require("authorize tx mined", len(lock) == 1, lock)
     moved = [t for t in transfers_in(lock[0]["tx_hash"], asset) if t["from"] == ctx.s.addr["alfa"]]
     ctx.check("authorize: buyer → escrow = price (Transfer event)", sum(t["value"] for t in moved) == amount,
               {"transfers": moved, "price": amount})
-    seller = ctx.wallet(seller_id)
-    captured = sum(t["value"] for c in ctx.deal_tx(deal_id, "capture") for t in transfers_in(c["tx_hash"], asset)
-                   if t["to"] == seller)
-    ctx.check("capture to seller = expected (Transfer events)", captured == to_seller,
-              {"captured": captured, "expected": to_seller})
-    back = sum(t["value"] for v in ctx.deal_tx(deal_id, "void") for t in transfers_in(v["tx_hash"], asset)
-               if t["to"] == ctx.s.addr["alfa"])
+    first = captured(ctx, deal_id, asset, seller_id)
+    ctx.check("at once: accepted items minus the 5 % holdback captured (Transfer events)", first == to_seller - holdback,
+              {"captured": first, "expected": to_seller - holdback, "holdback": holdback})
+    st = ctx.escrow_state(deal_id)
+    ctx.check("paymentState: holdback + items in question still in escrow", st is not None
+              and st["capturable"] == amount - first, {"state": st, "expected": amount - first})
+    timer(ctx, max(int(terms[k]) for k in ("review_window_s", "objection_window_s", "holdback_s")) + 1)
+    ctx.check("deal closed after the timer", ctx.wait_state(deal_id, ("closed",), timeout=30) == "closed")
+    total = captured(ctx, deal_id, asset, seller_id)
+    ctx.check("capture to seller in total = accepted items (Transfer events)", total == to_seller,
+              {"captured": total, "expected": to_seller})
+    back = voided(ctx, deal_id, asset)
     ctx.check("void back to buyer = rest (Transfer events)", back == amount - to_seller,
               {"voided": back, "expected": amount - to_seller})
     st = ctx.escrow_state(deal_id)
-    ctx.check("escrow paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
+    ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
+    if holdback:
+        timer_journal(ctx, deal_id, "dispute.holdback_released", "holdback_s")
     d = Ctx.delta(before, ctx.snapshot())
     name = seller_id.removeprefix("s-")
     ctx.check("seller balance +captured (chain)", d.get(f"{asset}:{name}", 0) == to_seller, d)
@@ -319,7 +377,7 @@ def s02(ctx: Ctx):
     before = ctx.snapshot()
     if ok_decision(ctx, ctx.pay(deal)):
         settled_escrow(ctx, deal, "EURC", "s-gama", ctx.deal_amount(deal), before)
-        ctx.journal_has(deal, "escrow_authorized", "escrow_captured", "settlement_applied")
+        ctx.journal_has(deal, "escrow_authorized", "escrow_captured", "dispute.opened", "dispute.closed")
     ctx.journal_chain()
 
 
@@ -332,7 +390,8 @@ def s03(ctx: Ctx, seller_id: str = "s-gama", asset: str = "EURC"):
     if ok_decision(ctx, ctx.pay(deal)):
         to_seller, _ = money.per_item_split(ctx.deal_amount(deal), 20, 18)
         settled_escrow(ctx, deal, asset, seller_id, to_seller, before)
-        ctx.journal_has(deal, "escrow_authorized", "escrow_captured", "escrow_voided", "settlement_applied")
+        ctx.journal_has(deal, "escrow_authorized", "escrow_captured", "escrow_voided", "dispute.opened",
+                        "dispute.closed")
     ctx.journal_chain()
 
 
@@ -347,11 +406,62 @@ def s04(ctx: Ctx):
         ctx.mode("s-beta", "honest")
 
 
+def fake_data_deal(ctx: Ctx) -> tuple[str, int, int, dict, dict] | None:
+    """Gama fake_data, EURC: 18 accepted by the rules, 2 rejected and waiting for the seller's objection."""
+    ctx.mode("s-gama", "fake_data")
+    m = ctx.mandate()
+    deal, _ = ctx.open_deal("s-gama", m)
+    before = ctx.snapshot()
+    if not ok_decision(ctx, ctx.pay(deal)):
+        return None
+    amount = ctx.deal_amount(deal)
+    ctx.expect_lock(deal, "EURC")
+    state = ctx.wait_state(deal, ("disputed", "settled", "closed"))
+    ctx.require("deal disputed: 2 items rejected by the rules", state == "disputed", state)
+    d = dispute_of(ctx, deal)
+    items = [it for it in d["items"] if not it["outcome"]]
+    ctx.require("2 items in the seller's objection window", len(items) == 2 and all(it["step"] == "objection"
+                                                                                  for it in items), items)
+    to18, _ = money.per_item_split(amount, 20, 18)
+    holdback = to18 * int(d["terms"]["holdback_bps"]) // 10_000
+    first = captured(ctx, deal, "EURC", "s-gama")
+    ctx.check("at once: 18 items minus the 5 % holdback captured (Transfer events)", first == to18 - holdback,
+              {"captured": first, "expected": to18 - holdback})
+    st = ctx.escrow_state(deal)
+    ctx.check("paymentState: 2 disputed items + holdback wait in escrow", st is not None
+              and st["capturable"] == amount - first, st)
+    return deal, amount, to18, d, before
+
+
 def s05(ctx: Ctx):
-    """Dispute decided by a human for the seller: money waits in escrow → capture on the decision."""
-    ctx.require("dispute module present (bank/disputes.py)", importlib.util.find_spec("bank.disputes") is not None,
-                "not merged")
-    ctx.require("dispute API wired into this runner", False, "write the call once stream U's API is merged")
+    """Dispute decided by a human for the seller: the 2 rejected items wait in escrow, the seller objects, the bank's
+    officer accepts both (bank.disputes.decide) → capture of exactly those items; the holdback follows on the timer."""
+    from bank import disputes
+    got = fake_data_deal(ctx)
+    if got is None:
+        return
+    deal, amount, to18, d, before = got
+    first = captured(ctx, deal, "EURC", "s-gama")
+    for it in [i for i in d["items"] if not i["outcome"]]:
+        disputes.seller_objection(deal, it["placeId"], "The listing is a real warehouse; see the Maps URL.",
+                                  who="human:gama-seller")
+    ctx.check("objection alone moves no money (chain)", captured(ctx, deal, "EURC", "s-gama") == first)
+    for it in [i for i in disputes.get(deal)["items"] if not i["outcome"]]:
+        disputes.decide(deal, it["placeId"], "accept", who="human:bank-officer", note="Seller's evidence holds.")
+    after = captured(ctx, deal, "EURC", "s-gama")
+    ctx.check("human decision → capture of the 2 disputed items (Transfer event)", after - first == amount - to18,
+              {"captured_now": after - first, "expected": amount - to18})
+    ctx.check("journal: dispute.decision by human:bank-officer", any(
+        e["event"] == "dispute.decision" and e["actor"] == "human:bank-officer" for e in journal.entries(deal, limit=500)))
+    timer(ctx, int(d["terms"]["holdback_s"]) + 1)
+    ctx.check("deal closed after the holdback", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
+    ctx.check("seller got the whole price, nothing voided (Transfer events)",
+              captured(ctx, deal, "EURC", "s-gama") == amount and voided(ctx, deal, "EURC") == 0)
+    st = ctx.escrow_state(deal)
+    ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
+    dd = Ctx.delta(before, ctx.snapshot())
+    ctx.check("seller +price, buyer −price (chain)", dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount, dd)
+    ctx.journal_chain()
 
 
 def offer_cents(ctx: Ctx, seller_id: str = "s-gama") -> int:
@@ -405,6 +515,12 @@ def n02(ctx: Ctx):
     ctx.check("buyer debited exactly 3 × price on chain (no extra debit)",
               len(locks) == 3 and sum(t["value"] for t in locks) == 3 * price,
               {"transfers": len(locks), "sum": sum(t["value"] for t in locks), "expected": 3 * price})
+    if oks:  # let the 3 paid deals finish (holdback) so no later scenario's tick moves their money
+        terms = [dispute_of(ctx, d)["terms"] for d in oks][0]
+        timer(ctx, int(terms["holdback_s"]) + 1)
+        ctx.check("the 3 paid deals closed, each seller capture = price (Transfer events)",
+                  all(ctx.wait_state(d, ("closed",), timeout=30) == "closed" and captured(ctx, d, "EURC", "s-gama") == price
+                      for d in oks))
     ctx.journal_chain()
 
 
@@ -597,19 +713,64 @@ def n12(ctx: Ctx):
     ctx.no_money_moved(before)
 
 
-def timer_scenario(ctx: Ctx):
-    ctx.require("timer present (bank/deadlines.py)", importlib.util.find_spec("bank.deadlines") is not None, "not merged")
-    ctx.require("timer scenario wired into this runner", False, "write the call once stream U's timer is merged")
-
 
 def n13(ctx: Ctx):
-    """Buyer silent on flagged items: after the window the timer captures, journal actor timer + rule."""
-    timer_scenario(ctx)
+    """Buyer silent on flagged items (bank profile FAULTS=llm_bad_json: the judge's answer is invalid, so every item
+    is flagged to the buyer): money waits in escrow; after review_window_s the timer accepts (on_buyer_silence) and
+    captures; journal actor timer with the rule."""
+    ctx.mode("s-gama", "honest")
+    m = ctx.mandate()
+    deal, _ = ctx.open_deal("s-gama", m)
+    before = ctx.snapshot()
+    if not ok_decision(ctx, ctx.pay(deal)):
+        return
+    amount = ctx.deal_amount(deal)
+    ctx.expect_lock(deal, "EURC")
+    state = ctx.wait_state(deal, ("disputed", "verified", "settled", "closed"))
+    ctx.check("deal waits for the buyer (disputed)", state == "disputed", state)
+    d = dispute_of(ctx, deal)
+    review = [it for it in d["items"] if it["step"] == "review" and not it["outcome"]]
+    ctx.require("all 20 items flagged to the buyer's review", len(review) == 20, len(review))
+    ctx.check("nothing captured or voided before the deadline", not ctx.deal_tx(deal, "capture")
+              and not ctx.deal_tx(deal, "void"))
+    st = ctx.escrow_state(deal)
+    ctx.check("paymentState: the whole price waits in escrow", st is not None and st["capturable"] == amount, st)
+    early = timer(ctx, int(d["terms"]["review_window_s"]) - 5)
+    ctx.check("a tick before the deadline does nothing", not [x for x in early if x.get("deal_id") == deal])
+    timer(ctx, int(d["terms"]["review_window_s"]) + 1)
+    timer_journal(ctx, deal, "dispute.default_applied", "on_buyer_silence")
+    ctx.check("deal closed", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
+    ctx.check("timer captured the whole price to the seller (Transfer events)",
+              captured(ctx, deal, "EURC", "s-gama") == amount and voided(ctx, deal, "EURC") == 0)
+    st = ctx.escrow_state(deal)
+    ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
+    dd = Ctx.delta(before, ctx.snapshot())
+    ctx.check("seller +price, buyer −price (chain)", dd.get("EURC:gama") == amount and dd.get("EURC:buyer") == -amount, dd)
+    ctx.journal_chain()
 
 
 def n14(ctx: Ctx):
-    """Seller silent after a rejection: after the window the timer voids the disputed part."""
-    timer_scenario(ctx)
+    """Seller silent after the rules rejected 2 items: after objection_window_s the timer lets the rejection stand
+    (journal actor timer); once the holdback is over it captures the holdback and voids the disputed part back."""
+    got = fake_data_deal(ctx)
+    if got is None:
+        return
+    deal, amount, to18, d, before = got
+    terms = d["terms"]
+    timer(ctx, int(terms["objection_window_s"]) + 1)
+    timer_journal(ctx, deal, "dispute.default_applied", "on_seller_silence")
+    if int(terms["objection_window_s"]) < int(terms["holdback_s"]):
+        ctx.check("no void while the holdback runs (void is final, captures first)", not ctx.deal_tx(deal, "void"))
+    timer(ctx, int(terms["holdback_s"]) + 1)
+    ctx.check("deal closed", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
+    ctx.check("void returned the 2 disputed items to the buyer (Transfer event)", voided(ctx, deal, "EURC") == amount - to18,
+              {"voided": voided(ctx, deal, "EURC"), "expected": amount - to18})
+    ctx.check("seller got the 18 accepted items in total (Transfer events)", captured(ctx, deal, "EURC", "s-gama") == to18)
+    st = ctx.escrow_state(deal)
+    ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
+    dd = Ctx.delta(before, ctx.snapshot())
+    ctx.check("seller +18 items, buyer −18 items (chain)", dd.get("EURC:gama") == to18 and dd.get("EURC:buyer") == -to18, dd)
+    ctx.journal_chain()
 
 
 def a01(ctx: Ctx):
@@ -688,8 +849,8 @@ def f02(ctx: Ctx):
 
 
 def f03(ctx: Ctx):
-    """llm_bad_json: the judge answers garbage twice → every item goes to a human; nothing is captured or voided by
-    the model; the money waits in escrow. Cleanup: a human rejects all (void)."""
+    """llm_bad_json: the judge answers garbage twice → every item goes to a human; the model captures and voids
+    nothing, the money waits in escrow. Cleanup: the buyer stays silent and the timer settles (as in N13)."""
     ctx.mode("s-gama", "honest")
     try:
         m = ctx.mandate()
@@ -699,17 +860,15 @@ def f03(ctx: Ctx):
             amount = ctx.deal_amount(deal)
             ctx.expect_lock(deal, "EURC")
             state = ctx.wait_state(deal, ("verified", "settled", "closed", "disputed"))
-            ctx.check("deal waits for a human (state verified)", state == "verified", state)
+            ctx.check("deal waits for a human (disputed, items in review)", state == "disputed", state)
             ctx.check("no capture tx, no void tx", not ctx.deal_tx(deal, "capture") and not ctx.deal_tx(deal, "void"))
             st = ctx.escrow_state(deal)
             ctx.check("escrow paymentState: the whole price still capturable", st is not None and st["capturable"] == amount, st)
             d = Ctx.delta(before, ctx.snapshot())
             ctx.check("seller +0 (chain)", d.get("EURC:gama", 0) == 0, d)
-            escrow.void(deal)  # cleanup: a human rejects everything; the lock goes back
-            mandate.release(deal)
-            ctx.notes.append("cleanup: the scenario voided the lock as the human decision")
-            ctx.check("after the human's void: buyer back to the start (chain)",
-                      ctx.snapshot()["balances"]["EURC:buyer"] == before["balances"]["EURC:buyer"])
+            timer(ctx, int(dispute_of(ctx, deal)["terms"]["review_window_s"]) + 1)
+            ctx.notes.append("cleanup: buyer silent, the timer settled the deal")
+            ctx.check("cleanup: closed by the timer", ctx.wait_state(deal, ("closed",), timeout=30) == "closed")
         ctx.journal_chain()
     finally:
         ctx.mode("s-gama", DEFAULT_MODES["s-gama"])
@@ -739,7 +898,7 @@ SCENARIOS = {
     "N10": ("Direct tCZK transfer bypassing the bank", n10),
     "N11": ("Replay of the same EIP-3009 signature", n11),
     "N12": ("Unpaid request to a paid route", n12),
-    "N13": ("Buyer silent on flagged items → timer captures", n13),
+    "N13": ("Buyer silent on flagged items → timer captures", n13),  # bank profile FAULTS=llm_bad_json
     "N14": ("Seller silent after a rejection → timer voids", n14),
     "A01": ("Bank API auth: tokens, other company's mandate/deal", a01),
 }
@@ -750,6 +909,7 @@ FAULT_SCENARIOS = {  # id: (title, function, FAULTS for the bank profile)
     "F04": ("webhook_duplicate → counted once", webhook, "webhook_duplicate"),
     "F05": ("webhook_bad_hmac → rejected", webhook, "webhook_bad_hmac"),
 }
+PROFILES = {"N13": "llm_bad_json"}  # P0 scenarios that need their own bank profile (FAULTS)
 # Attacks and refusals: the main claim is "no money moved" (counted in "attacks blocked X/X").
 ATTACKS = {"N01", "N03", "N04", "N05", "N06", "N09", "N10", "N11", "N12", "A01", "F02"}
 
@@ -880,6 +1040,10 @@ def main(argv=None) -> int:
             if stack.profile != "main":
                 stack.use_profile("main")
             for sid, (title, fn) in p0.items():
+                if sid in PROFILES:
+                    stack.use_profile(f"{sid.lower()}-r{run}", PROFILES[sid])
+                elif stack.profile != "main":
+                    stack.use_profile("main")
                 results.append(run_one(stack, sid, run, title, fn))
             for sid, (title, fn, fault) in faults.items():
                 stack.use_profile(f"{sid.lower()}-r{run}", fault)
