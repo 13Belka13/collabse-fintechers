@@ -14,22 +14,30 @@ def _result(sid, run, status, attack=False, money_ok=True, defects=(), txs=()):
 
 
 def _raw(target="fork"):
-    tx = {"kind": "authorize", "tx_hash": "0x" + "ab" * 32, "link": None if target == "fork" else "https://x/tx/1"}
+    tx = {"kind": "authorize", "status": "mined", "tx_hash": "0x" + "ab" * 32, "link": None if target == "fork" else "https://x/tx/1"}
     return {"target": target, "runs": 2, "label": "anvil fork of Base Sepolia (chain id 84532) at block 1",
             "results": [_result("S02", 1, "pass", txs=[tx]), _result("S02", 2, "pass", txs=[tx]),
                         _result("N03", 1, "pass", attack=True), _result("N03", 2, "xfail", attack=True, defects=["D1"]),
                         _result("N13", 1, "xfail", defects=["D2"]), _result("N13", 2, "xfail", defects=["D2"])],
             "reconciliation": {"wrong_debit_count": 0, "transfers_to_evil": 0, "ok": True, "deals_checked": 2,
                                "deals_ok": 2},
-            "journal_verified": {"bank-main.db": True}}
+            "journal_verified": {"bank-main.db": True}}  # no "db" paths: cost gas is n/a
 
 
 def test_summary_counts_attacks_blocked_at_money_level_and_with_the_code():
     s = report.summarize(_raw())
     assert (s["scenarios"], s["scenario_runs"], s["attack_runs"]) == (3, 6, 2)
-    assert s["attacks_blocked_money"] == 2 and s["attacks_expected_code"] == 1
+    assert s["attacks_blocked_money"] == 2 and s["attacks_expected_code"] == 1 and s["attacks_not_run"] == []
     assert s["status"] == {"pass": 3, "xfail": 3, "fail": 0}
     assert s["per_scenario"]["N03"] == ["pass", "xfail"]
+
+
+def test_an_attack_stopped_at_its_precondition_is_not_run_not_blocked():
+    raw = _raw()
+    raw["results"].append({"id": "N10", "title": "N10", "run": 1, "status": "fail", "attack": True, "defects": [],
+                           "checks": [{"name": "tCZK is the stage token with strict mode", "ok": False}], "txs": []})
+    s = report.summarize(raw)
+    assert s["attacks_not_run"] == ["N10"] and s["attacks_executed"] == 2 and s["attacks_blocked_money"] == 2
 
 
 def test_money_reaching_the_attacker_zeroes_the_blocked_count():

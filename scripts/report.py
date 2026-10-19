@@ -92,6 +92,37 @@ def money_ok(r: dict) -> bool:
     return bool(money) and all(c["ok"] for c in money)
 
 
+def executed(r: dict) -> bool:
+    """The attack was actually tried: some money check ran (a precondition failure stops before anything is sent)."""
+    return any(any(w in c["name"] for w in MONEY_CHECK_WORDS) for c in r["checks"])
+
+
+def run_cost(raw: dict) -> dict:
+    """What left the buyer for good (captures to sellers + direct x402 payments, from Transfer events in the
+    reconciliation and the settle receipts) and the gas of every landed tx (receipts stored in the run's DBs)."""
+    import sqlite3
+    paid = {"EURC": 0, "tCZK": 0}
+    for d in raw["reconciliation"].get("deals", []):
+        paid[d["asset"]] += d["chain"]["capture"]
+    settles = {t["tx_hash"].lower() for r in raw["results"] for t in r["txs"] if t["kind"] == "x402_settle"}
+    for r in raw["results"]:
+        for e in r.get("expected_debits", []):
+            if e["tx_hash"].lower() in settles:
+                paid[e["asset"]] += e["amount"]
+    landed = {t["tx_hash"].lower() for r in raw["results"] for t in r["txs"] if t["status"] in ("mined", "reverted")}
+    gas, seen = 0, set()
+    for path in {r.get("db") for r in raw["results"]}:
+        if not path or not Path(path).exists():
+            return {"paid": paid, "gas": None}
+        c = sqlite3.connect(path)
+        for h, g in c.execute("SELECT tx_hash, gas_used FROM onchain_txs WHERE gas_used IS NOT NULL"):
+            if h.lower() in landed and h.lower() not in seen:
+                seen.add(h.lower())
+                gas += g
+        c.close()
+    return {"paid": paid, "gas": gas}
+
+
 def summarize(raw: dict) -> dict:
     results = raw["results"]
     ids = list(dict.fromkeys(r["id"] for r in results))
@@ -103,11 +134,16 @@ def summarize(raw: dict) -> dict:
         "attack_scenarios": len({r["id"] for r in attacks}), "runs": raw["runs"], "scenario_runs": len(results),
         "status": {s: sum(r["status"] == s for r in results) for s in ("pass", "xfail", "fail")},
         "attack_runs": len(attacks),
-        "attacks_blocked_money": sum(money_ok(r) for r in attacks) if recon["transfers_to_evil"] == 0 else 0,
-        "attacks_expected_code": sum(r["status"] == "pass" for r in attacks),
+        "attacks_executed": sum(executed(r) for r in attacks),
+        "attacks_not_run": sorted({r["id"] for r in attacks if not executed(r)}),
+        "attacks_blocked_money": sum(money_ok(r) for r in attacks if executed(r)) if recon["transfers_to_evil"] == 0 else 0,
+        "attacks_expected_code": sum(r["status"] == "pass" for r in attacks if executed(r)),
+        "txs_landed": sum(t["status"] in ("mined", "reverted") for r in results for t in r["txs"]),
+        "txs_dead": sum(t["status"] == "failed" for r in results for t in r["txs"]),
         "wrong_debits": recon["wrong_debit_count"], "transfers_to_evil": recon["transfers_to_evil"],
         "reconciliation_ok": recon["ok"], "deals_reconciled": recon["deals_checked"], "deals_reconciled_ok": recon["deals_ok"],
         "journal_verified": all(raw.get("journal_verified", {}).values()),
+        "cost": run_cost(raw),
         "per_scenario": {i: [r["status"] for r in sorted((x for x in results if x["id"] == i), key=lambda x: x["run"])]
                          for i in ids},
     }
@@ -124,7 +160,7 @@ def matrix_md(raw: dict) -> str:
     for sid in dict.fromkeys(r["id"] for r in raw["results"]):
         rs = sorted((r for r in raw["results"] if r["id"] == sid), key=lambda r: r["run"])
         cells = [r["status"].upper() + (f" ({', '.join(r['defects'])})" if r["status"] == "xfail" else "") for r in rs]
-        txs = rs[-1]["txs"]
+        txs = [t for t in rs[-1]["txs"] if t["status"] in ("mined", "reverted")]  # dead nonce retries never landed
         if fork:
             tx = ", ".join(f"{t['kind']} `{short(t['tx_hash'])}`" for t in txs) or "—"
         else:
@@ -186,12 +222,22 @@ def build(target: str) -> tuple[str, dict]:
            "## Summary", "",
            f"- **{s['scenarios']} scenarios** ({s['p0']} P0 from SPEC §19.2, {s['faults']} fault injections, "
            f"{s['extra']} extra: A01 bank API auth), "
-           f"{s['attack_scenarios']} of them attacks or refusals, **{s['runs']} runs each** = {s['scenario_runs']} scenario "
+           f"{s['attack_scenarios']} of them attacks or refusals, **{s['runs']} run{'s' if s['runs'] != 1 else ''} each** = "
+           f"{s['scenario_runs']} scenario "
            f"runs: {s['status']['pass']} pass, {s['status']['xfail']} xfail (pending fix named below), "
            f"{s['status']['fail']} fail.",
-           f"- **Attacks stopped before any money moved: {s['attacks_blocked_money']}/{s['attack_runs']}** attack runs "
-           "(balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 reverted on chain); "
-           f"with the expected refusal code: {s['attacks_expected_code']}/{s['attack_runs']}.",
+           f"- **Attacks stopped before any money moved: {s['attacks_blocked_money']}/{s['attacks_executed']}** executed "
+           "attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal"
+           + ("; N10/N11 as real reverted txs" if not {"N10", "N11"} & set(s["attacks_not_run"]) else "") + "); "
+           f"with the expected refusal code: {s['attacks_expected_code']}/{s['attacks_executed']}"
+           + (f"; not executed (precondition, nothing sent): {', '.join(s['attacks_not_run'])}" if s["attacks_not_run"]
+              else "") + ".",
+           f"- Transactions: {s['txs_landed']} landed on chain; {s['txs_dead']} signed transactions were dropped as dead "
+           "after a nonce clash and re-sent under the same idempotency key (they never landed — see reconciliation).",
+           f"- Cost of {'this run' if s['runs'] == 1 else 'these runs'}: {s['cost']['paid']['EURC'] / 1e6:.6f} EURC and "
+           f"{s['cost']['paid']['tCZK'] / 100:.2f} Kč left the buyer for good (captures + direct x402 payments, Transfer "
+           f"events; amounts voided back are not counted); gas used by landed txs: "
+           f"{s['cost']['gas'] if s['cost']['gas'] is not None else 'n/a (run DBs not present)'}.",
            f"- **Wrong debits: {s['wrong_debits']}** — every buyer debit on chain since the first scenario is a lock or a "
            f"payment a scenario expected. Transfers to the attacker address 0xdEaD: {s['transfers_to_evil']}.",
            f"- **Reconciliation chain ↔ DB ↔ statement: {'OK' if s['reconciliation_ok'] else 'MISMATCH'}** — "
@@ -211,6 +257,13 @@ def build(target: str) -> tuple[str, dict]:
         for d in used:
             ids = sorted({r["id"] for r in raw["results"] if d in r["defects"]})
             md.append(f"| {d} | {raw['defects'][d]} | {', '.join(ids)} |")
+        md.append("")
+    failed = [r for r in raw["results"] if r["status"] == "fail"]
+    if failed:
+        md += ["### Failures", "", "| ID | Run | First failed check | Detail |", "|---|---|---|---|"]
+        for r in failed:
+            c = next(c for c in r["checks"] if not c["ok"])
+            md.append(f"| {r['id']} | {r['run']} | {c['name']} | {str(c['detail'] or '')[:160]} |")
         md.append("")
     md += ["## Speed (SPEC §19.4, measured in the matrix runs)", ""]
     if fork:
@@ -267,9 +320,10 @@ def main(argv=None) -> int:
         print(coverage_md(coverage(Path(a.coverage_only))))
         return 0
     md, out = build(a.target)
-    (REPORTS / "validation.md").write_text(md, encoding="utf-8")
-    (REPORTS / "validation.json").write_text(json.dumps(out, indent=1, default=str, ensure_ascii=False), encoding="utf-8")
-    print(f"wrote reports/validation.md and reports/validation.json ({out['label']})")
+    name = "validation" if a.target == "fork" else f"validation-{a.target}"  # the fork report stays validation.md
+    (REPORTS / f"{name}.md").write_text(md, encoding="utf-8")
+    (REPORTS / f"{name}.json").write_text(json.dumps(out, indent=1, default=str, ensure_ascii=False), encoding="utf-8")
+    print(f"wrote reports/{name}.md and reports/{name}.json ({out['label']})")
     return 0
 
 

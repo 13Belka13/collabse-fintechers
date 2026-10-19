@@ -1,8 +1,8 @@
 {
- "generated": "2026-10-19 15:06",
- "commit": "725cbb8",
+ "generated": "2026-10-19 15:37",
+ "commit": "42a83de",
  "target": "fork",
- "label": "anvil fork of Base Sepolia (chain id 84532) at block 48323395",
+ "label": "anvil fork of Base Sepolia (chain id 84532) at block 48324278",
  "summary": {
   "scenarios": 25,
   "p0": 19,
@@ -12,19 +12,30 @@
   "runs": 3,
   "scenario_runs": 75,
   "status": {
-   "pass": 60,
-   "xfail": 15,
+   "pass": 69,
+   "xfail": 6,
    "fail": 0
   },
   "attack_runs": 33,
+  "attacks_executed": 33,
+  "attacks_not_run": [],
   "attacks_blocked_money": 33,
   "attacks_expected_code": 33,
+  "txs_landed": 138,
+  "txs_dead": 42,
   "wrong_debits": 0,
   "transfers_to_evil": 0,
   "reconciliation_ok": true,
-  "deals_reconciled": 30,
-  "deals_reconciled_ok": 30,
+  "deals_reconciled": 39,
+  "deals_reconciled_ok": 39,
   "journal_verified": true,
+  "cost": {
+   "paid": {
+    "EURC": 6540000,
+    "tCZK": 2100
+   },
+   "gas": 12783958
+  },
   "per_scenario": {
    "S01": [
     "pass",
@@ -47,9 +58,9 @@
     "pass"
    ],
    "S05": [
-    "xfail",
-    "xfail",
-    "xfail"
+    "pass",
+    "pass",
+    "pass"
    ],
    "N01": [
     "pass",
@@ -112,14 +123,14 @@
     "pass"
    ],
    "N13": [
-    "xfail",
-    "xfail",
-    "xfail"
+    "pass",
+    "pass",
+    "pass"
    ],
    "N14": [
-    "xfail",
-    "xfail",
-    "xfail"
+    "pass",
+    "pass",
+    "pass"
    ],
    "A01": [
     "pass",
@@ -158,9 +169,9 @@
    "stage": "decision",
    "title": "Mandate decision + cached check + journal",
    "target_ms": 50,
-   "n": 126,
-   "p50": 0.426,
-   "p95": 31.73,
+   "n": 144,
+   "p50": 0.478,
+   "p95": 31.86,
    "met": true
   },
   {
@@ -168,26 +179,26 @@
    "title": "Bank facilitator verify (with screening)",
    "target_ms": 500,
    "n": 6,
-   "p50": 24.983,
-   "p95": 479.843,
-   "met": true
+   "p50": 12.576,
+   "p95": 610.784,
+   "met": false
   },
   {
    "stage": "screening",
    "title": "New counterparty: ARES + VAT + ISIR + sanctions",
    "target_ms": 2500,
-   "n": 108,
-   "p50": 23.664,
-   "p95": 128.671,
+   "n": 119,
+   "p50": 21.961,
+   "p95": 123.888,
    "met": true
   },
   {
    "stage": "tx_in_block:*",
    "title": "Signature → tx in block (settle, authorize, capture, void)",
    "target_ms": 6000,
-   "n": 82,
-   "p50": 624.734,
-   "p95": 672.364,
+   "n": 139,
+   "p50": 641.403,
+   "p95": 752.085,
    "met": true
   },
   {
@@ -204,20 +215,20 @@
    "title": "Refusal → message to the client",
    "target_ms": 100,
    "n": 42,
-   "p50": 3.825,
-   "p95": 46.022,
+   "p50": 3.459,
+   "p95": 47.351,
    "met": true
   }
  ],
  "coverage": {
   "total": {
-   "lines": 91.06771915247195,
-   "branches": 83.28729281767956
+   "lines": 90.17707985299032,
+   "branches": 81.72645739910314
   },
   "targets": [
    {
     "target": "bank/ lines ≥ 80 %",
-    "value": 91.06771915247195,
+    "value": 90.17707985299032,
     "met": true
    },
    {
@@ -242,8 +253,8 @@
    },
    {
     "target": "bank/screening/__init__.py branches ≥ 90 %",
-    "value": 91.37931034482759,
-    "met": true
+    "value": 89.65517241379311,
+    "met": false
    }
   ]
  },
@@ -288,26 +299,25 @@
   "source": "tests/evals/harness.py, MOCK (scripted models, keyword-heuristic judge)"
  },
  "llm_totals": {
-  "calls": 48,
+  "calls": 60,
   "input_tokens": 0,
   "output_tokens": 0,
   "cost_usd": 0.0
  },
  "reconciliation": {
-  "deals_checked": 30,
-  "deals_ok": 30,
+  "deals_checked": 39,
+  "deals_ok": 39,
   "buyer_debits": {
-   "EURC": 33,
+   "EURC": 42,
    "tCZK": 6
   },
   "wrong_debits": [],
   "wrong_debit_count": 0,
   "transfers_to_evil": 0,
-  "first_block": 48323414,
+  "first_block": 48324297,
   "ok": true
  },
  "defects": {
-  "D2": "dispute timer and dispute API not merged (stream U: bank/deadlines.py, dispute decisions; N13/N14/S05)",
   "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId"
  }
 }

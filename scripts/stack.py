@@ -214,7 +214,10 @@ class Stack:
                 "BANK_URL": self.bank_url, "BANK_FACILITATOR_URL": f"{self.bank_url}/x402", "SELLER_URL": self.seller_url,
                 "SELLER_FACILITATOR_URL": f"{self.bank_url}/x402",
                 "SCENARIO_PRICE_EUR": config.SCENARIO_PRICE_EUR,
-                "SELLER_PRICE_PER_ITEM_EUR_CENTS": str(price_per_item_cents()), "PYTHONPATH": str(ROOT)}
+                "SELLER_PRICE_PER_ITEM_EUR_CENTS": str(price_per_item_cents()), "PYTHONPATH": str(ROOT),
+                # the runner drives the dispute timer itself (deadlines.tick(now + window)); a second timer thread in
+                # the bank process would act on the same deals from another process (disputes locks are per process)
+                "BANK_TIMER": "0"}
 
     def _apply_env(self, env: dict):
         """The runner reads the same chain and DB as the bank (journal, onchain_txs, timings)."""

@@ -1,49 +1,51 @@
-# Validation report — anvil fork of Base Sepolia (chain id 84532) at block 48323395
+# Validation report — anvil fork of Base Sepolia (chain id 84532) at block 48324278
 
 > **Network: anvil fork of Base Sepolia (local), not the public testnet.** The real deployed contracts (EURC,
 > AuthCaptureEscrow, ERC-3009 collector) forked at the block above, a freshly deployed tCZK, throwaway keys.
 > The transactions are real EVM transactions on the local fork; their hashes exist only there, so they have
 > **no explorer links**. The same matrix on Base Sepolia is a separate run (`--target sepolia`, keys from .env).
 
-Generated 2026-10-19 15:06 from `reports/scenarios-fork.json` at commit `725cbb8` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
+Generated 2026-10-19 15:37 from `reports/scenarios-fork.json` at commit `42a83de` by `scripts/report.py`. A prototype validated on a fork of the testnet, ready for a bank sandbox pilot — not production-ready.
 
 ## Summary
 
-- **25 scenarios** (19 P0 from SPEC §19.2, 5 fault injections, 1 extra: A01 bank API auth), 11 of them attacks or refusals, **3 runs each** = 75 scenario runs: 60 pass, 15 xfail (pending fix named below), 0 fail.
-- **Attacks stopped before any money moved: 33/33** attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 reverted on chain); with the expected refusal code: 33/33.
+- **25 scenarios** (19 P0 from SPEC §19.2, 5 fault injections, 1 extra: A01 bank API auth), 11 of them attacks or refusals, **3 runs each** = 75 scenario runs: 69 pass, 6 xfail (pending fix named below), 0 fail.
+- **Attacks stopped before any money moved: 33/33** executed attack runs (balances equal on chain, the bank's signer nonces unchanged, no tx for the deal; N10/N11 as real reverted txs); with the expected refusal code: 33/33.
+- Transactions: 138 landed on chain; 42 signed transactions were dropped as dead after a nonce clash and re-sent under the same idempotency key (they never landed — see reconciliation).
+- Cost of these runs: 6.540000 EURC and 21.00 Kč left the buyer for good (captures + direct x402 payments, Transfer events; amounts voided back are not counted); gas used by landed txs: 12783958.
 - **Wrong debits: 0** — every buyer debit on chain since the first scenario is a lock or a payment a scenario expected. Transfers to the attacker address 0xdEaD: 0.
-- **Reconciliation chain ↔ DB ↔ statement: OK** — 30/30 escrow deals (locked = captured + voided + still capturable, from Transfer events and paymentState; captured = journal = statement). Journal hash chains: verified.
+- **Reconciliation chain ↔ DB ↔ statement: OK** — 39/39 escrow deals (locked = captured + voided + still capturable, from Transfer events and paymentState; captured = journal = statement). Journal hash chains: verified.
 - Injection evals: money-level block **20/20** variants (35/35 model runs). Judge (mock (keyword heuristic)): precision 0.62, recall 0.42 on 40 labelled items.
-- Coverage of bank/: lines 91.1 %, branches 83.3 %.
-- Model spend in the scenario runs: 48 calls, 0 in / 0 out tokens, $0.0000 (estimate at list prices, `bank/timing.py`; MOCK calls cost $0).
+- Coverage of bank/: lines 90.2 %, branches 81.7 %.
+- Model spend in the scenario runs: 60 calls, 0 in / 0 out tokens, $0.0000 (estimate at list prices, `bank/timing.py`; MOCK calls cost $0).
 
 ## Scenarios × runs
 
 | ID | Scenario | Run 1 | Run 2 | Run 3 | Transactions (last run) |
 |---|---|---|---|---|---|
-| S01 | x402 EURC through the bank facilitator | PASS | PASS | PASS | x402_settle `0xfc36c552…ef5502` |
-| S02 | Escrow EURC, all accepted | PASS | PASS | PASS | authorize `0xe36d7493…7297e0`, capture `0x8752ecbf…af217c` |
-| S03 | Escrow EURC, 18 of 20 | PASS | PASS | PASS | authorize `0xb10a1453…df35b6`, capture `0x0670c4ef…dcc105`, void `0xaf630c04…8c54ff` |
-| S04 | Same deal in tCZK through escrow | PASS | PASS | PASS | authorize `0xfc4924e6…e9c5f8`, capture `0x3b6e19c7…b09296`, void `0x00940294…da8cc3` |
-| S05 | Dispute decided for the seller | XFAIL (D2) | XFAIL (D2) | XFAIL (D2) | — |
+| S01 | x402 EURC through the bank facilitator | PASS | PASS | PASS | x402_settle `0x7ab4e0bb…cd2671` |
+| S02 | Escrow EURC, all accepted | PASS | PASS | PASS | authorize `0x7a5c7a65…76ab6d`, capture `0x0c5437e0…b4778f`, capture `0x81e5a2e8…24d79c` |
+| S03 | Escrow EURC, 18 of 20 | PASS | PASS | PASS | authorize `0xb4204fd7…43a6a9`, capture `0x551d0e67…1f1533`, capture `0x57504380…90c811`, void `0xbd23fabf…2171fa` |
+| S04 | Same deal in tCZK through escrow | PASS | PASS | PASS | authorize `0xc4acacea…72c719`, capture `0x7b9e57fd…849dbb`, capture `0x87402e1b…b87a39`, void `0xe3d9736d…5ed659` |
+| S05 | Dispute decided for the seller | PASS | PASS | PASS | authorize `0xea599ff4…6d0e5c`, capture `0xbe427f61…8228e6`, capture `0x7ae9eea7…099c2b`, capture `0x80020399…09fd4d`, capture `0xd5c449fc…ad29e6` |
 | N01 | Amount above the per-deal limit | PASS | PASS | PASS | — |
-| N02 | Race: 10 parallel pay() with budget for 3 | PASS | PASS | PASS | authorize `0xffba3028…5ddede`, authorize `0xc9b9998b…ee9c31`, authorize `0x130eb322…e2bb41`, capture `0x6774af8c…1115c3`, capture `0x3bb19074…9cd789`, capture `0x1e0c18a4…57eabe` |
+| N02 | Race: 10 parallel pay() with budget for 3 | PASS | PASS | PASS | authorize `0x23bcdc77…833a9b`, authorize `0x0f87bfdb…a718f2`, authorize `0x13ff1b9a…b3819a`, capture `0x49b2a854…51f439`, capture `0x71ac3a22…62a61d`, capture `0x052cf5e3…178c9b`, capture `0x737bdcfb…b677cf`, capture `0x2d2cb116…f6ab58`, capture `0xce04fc1b…f03b12` |
 | N03 | payTo swapped in the 402 | PASS | PASS | PASS | — |
 | N04 | Price swapped in the 402 | PASS | PASS | PASS | — |
 | N05 | Injection in the seller's answer | PASS | PASS | PASS | — |
 | N06 | Delta: IČO on site ≠ ARES | PASS | PASS | PASS | — |
-| N07 | Garbage result → full void | PASS | PASS | PASS | authorize `0xf0aafd59…819d1e`, void `0x3f91e796…069c5e` |
-| N08 | VAT payer in EURC → acknowledged once | PASS | PASS | PASS | authorize `0x12450f89…891911`, capture `0xbeb2668c…35c895`, authorize `0x3708971f…d0ea11`, capture `0x664adfee…552e37` |
+| N07 | Garbage result → full void | PASS | PASS | PASS | authorize `0x1f4aec2a…c59b38`, void `0xa796931c…fa0fea` |
+| N08 | VAT payer in EURC → acknowledged once | PASS | PASS | PASS | authorize `0x056baa63…1ea03b`, capture `0x4b97a495…d87ae8`, capture `0x9f3dea48…e66fef`, authorize `0xa260a5f5…36288a`, capture `0x90a1d1c7…ac8335`, capture `0xcd7c27ed…6634f0` |
 | N09 | tCZK to a payee off the allowlist | PASS | PASS | PASS | — |
-| N10 | Direct tCZK transfer bypassing the bank | PASS | PASS | PASS | attack_direct_transfer `0xea604f88…c8e859` |
-| N11 | Replay of the same EIP-3009 signature | PASS | PASS | PASS | x402_settle `0x39f12c25…1b2089`, attack_replay `0xfbfaac22…d2836e` |
+| N10 | Direct tCZK transfer bypassing the bank | PASS | PASS | PASS | attack_direct_transfer `0x42c26e39…6cb16c` |
+| N11 | Replay of the same EIP-3009 signature | PASS | PASS | PASS | x402_settle `0x1ea00642…ad3ca1`, attack_replay `0xdfc567b9…eb04d0` |
 | N12 | Unpaid request to a paid route | PASS | PASS | PASS | — |
-| N13 | Buyer silent on flagged items → timer captures | XFAIL (D2) | XFAIL (D2) | XFAIL (D2) | — |
-| N14 | Seller silent after a rejection → timer voids | XFAIL (D2) | XFAIL (D2) | XFAIL (D2) | — |
+| N13 | Buyer silent on flagged items → timer captures | PASS | PASS | PASS | authorize `0x85345a3b…1cddeb`, capture `0xd2b74c10…5519e2` |
+| N14 | Seller silent after a rejection → timer voids | PASS | PASS | PASS | authorize `0xbc52d575…7daf4f`, capture `0x11b67ef2…7d22f7`, capture `0x058a79dc…8fb6cb`, void `0xdeb01e47…eacfd7` |
 | A01 | Bank API auth: tokens, other company's mandate/deal | PASS | PASS | PASS | — |
-| F01 | settle_fail_once → exactly one tx | PASS | PASS | PASS | x402_settle `0xcc0a0b95…f02f46` |
+| F01 | settle_fail_once → exactly one tx | PASS | PASS | PASS | x402_settle `0x87bcf0ce…827d5d` |
 | F02 | registry_timeout → under review (fail-closed) | PASS | PASS | PASS | — |
-| F03 | llm_bad_json → to a human, no money moves | PASS | PASS | PASS | authorize `0xd559085d…284aaa`, void `0x7e4322b7…1ab613` |
+| F03 | llm_bad_json → to a human, no money moves | PASS | PASS | PASS | authorize `0xf2e46977…cdeab7`, capture `0x994d7e00…ab2a59` |
 | F04 | webhook_duplicate → counted once | XFAIL (D3) | XFAIL (D3) | XFAIL (D3) | — |
 | F05 | webhook_bad_hmac → rejected | XFAIL (D3) | XFAIL (D3) | XFAIL (D3) | — |
 
@@ -51,7 +53,6 @@ Generated 2026-10-19 15:06 from `reports/scenarios-fork.json` at commit `725cbb8
 
 | Defect | What | Scenarios |
 |---|---|---|
-| D2 | dispute timer and dispute API not merged (stream U: bank/deadlines.py, dispute decisions; N13/N14/S05) | N13, N14, S05 |
 | D3 | Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId | F04, F05 |
 
 ## Speed (SPEC §19.4, measured in the matrix runs)
@@ -62,25 +63,25 @@ The `decision` samples include N02, where 10 concurrent pay() calls queue on one
 
 | Stage | Target p95 | n | p50 | p95 | Met |
 |---|---|---|---|---|---|
-| Mandate decision + cached check + journal (`decision`) | ≤ 50 ms | 126 | 0.4 ms | 31.7 ms | yes |
-| Bank facilitator verify (with screening) (`facilitator_verify`) | ≤ 500 ms | 6 | 25.0 ms | 479.8 ms | yes |
-| New counterparty: ARES + VAT + ISIR + sanctions (`screening`) | ≤ 2500 ms | 108 | 23.7 ms | 128.7 ms | yes |
-| Signature → tx in block (settle, authorize, capture, void) (`tx_in_block:*`) | ≤ 6000 ms | 82 | 624.7 ms | 672.4 ms | yes |
+| Mandate decision + cached check + journal (`decision`) | ≤ 50 ms | 144 | 0.5 ms | 31.9 ms | yes |
+| Bank facilitator verify (with screening) (`facilitator_verify`) | ≤ 500 ms | 6 | 12.6 ms | 610.8 ms | no |
+| New counterparty: ARES + VAT + ISIR + sanctions (`screening`) | ≤ 2500 ms | 119 | 22.0 ms | 123.9 ms | yes |
+| Signature → tx in block (settle, authorize, capture, void) (`tx_in_block:*`) | ≤ 6000 ms | 139 | 641.4 ms | 752.1 ms | yes |
 | Tx in block → row in the /bank feed (`bank_feed`) | ≤ 5000 ms | 0 | — | — | not measured |
-| Refusal → message to the client (`refusal_to_client`) | ≤ 100 ms | 42 | 3.8 ms | 46.0 ms | yes |
+| Refusal → message to the client (`refusal_to_client`) | ≤ 100 ms | 42 | 3.5 ms | 47.4 ms | yes |
 
 ## Coverage (SPEC §19.5)
 
 | Target (SPEC §19.5) | Actual | Met |
 |---|---|---|
-| bank/ lines ≥ 80 % | 91.1 % | yes |
+| bank/ lines ≥ 80 % | 90.2 % | yes |
 | bank/mandate.py branches ≥ 90 % | 92.4 % | yes |
 | bank/verifier.py branches ≥ 90 % | 97.1 % | yes |
 | bank/explain.py branches ≥ 90 % | 96.4 % | yes |
 | bank/facilitator.py branches ≥ 90 % | 91.3 % | yes |
-| bank/screening/__init__.py branches ≥ 90 % | 91.4 % | yes |
+| bank/screening/__init__.py branches ≥ 90 % | 89.7 % | no |
 
-bank/ total: lines 91.1 %, branches 83.3 % (reported, not a gate).
+bank/ total: lines 90.2 %, branches 81.7 % (reported, not a gate).
 
 ## Evals (SPEC §19.3) — tests/evals/harness.py, MOCK (scripted models, keyword-heuristic judge)
 
@@ -92,7 +93,7 @@ bank/ total: lines 91.1 %, branches 83.3 % (reported, not a gate).
 
 ## Model cost
 
-Scenario runs: 48 model calls, 0 input / 0 output tokens, **$0.0000** — estimate at list prices (`bank/timing.py` PRICES); Bedrock bills separately. Mode: MOCK (scripted replies).
+Scenario runs: 60 model calls, 0 input / 0 output tokens, **$0.0000** — estimate at list prices (`bank/timing.py` PRICES); Bedrock bills separately. Mode: MOCK (scripted replies).
 
 ## Reproduce
 
