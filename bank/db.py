@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS deals (
   deal_id TEXT PRIMARY KEY, buyer_id TEXT NOT NULL, seller_id TEXT NOT NULL, mandate_id TEXT,
   task_json TEXT, offer_json TEXT, quote_json TEXT, criteria_json TEXT, asset TEXT,
   amount INTEGER, payment_info_json TEXT, payment_hash TEXT, state TEXT NOT NULL,
-  idem_key TEXT UNIQUE, created_at REAL NOT NULL, updated_at REAL);
+  idem_key TEXT UNIQUE, created_at REAL NOT NULL, updated_at REAL, confirmed_by TEXT);
 CREATE TABLE IF NOT EXISTS screenings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, source TEXT NOT NULL,
   result_json TEXT NOT NULL, fetched_at REAL NOT NULL);

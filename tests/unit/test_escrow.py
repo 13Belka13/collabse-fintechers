@@ -72,7 +72,7 @@ def test_authorize_persists_before_send_and_uses_idem_key(deal):
     escrow.authorize("d-1")
     sent = deal["sender"].sent[0]
     assert sent["fn"] == "authorize" and sent["stored_before_send"]
-    assert sent["idem_key"] == "d-1:authorize" and sent["kind"] == "authorize"
+    assert sent["idem_key"] == escrow.idem_key("d-1", "authorize") and sent["kind"] == "authorize"
     pi = escrow.stored_payment_info("d-1")
     assert sent["args"][0] == escrow.as_tuple(pi) and sent["args"][1] == 5_000_000
     assert sent["args"][2] == config.COLLECTOR
@@ -85,8 +85,9 @@ def test_capture_and_void_idem_keys_fee_zero(deal):
     escrow.capture("d-1", 4_500_000, 1)
     escrow.void("d-1")
     _, cap, void = deal["sender"].sent
-    assert (cap["fn"], cap["args"][1:], cap["idem_key"]) == ("capture", (4_500_000, 0, escrow.ZERO), "d-1:capture:1")
-    assert (void["fn"], void["idem_key"]) == ("void", "d-1:void")
+    assert (cap["fn"], cap["args"][1:], cap["idem_key"]) == ("capture", (4_500_000, 0, escrow.ZERO),
+                                                                  escrow.idem_key("d-1", "capture:1"))
+    assert (void["fn"], void["idem_key"]) == ("void", escrow.idem_key("d-1", "void"))
 
 
 def test_no_capture_at_or_after_authorization_expiry(deal):

@@ -74,6 +74,8 @@ def _screen(payload, requirements) -> tuple[str, str] | None:
         return Code.QUOTE_MISMATCH, "authorization_value_differs_from_amount"
     if core.company_by_wallet(pay_to) is None:
         return Code.COUNTERPARTY_NOT_IN_SCOPE, "payee_not_a_bank_client"
+    if not payer or core.company_by_wallet(payer) is None:  # the relayer pays gas only for the bank's own clients
+        return Code.COUNTERPARTY_NOT_IN_SCOPE, "payer_not_a_bank_client"
     if tczk.bank_frozen(pay_to) or (payer and tczk.bank_frozen(payer)):
         return Code.UNDER_REVIEW, "wallet_frozen_at_bank"  # non-public: the client sees only the neutral code
     if asset == "tCZK":

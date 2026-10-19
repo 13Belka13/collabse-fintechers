@@ -12,17 +12,14 @@ import unicodedata
 
 from pydantic import BaseModel
 
-from bank import db, journal, llm, money
+from bank import core, db, journal, llm, money
 
 DEFAULT_CRITERIA = {
     "count": 20, "city": "Brno", "postcode_prefix": "6", "min_rating": 4.0,
     "required_fields": ["title", "address", "url", "website"],
     "category_keywords": ["sklad", "warehouse", "storage", "logist"],
 }
-# Google Maps fields a delivery may carry. Everything else (phone numbers, reviews ...) is dropped before
-# storing: no personal data in the bank (SPEC §10.2, CLAUDE.md "Data").
-KEEP_FIELDS = ("title", "categoryName", "totalScore", "reviewsCount", "address", "city", "postalCode", "website",
-               "placeId", "url", "permanentlyClosed")
+KEEP_FIELDS = core.DELIVERY_FIELDS
 JUDGE_FIELDS = ("placeId", "title", "categoryName", "address", "website")
 STAGE = "judge"
 
@@ -64,7 +61,8 @@ def check_items(items: list[dict], criteria: dict) -> list[dict]:
             failed.append("over_quantity")
         postcode = re.sub(r"\s", "", str(it.get("postalCode") or ""))
         in_city = _plain(it.get("city")) == _plain(c["city"]) or (
-            len(postcode) == 5 and postcode.isdigit() and postcode.startswith(c["postcode_prefix"]))
+            bool(c.get("postcode_prefix")) and len(postcode) == 5 and postcode.isdigit()
+            and postcode.startswith(c["postcode_prefix"]))
         if not in_city:
             failed.append("city")
         score = it.get("totalScore")
@@ -134,8 +132,7 @@ def _mock_judge(messages, tools):
 llm.register_mock(STAGE, _mock_judge)
 
 
-def clean_items(items: list[dict]) -> list[dict]:
-    return [{k: it[k] for k in KEEP_FIELDS if k in it} for it in items if isinstance(it, dict)]
+clean_items = core.clean_delivery_items
 
 
 def record_delivery(deal_id: str, items: list[dict]) -> int:
@@ -173,11 +170,11 @@ def settlement(deal_id: str) -> dict:
     for r in rules:
         f = by_id.get(r["placeId"]) if r["ok"] else None
         failed = list(r["failed"])
-        if r["ok"] and not r["category_keyword"] and f and f["plausible_warehouse"] is False:
-            failed.append("category")  # keyword missing and the judge did not vouch for it
         if failed:
             status = "rejected"
-        elif f and f["flagged"]:
+        elif (f and f["flagged"]) or not r["category_keyword"]:
+            # the judge only flags: an item without the category keyword waits for a human even if the judge
+            # thinks it is plausible (its "yes" must never release money), and a judge "no" is a flag, not a verdict
             status, n_held = "held", n_held + 1
         else:
             status, n_ok = "accepted", n_ok + 1

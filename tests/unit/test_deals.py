@@ -57,19 +57,27 @@ class FakeSender:
 @pytest.fixture
 def world(monkeypatch, seeded):
     monkeypatch.setenv("TCZK", TCZK)
-    monkeypatch.setenv("BANK_OPERATOR_PK", Account.create().key.hex())
+    operator = Account.create()
+    monkeypatch.setenv("BANK_OPERATOR_PK", operator.key.hex())
+    monkeypatch.setenv("BANK_OPERATOR_ADDR", operator.address)  # the seller pins the escrow operator
     buyer = Account.create()
     monkeypatch.setenv("ALFA_PK", buyer.key.hex())
     config.reload()
     db.run("UPDATE companies SET wallet_address=? WHERE id='alfa'", (buyer.address,))
+    for mid in ("m-alfa-1", "m"):  # the fake mandate module keeps no rows; deals.create checks the owner
+        db.run("INSERT INTO mandates (mandate_id, company_id, current_version) VALUES (?, 'alfa', 1)", (mid,))
+    from bank import tczk
+    monkeypatch.setattr(tczk, "is_allowed", lambda addr, address=None: True)
+    monkeypatch.setattr(tczk, "is_frozen", lambda addr, address=None: False)
 
     seller_app = seller_mod.create_app(FakeFacilitator())
     seller_client = TestClient(seller_app)
     monkeypatch.setattr(deals, "seller_http", lambda base_url: TestClient(seller_app))
     bank_app = FastAPI()
     bank_app.include_router(api.router)
-    bank = TestClient(bank_app)
-    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: bank.post(path, json=body).raise_for_status())
+    bank = TestClient(bank_app, headers={"x-agent-token": "dev-agent-alfa"})
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: bank.post(
+        path, json=body, headers={"x-seller-token": config.SELLER_TOKEN}).raise_for_status())
     locked = {"capturable": 0}
     monkeypatch.setattr(escrow, "read_state", lambda h: {"collected": True, "refundable": 0, **locked})
     monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())
@@ -152,7 +160,7 @@ def test_honest_pay_locks_escrow_and_seller_delivers(world):
     deal_id, _ = new_deal(world)
     view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
     assert view["status"] == "ok" and view["code"] is None and "5,00 €" in view["explanation"]
-    assert [s[0] for s in world.sender.sent] == ["authorize"] and world.sender.sent[0][2] == f"{deal_id}:authorize"
+    assert [s[0] for s in world.sender.sent] == ["authorize"] and world.sender.sent[0][2] == escrow.idem_key(deal_id, "authorize")
     assert world.mandate.calls[:2] == [("decide", 500, BETA, "ok"), ("reserve", 500)]
     pi = escrow.stored_payment_info(deal_id)
     assert pi["receiver"] == BETA and pi["maxAmount"] == 5_000_000 and pi["token"] == config.EURC
@@ -177,7 +185,8 @@ def test_settle_captures_accepted_then_voids_rest(world):
     world.bank.post(f"/api/deals/{deal_id}/pay")
     out = deals.settle(deal_id, {"capture_now": 4_500_000, "held": 0, "void": 500_000})
     assert out["state"] == "settled"
-    assert [(s[0], s[2]) for s in world.sender.sent[1:]] == [("capture", f"{deal_id}:capture:1"), ("void", f"{deal_id}:void")]
+    assert [(s[0], s[2]) for s in world.sender.sent[1:]] == [("capture", escrow.idem_key(deal_id, "capture:1")),
+                                                         ("void", escrow.idem_key(deal_id, "void"))]
     assert world.sender.sent[1][1][1] == 4_500_000
     assert ("commit", 450) in world.mandate.calls
 

@@ -54,7 +54,7 @@ def refuse(code: Code, reasons: list[dict] | None = None, explanation: str = "",
             "next_tool": next_tool, **extra}
 
 
-CLIENT_FIELDS = ("status", "code", "explanation", "next_tool", "deal_id")
+CLIENT_FIELDS = ("status", "code", "explanation", "next_tool", "deal_id", "marks")
 CLIENT_REASON_FIELDS = ("code", "text", "source_url")
 
 

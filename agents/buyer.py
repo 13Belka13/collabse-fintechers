@@ -90,12 +90,14 @@ def extract_criteria(task_text: str, deal_id: str | None = None) -> dict | None:
     return value.model_dump() if ok else None
 
 
-def http_transport(base_url: str | None = None, client=None) -> Transport:
+def http_transport(base_url: str | None = None, client=None, company_id: str = "alfa") -> Transport:
+    """The bank API as this company's agent: the token decides whose money it may spend, not the request body."""
     import httpx
     client = client or httpx.Client(base_url=base_url or config.BANK_URL, timeout=15)
+    token = next((t for t, c in config.AGENT_TOKENS.items() if c == company_id), "")
 
     def call(method, path, json=None, params=None):
-        r = client.request(method, path, json=json, params=params)
+        r = client.request(method, path, json=json, params=params, headers={"x-agent-token": token})
         r.raise_for_status()
         return r.json()
     return call
@@ -117,7 +119,8 @@ class Buyer:
     def _deal_for(self, seller_id: str) -> str:
         if seller_id not in self.deals:
             r = self.call("POST", "/api/deals", json={"buyer_id": self.buyer_id, "seller_id": seller_id,
-                                                      "mandate_id": self.mandate_id, "task": self.task})
+                                                      "mandate_id": self.mandate_id, "task": self.task,
+                                                      "asset": self.task["asset"]})
             self.deals[seller_id] = r["deal_id"]
         return self.deals[seller_id]
 
