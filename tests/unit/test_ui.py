@@ -177,3 +177,12 @@ def test_demo_redirect_only_to_known_pages(client, world, monkeypatch):  # noqa:
     key = next(iter(demo_scenarios.SCENARIOS))
     assert client.post(f"/demo/{key}?next=/story", follow_redirects=False).headers["location"] == "/story"
     assert client.post(f"/demo/{key}?next=https://evil.example", follow_redirects=False).headers["location"] == "/bank"
+
+
+def test_story_headline_waits_for_a_person_only_when_one_is_asked(client, world):  # noqa: F811
+    deal_id = make_deal("honest", deal_id="d-talk", state="offered")
+    journal.append("agent:seller", "seller_reply", {"reply_text": "5.00 €.", "offer": {"prices": {"EURC": "5000000"}}},
+                   deal_id=deal_id)
+    assert "Price agreed" in client.get(f"/story?deal_id={deal_id}").text
+    db.run("UPDATE deals SET state='awaiting_human' WHERE deal_id=?", (deal_id,))
+    assert "Waiting for a person to decide" in client.get(f"/story?deal_id={deal_id}").text

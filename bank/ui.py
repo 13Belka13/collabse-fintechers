@@ -339,8 +339,10 @@ def story(deal_id: str | None = None) -> dict | None:
         headline, tone = f"Settled: {_fmt_money(money_now['to_seller'], asset)} to {seller['name']}", "ok"
     elif money_now:
         headline, tone = f"In progress: {_fmt_money(money_now['in_escrow'], asset)} still in the safe", "warn"
-    elif any(s["status"] == "wait" for s in steps):
+    elif deal.get("state") == "awaiting_human":
         headline, tone = "Waiting for a person to decide", "warn"
+    elif any(s["status"] == "wait" for s in steps):  # an offer is on the table, the agent has not asked to pay yet
+        headline, tone = "Price agreed — the bank decides before any money moves", "info"
     else:
         headline, tone = "Negotiating", "info"
     return {"deal": deal, "asset": asset, "seller": seller, "buyer": buyer, "steps": steps, "money": money_now,
