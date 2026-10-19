@@ -212,6 +212,13 @@ def build(target: str) -> tuple[str, dict]:
             ids = sorted({r["id"] for r in raw["results"] if d in r["defects"]})
             md.append(f"| {d} | {raw['defects'][d]} | {', '.join(ids)} |")
         md.append("")
+    failed = [r for r in raw["results"] if r["status"] == "fail"]
+    if failed:
+        md += ["### Failures", "", "| ID | Run | First failed check | Detail |", "|---|---|---|---|"]
+        for r in failed:
+            c = next(c for c in r["checks"] if not c["ok"])
+            md.append(f"| {r['id']} | {r['run']} | {c['name']} | {str(c['detail'] or '')[:160]} |")
+        md.append("")
     md += ["## Speed (SPEC §19.4, measured in the matrix runs)", ""]
     if fork:
         md += ["Fork caveat: anvil mines on demand, so *tx in block* here is local and says nothing about Base's 2 s "
