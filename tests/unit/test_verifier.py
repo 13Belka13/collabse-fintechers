@@ -132,6 +132,23 @@ def test_delivery_storage_drops_phone_and_reviews():
     assert stored == [HONEST[0]]
 
 
+def test_buyer_agent_criteria_keys_and_raw_stored_delivery():
+    """AcceptanceCriteria from agents/buyer.py, and a delivery stored raw by another module (phones included)."""
+    crit = {"count": 20, "city": "Brno", "min_rating_exclusive": 4.5, "category_keywords": ["sklad"],
+            "require_website": False}
+    c = verifier.criteria_of(crit)
+    assert c["min_rating"] == 4.5 and "website" not in c["required_fields"]
+    raw = [{**it, "phone": "+420 000 000 000"} for it in GAMA]
+    db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, asset, amount, criteria_json, state, created_at)"
+           " VALUES ('d2','alfa','s-gama','EURC',5000000,?,'delivered',?)", (db.dumps(crit), time.time()))
+    db.run("INSERT INTO deliveries (deal_id, items_json, created_at) VALUES ('d2',?,?)", (db.dumps(raw), time.time()))
+    s = verifier.settlement("d2")
+    below = sum(1 for it in GAMA[:18] if it["totalScore"] <= 4.5)
+    assert s["counts"]["accepted"] == 18 - below
+    assert "phone" not in db.one("SELECT judge_flags_json FROM deliveries WHERE deal_id='d2'")["judge_flags_json"]
+    assert "phone" not in db.one("SELECT rule_results_json FROM deliveries WHERE deal_id='d2'")["rule_results_json"]
+
+
 def test_settlement_without_delivery_raises():
     with pytest.raises(ValueError):
         verifier.settlement("nope")

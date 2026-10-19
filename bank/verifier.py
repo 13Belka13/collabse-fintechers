@@ -33,7 +33,14 @@ def _plain(s) -> str:
 
 
 def criteria_of(criteria: dict | None) -> dict:
-    return {**DEFAULT_CRITERIA, **(criteria or {})}
+    """Defaults + the deal's criteria. Also accepts the buyer agent's AcceptanceCriteria keys
+    (min_rating_exclusive, require_website)."""
+    c = {**DEFAULT_CRITERIA, **(criteria or {})}
+    if "min_rating_exclusive" in c:
+        c["min_rating"] = c["min_rating_exclusive"]
+    if c.get("require_website") is False:
+        c["required_fields"] = [f for f in c["required_fields"] if f != "website"]
+    return c
 
 
 def keyword_hit(item: dict, criteria: dict) -> bool:
@@ -152,7 +159,7 @@ def settlement(deal_id: str) -> dict:
         raise ValueError(f"deal {deal_id} has no delivery")
     crit = criteria_of(db.loads(deal["criteria_json"]))
     count, total = int(crit["count"]), int(deal["amount"])
-    items = db.loads(delivery["items_json"]) or []
+    items = clean_items(db.loads(delivery["items_json"]) or [])  # whoever stored it, the judge never sees phones
     rules = check_items(items, crit)
 
     if delivery["judge_flags_json"]:

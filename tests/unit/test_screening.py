@@ -199,7 +199,7 @@ def test_beta_vat_payer_with_its_account_published_and_gama_ordinary():
     assert screening.normalize_account("CZ1399990000005638829718") in beta["vat"]["published_accounts"]
     gama = screening.check(GAMA)
     assert gama["level"] == "ok" and gama["vat"] == {"payer": False, "unreliable": "NENALEZEN",
-                                                     "published_accounts": []}
+                                                     "published_accounts": [], "source_url": vat.SOURCE_URL}
     assert beta["legal_form"] == gama["legal_form"] == "112"
 
 

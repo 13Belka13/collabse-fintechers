@@ -86,7 +86,8 @@ def _fetchers(ico: str, fx: dict | None, client) -> dict:
 
 def _check(ico: str, wallet: str | None, website_url: str | None, live: bool) -> dict:
     res = {"ico": ico, "name": None, "legal_form": None, "level": "ok", "reasons": [], "sources": [],
-           "vat": {"payer": None, "unreliable": None, "published_accounts": []}, "isir": [],
+           "vat": {"payer": None, "unreliable": None, "published_accounts": [], "source_url": vat.SOURCE_URL},
+           "isir": [],
            "sanctions": [], "website": None, "wallet": wallet, "website_url": website_url,
            "fetched_at": time.time(), "demo_fixture": False, "live": False, "skipped": []}
     if not ico_checksum_ok(ico):
@@ -142,7 +143,7 @@ def _check(ico: str, wallet: str | None, website_url: str | None, live: bool) ->
     ares_vat = a["vat_registered"] if a else None
     if v is not None:
         res["vat"] = {"payer": bool(ares_vat) or v["unreliable"] in ("ANO", "NE"), "unreliable": v["unreliable"],
-                      "published_accounts": v["published_accounts"]}
+                      "published_accounts": v["published_accounts"], "source_url": vat.SOURCE_URL}
     elif ares_vat:
         res["vat"]["payer"] = True  # §6.5: ARES stavZdrojeDph alone makes it a payer; accounts unknown
 
