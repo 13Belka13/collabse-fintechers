@@ -39,7 +39,9 @@ bank's **tokenized deposit tCZK** (125,00 Kč = 5 € at the demo rate) it passe
 - **Lean code.** Plain functions, one SQLite, no abstractions "for later". Only what the demo
   shows or what protects money.
 - **Every layer ends runnable**: check its done-line in SPEC §15, then commit (small,
-  imperative messages — the technical judge reads the history).
+  imperative messages — the technical judge reads the history). **No `Co-Authored-By` or other
+  AI attribution trailers in commit messages or PR descriptions** — the team's decision; AI use
+  is disclosed in the README instead.
 - **`prep/` is pre-hackathon, disclosed** work: reuse proven techniques, never present it as new;
   say so in the commit message whenever something comes from `prep/`.
 
