@@ -1,0 +1,19 @@
+x402[fastapi,httpx,evm]==2.25.0
+anthropic[bedrock]
+web3>=8,<9
+eth-account
+fastapi
+uvicorn
+httpx
+jinja2
+pydantic
+python-dotenv
+apify-client>=3.3
+rapidfuzz
+# tests and coverage (SPEC §19)
+pytest
+pytest-cov
+# contracts fallback without Foundry, and local test chain (tests only; on Windows do not use web3[tester])
+py-solc-x
+eth-tester
+py-evm
