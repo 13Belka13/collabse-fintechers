@@ -462,3 +462,22 @@ def test_buyer_agent_haggles_with_the_ai_seller_through_the_bank(bank, monkeypat
     assert ("authorize", 12_500) in bank.sender.money()  # paid the negotiated 5 €, not the 6 € list price
     replies = [e for e in journal.entries(limit=500) if e["event"] == "seller_reply"]
     assert replies and all(e["payload"]["source"] == "untrusted:seller" for e in replies)
+
+
+def test_seller_can_deliver_real_apify_places(bank, monkeypatch):
+    """SELLER_DATA=maps: 20 real Brno places from the Apify recording — 17 pass the rules, 3 borderline ones
+    (no 'sklad' keyword) are held for a human; no personal fields reach the bank."""
+    import json as _json
+    monkeypatch.setenv("SELLER_DATA", "maps")
+    items = seller_mod.make_items(20, "honest")
+    recorded = {it["placeId"] for it in _json.loads(seller_mod.RECORDED_MAPS.read_text())["items"]}
+    assert len(items) == 20 and all(it["placeId"] in recorded for it in items)
+    assert not any(k in it for it in items for k in ("phone", "phoneUnformatted", "reviews"))
+    deal_id, _ = deal(bank, asset="tCZK")
+    bank.api.post(f"/api/deals/{deal_id}/pay")
+    from bank import disputes
+    d = disputes.get(deal_id)
+    held = [i for i in d["items"] if i["origin"] == "judge"]
+    assert len(held) == 3 and deals.get(deal_id)["state"] == "disputed"
+    assert ("authorize", 12_500) in bank.sender.money()  # 17 accepted, minus the 5 % holdback, captured at once
+    assert bank.sender.money()[1] == ("capture", 12_500 * 17 // 20 - 12_500 * 17 // 20 * 500 // 10_000)

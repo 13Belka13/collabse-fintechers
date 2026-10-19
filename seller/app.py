@@ -71,9 +71,33 @@ def facilitator_url() -> str:
         return config.PUBLIC_FACILITATOR_URL
 
 
+RECORDED_MAPS = config.ROOT / "fixtures" / "maps" / "brno_warehouses_recorded.json"
+
+
+def recorded_items(count: int) -> list[dict]:
+    """Real Brno places recorded from Google Maps through Apify (compass/crawler-google-places, no personal
+    fields): those that pass the bank's code rules first, then borderline ones (no 'sklad' keyword: movers,
+    estate agents) that the judge will flag for a human. The data is real, so the deal can be partly disputed."""
+    from bank import verifier  # the same public rules the bank applies; the seller just sorts by them
+    items = json.loads(RECORDED_MAPS.read_text(encoding="utf-8"))["items"]
+    rules = verifier.check_items(items, {"count": len(items)})
+    good = [it for it, r in zip(items, rules) if r["ok"] and r["category_keyword"]]
+    borderline = [it for it, r in zip(items, rules) if r["ok"] and not r["category_keyword"]]
+    rest = [it for it, r in zip(items, rules) if not r["ok"]]
+    return [dict(it) for it in (good + borderline + rest)[:count]]
+
+
 def make_items(count: int, mode: str) -> list[dict]:
     """Delivery: warehouses in Brno in the Google Maps dataset shape (SPEC §10.2), no phone fields.
+    SELLER_DATA=maps: real places recorded via Apify (fixtures/maps/brno_warehouses_recorded.json);
+    default: synthetic places (deterministic for tests and the money scenes).
     fake_data: 2 of the items break the agreed criteria (no website, wrong city) -> rules reject them."""
+    if os.getenv("SELLER_DATA", "").strip() == "maps" and RECORDED_MAPS.exists():
+        items = recorded_items(count)
+        if mode == "fake_data" and len(items) >= 2:
+            items[-1].update(website=None)
+            items[-2].update(city="Praha", address="Fiktivní 1, 110 00 Praha", postalCode="110 00")
+        return items
     items = []
     for i in range(1, count + 1):
         items.append({"placeId": f"demo-place-{i:02d}", "title": f"Sklad Brno {i:02d} s.r.o.",

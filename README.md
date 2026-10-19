@@ -80,8 +80,8 @@ The same deal runs in two currencies:
 | | http://localhost:8000/deals → `/deals/{id}` → `/deals/{id}/dispute` | Deals, escrow state from the chain, the dispute card (items, violated criterion, deadlines, judge reasons, accept / reject) |
 | | http://localhost:8000/statement | Statement and the chain reconciliation (`/statement/reconcile`) |
 | Buyer agent | `agents/buyer.py`, run by `scripts/demo_scenarios.py` or a `/bank` button | Manual tool loop on Claude; MOCK replies when `MOCK=1` |
-| Seller agent | `agents/seller_agent.py` | The model phrases the reply; code owns the price |
-| Apify Actor | `actors/company-check/` | Web footprint of a Czech company. *TODO(apify): Store link after `apify push`* |
+| Seller agent | `agents/seller_agent.py`, called by the seller service on every `/negotiate` turn | The model phrases the reply; code owns the price (≤ 3 turns, never below the minimum, never back up) |
+| Apify Actor | `actors/company-check/`, on Apify as `savvy_sauger/company-check` (private, Limited permissions) | Web footprint of a Czech company: IČO on the site + Google Maps place |
 
 Contracts on **Base Sepolia** (chain id 84532):
 
@@ -277,10 +277,19 @@ so they have no explorer links.
 - **Google Maps Actor `compass/crawler-google-places`** produces the goods of the deal: the seller delivers
   "20 warehouses in Brno with rating above 4.0 and a website". No phone numbers, no reviews
   (`scrapeReviewsPersonalData: false`), and the number of places is capped.
-- **What is live today:** the Actor ran locally (apify 4.1). It has not been pushed yet, and
-  `fixtures/maps/brno_warehouses.json` is still a labelled synthetic stand-in.
-  *TODO(apify): Actor Store link, the recorded dataset (`python fixtures/maps/record_maps.py`) and its run
-  cost, to be filled in from the session that pushes the Actor.*
+- **What is live today:**
+  - The Actor is pushed to Apify as `savvy_sauger/company-check` (private, Limited permissions; schemas
+    validated before each push). Two platform runs: a large public company (ČEZ, IČO 45274649) came out
+    `medium` — ČEZ does not show its IČO on the three pages the Actor reads — and a synthetic seller with an
+    unreachable website returned `medium` with `website_reachable = false` instead of failing.
+  - The real Google Maps dataset is recorded: `fixtures/maps/brno_warehouses_recorded.json`, Apify run
+    `w9XlXOBtETIUObLGm`, 73 places in Brno with only the 11 fields we use (one place whose title
+    was a person's name was dropped). 17 of them pass the demo criteria; 12 more pass every rule except
+    the category keyword (movers, estate agents) and go to the judge.
+  - Run the seller with `SELLER_DATA=maps` to deliver these real places: 17 are paid at once, the 3
+    borderline ones are held for a human in the dispute card. Without it the seller delivers the labelled
+    synthetic set, which keeps the money scenes and the tests deterministic.
+  - Apify spend for the push, the two Actor runs and the recording: **about $0.38** (Apify console).
 
 ## How we use AWS
 
@@ -340,9 +349,10 @@ so they have no explorer links.
   scripted, and the judge numbers above come from a keyword heuristic.
 - **Company checks are signals with sources, not full KYB.** The Mostly Right datasets need an API key we do
   not have yet.
-- **Not built yet:** the Tatum webhook; the pushed Apify Actor and the recorded Google Maps dataset;
-  *TODO(integrator): the AI seller agent and the 3-turn negotiation, which are being added now*; latency of
-  block → `/bank` feed (not measured); facilitator verify is above its 500 ms target.
+- **Not built yet:** the Tatum webhook; latency of block → `/bank` feed (not measured); facilitator
+  verify is above its 500 ms target. The seller agent negotiates up to 3 turns (`SELLER_OPENING=list`: the
+  6 € list price is refused by the 5 € task budget, the buyer agent haggles to 5 € and pays), but only in
+  MOCK so far.
 
 ## Repository layout
 
