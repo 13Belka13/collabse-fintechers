@@ -45,7 +45,6 @@ def run(name: str) -> dict:
     seller.post("/mode", json={"seller_id": s["seller"], "mode": s["mode"]}).raise_for_status()
     sel = core.seller(s["seller"])
     screening.check(sel["ico"], sel["wallet_address"], sel.get("website_url"))  # prefetched as during negotiation
-    journal.append("human:demo", "demo.scenario", {"name": name, "title": s["title"]})
 
     token = next((t for t, c in getattr(config, "AGENT_TOKENS", {}).items() if c == "alfa"), None)
     headers = {"x-agent-token": token} if token else {}

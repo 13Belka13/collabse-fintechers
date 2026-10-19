@@ -13,7 +13,8 @@
   <div class="flex"><strong>Demo scenarios</strong>
     <form method="post" action="/timer/tick" class="right"><button class="ghost" type="submit">Run the timer now</button></form>
   </div>
-  {% for key, s in scenarios.items() %}<form method="post" action="/demo/{{ key }}"><button type="submit" title="{{ s.story }}">{{ s.title }}</button></form>{% endfor %}
+  {% for key, s in scenarios.items() %}<form method="post" action="/demo/{{ key }}"><button type="submit">{{ s.title }}</button></form>{% endfor %}
+  <details class="small muted"><summary>What each scenario shows</summary><ul>{% for key, s in scenarios.items() %}<li><strong>{{ s.title }}:</strong> {{ s.story }}</li>{% endfor %}</ul></details>
 </div>
 <div id="feed" hx-get="/bank/feed?view={{ view }}" hx-trigger="every 2s" hx-swap="innerHTML">
 {% include "_feed.html" %}

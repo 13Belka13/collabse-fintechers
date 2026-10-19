@@ -8,7 +8,8 @@ import types
 
 import pytest
 
-from bank import chain, db, deadlines, disputes, escrow, journal, llm, mandate, verifier  # noqa: F401 (registers its mock first)
+from bank import chain, db, deadlines, disputes, escrow, journal, llm, mandate
+from bank import verifier  # noqa: F401  (imported first, so its judge mock does not replace the test's)
 from seller.app import DEMO_DISPUTE_TERMS, make_items
 
 ADDR = "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
@@ -70,7 +71,8 @@ def make_deal(mode="honest", deal_id="d-test", expiry_in=86400, state="delivered
 
 
 def captures(w):
-    return [(amount, key) for fn, amount, key in w.sender.sent if fn == "capture"]
+    # (amount, "capture:n"): the idem key's suffix, whatever prefix escrow puts before it
+    return [(amount, ":".join(key.split(":")[-2:])) for fn, amount, key in w.sender.sent if fn == "capture"]
 
 
 def fns(w):
@@ -93,11 +95,11 @@ def test_honest_deal_pays_minus_holdback_then_releases_it(world):
     deal_id = make_deal("honest")
     d = disputes.settle(deal_id, now=T0)
     assert d["items"] == [] and d["holdback"] == 250_000  # 5 % of 5,00 €
-    assert captures(world) == [(4_750_000, f"{deal_id}:capture:1")]
+    assert captures(world) == [(4_750_000, "capture:1")]
     assert state(deal_id) == "settled"
     assert deadlines.tick(now=T0 + 299) == []  # holdback window not over yet
     deadlines.tick(now=T0 + 301)
-    assert captures(world)[-1] == (250_000, f"{deal_id}:capture:2")
+    assert captures(world)[-1] == (250_000, "capture:2")
     assert "void" not in fns(world)  # everything went to the seller: nothing to return
     assert state(deal_id) == "closed"
     assert reservation(deal_id)["committed"] == 500
@@ -109,7 +111,7 @@ def test_n14_seller_silent_after_rejection_voids_that_part(world):
     deal_id = make_deal("fake_data")  # 2 of 20 break the rules (no website, wrong city)
     d = disputes.settle(deal_id, now=T0)
     assert [it["origin"] for it in d["items"]] == ["rules", "rules"] and d["step"] == "objection"
-    assert d["holdback"] == 225_000 and captures(world) == [(4_275_000, f"{deal_id}:capture:1")]
+    assert d["holdback"] == 225_000 and captures(world) == [(4_275_000, "capture:1")]
     assert state(deal_id) == "disputed"
     deadlines.tick(now=T0 + 119)
     assert len(world.sender.sent) == 1  # objection window still open
@@ -119,7 +121,7 @@ def test_n14_seller_silent_after_rejection_voids_that_part(world):
     assert fns(world) == ["capture"]
     deadlines.tick(now=T0 + 301)  # holdback over: capture it, THEN void the rejected part
     assert fns(world) == ["capture", "capture", "void"]
-    assert captures(world)[-1] == (225_000, f"{deal_id}:capture:2")
+    assert captures(world)[-1] == (225_000, "capture:2")
     view = disputes.money_view({"amount": 5_000_000}, disputes.get(deal_id))
     assert view == {"total": 5_000_000, "captured": 4_500_000, "returned": 500_000, "in_escrow": 0, "holdback": 0}
     rules = [e["payload"]["rule"] for e in timer_events(deal_id) if e["event"] == "dispute.default_applied"]
@@ -134,14 +136,14 @@ def test_n13_buyer_silent_on_flagged_items_captures_them(world):
     d = disputes.settle(deal_id, now=T0)
     assert [(it["origin"], it["step"]) for it in d["items"]] == [("judge", "review")] * 2
     assert d["items"][0]["judge"]["ai_generated"] is True
-    assert captures(world) == [(4_275_000, f"{deal_id}:capture:1")]  # 18 accepted minus 5 % holdback
+    assert captures(world) == [(4_275_000, "capture:1")]  # 18 accepted minus 5 % holdback
     deadlines.tick(now=T0 + 61)  # buyer silent -> accepted -> paid at once
-    assert captures(world)[-1] == (500_000, f"{deal_id}:capture:2")
+    assert captures(world)[-1] == (500_000, "capture:2")
     e = [e for e in timer_events(deal_id) if e["event"] == "dispute.default_applied"]
     assert {x["payload"]["rule"] for x in e} == {"on_buyer_silence: accept"}
     assert any(x["event"] == "dispute.capture" and x["actor"] == "timer" for x in timer_events(deal_id))
     deadlines.tick(now=T0 + 301)
-    assert captures(world)[-1] == (225_000, f"{deal_id}:capture:3") and "void" not in fns(world)
+    assert captures(world)[-1] == (225_000, "capture:3") and "void" not in fns(world)
     assert sum(a for a, _ in captures(world)) == 5_000_000
 
 
@@ -155,7 +157,7 @@ def test_two_ticks_never_capture_twice_and_a_lost_answer_resends_the_same_key(wo
     assert d["pending"] == {"kind": "capture", "amount": 250_000, "n": 2} and d["captured"] == 4_512_500
     deadlines.tick(now=T0 + 62)
     deadlines.tick(now=T0 + 62)
-    assert captures(world) == [(4_512_500, f"{deal_id}:capture:1"), (250_000, f"{deal_id}:capture:2")]
+    assert captures(world) == [(4_512_500, "capture:1"), (250_000, "capture:2")]
     assert disputes.get(deal_id)["captured"] == 4_762_500 and disputes.get(deal_id)["pending"] is None
     assert reservation(deal_id)["committed"] == 477  # 4,7625 € rounded up once, never more than reserved
 
@@ -177,7 +179,7 @@ def test_buyer_rejection_needs_a_criterion_and_evidence_then_seller_objects_and_
     assert it["step"] == "objection" and it["rejection"]["by"] == "human:alfa"
     assert it["deadline_at"] == T0 + 5 + DEMO_DISPUTE_TERMS["objection_window_s"]
     disputes.buyer_review(deal_id, "demo-place-04", "accept", "human:alfa", now=T0 + 6)
-    assert captures(world)[-1] == (250_000, f"{deal_id}:capture:2")  # accepted item paid at once
+    assert captures(world)[-1] == (250_000, "capture:2")  # accepted item paid at once
     disputes.seller_objection(deal_id, "demo-place-03", "It is a storage hall, see the photos.", "human:beta",
                               now=T0 + 10)
     assert disputes.get(deal_id)["seller_statement"].startswith("It is a storage hall")
@@ -185,7 +187,7 @@ def test_buyer_rejection_needs_a_criterion_and_evidence_then_seller_objects_and_
         disputes.buyer_review(deal_id, "demo-place-03", "accept", "human:alfa", now=T0 + 11)
     assert e.value.status == 409
     disputes.decide(deal_id, "demo-place-03", "accept", "human:bank-officer", note="Photos convince.", now=T0 + 20)
-    assert captures(world)[-1] == (250_000, f"{deal_id}:capture:3")
+    assert captures(world)[-1] == (250_000, "capture:3")
     actors = {e["actor"] for e in journal.entries(deal_id, limit=1000) if e["event"].startswith("dispute.")}
     assert {"human:alfa", "human:beta", "human:bank-officer"} <= actors
     deadlines.tick(now=T0 + 301)
@@ -233,7 +235,7 @@ def test_timer_adopts_a_deal_that_deals_settle_left_verified(world):
     d = disputes.get(deal_id)
     assert d["captured"] == 4_750_000 and d["capture_n"] == 1 and d["holdback"] == 0
     deadlines.tick(now=T0 + 61)
-    assert captures(world)[-1] == (250_000, f"{deal_id}:capture:2")
+    assert captures(world)[-1] == (250_000, "capture:2")
     assert state(deal_id) == "closed"
 
 

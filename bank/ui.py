@@ -299,9 +299,10 @@ def criteria_text(deal: dict) -> dict:
     """Rule code -> what was agreed, so the card says which criterion an item violates."""
     from bank import verifier
     c = verifier.criteria_of(deal.get("criteria"))
-    out = {"city": f"agreed: {c['city']} (postcode {c['postcode_prefix']}xx xx)", "min_rating": f"agreed: rating > {c['min_rating']}",
-           "category": "agreed: " + ", ".join(c["category_keywords"]), "permanently_closed": "agreed: the place is open",
-           "duplicate": "agreed: each place once", "over_quantity": f"agreed: {c['count']} items"}
+    out = {"city": f"agreed: {c['city']} (postcode {c['postcode_prefix']}xx xx)",
+           "min_rating": f"agreed: rating > {c['min_rating']}", "category": "agreed: " + ", ".join(c["category_keywords"]),
+           "permanently_closed": "agreed: the place is open", "duplicate": "agreed: each place once",
+           "over_quantity": f"agreed: {c['count']} items"}
     out.update({f"has_{f}": f"agreed: the item has a {f}" for f in c["required_fields"]})
     return out
 
