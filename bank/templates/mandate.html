@@ -20,7 +20,7 @@
     <tr><td>Assets allowed</td><td>{{ current.policy.assets_allowed|join(', ') }}</td></tr>
     <tr><td>Counterparties</td><td>{{ current.policy.counterparties }}</td></tr>
     <tr><td>Valid until</td><td>{{ current.policy.valid_until }}</td></tr>
-    <tr><td>Velocity</td><td>{{ current.policy.velocity }}</td></tr>
+    <tr><td>Velocity</td><td>{% set v = current.policy.velocity %}{% if v %}at most {{ v.max_deals }} payments per {{ v.window_s }} s{% else %}no limit{% endif %}</td></tr>
     <tr><td>VAT risk acknowledged (§109 VAT Act)</td><td>{% for a in current.policy.vat_risk_acknowledged %}<div>IČO <code>{{ a.ico }}</code> · {{ a.asset }} · {{ a.at }} by <code>{{ a.by }}</code></div>{% else %}<span class="muted">none</span>{% endfor %}</td></tr>
   </table>
 </div>

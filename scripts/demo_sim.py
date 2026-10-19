@@ -15,6 +15,11 @@ SIM_TCZK = "0x6a99C9e95DD220172d07D5f730f2e82B466D4B67"  # the prep token's addr
 _lock = threading.Lock()
 
 
+def sim_link(tx_hash: str) -> str:
+    """Never an explorer URL for a simulated tx: it would point at a transaction that does not exist."""
+    return f"simulated tx {tx_hash[:10]}… (not on Base Sepolia)"
+
+
 class SimChain:
     """chain.Sender stand-in: one tx per idem key, escrow paymentState tracked per payment hash."""
 
@@ -27,7 +32,7 @@ class SimChain:
             prior = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (idem_key,)) if idem_key else None
             if prior:  # same idem key -> the same tx, as chain.Sender does
                 return {"tx_hash": prior["tx_hash"], "status": "simulated", "block_number": None, "gas_used": 0,
-                        "link": chain.tx_link(prior["tx_hash"]), "receipt": None}
+                        "link": sim_link(prior["tx_hash"]), "receipt": None}
             h = "0x" + secrets.token_hex(32)
             pi = dict(zip([n for n, _ in escrow.PI_FIELDS], call.args[0]))
             st = self._state(escrow.payment_hash(pi))
@@ -43,7 +48,7 @@ class SimChain:
                 st["capturable"] = 0
             db.run("INSERT INTO onchain_txs (tx_hash, kind, deal_id, status, idem_key, created_at) VALUES (?,?,?,?,?,?)",
                    (h, kind, deal_id, "simulated", idem_key, time.time()))
-            return {"tx_hash": h, "status": "simulated", "block_number": None, "gas_used": 0, "link": chain.tx_link(h),
+            return {"tx_hash": h, "status": "simulated", "block_number": None, "gas_used": 0, "link": sim_link(h),
                     "receipt": None}
 
     def _state(self, h: str) -> dict:
