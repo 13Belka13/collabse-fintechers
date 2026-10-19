@@ -1,0 +1,50 @@
+{
+    "$schema": "https://apify.com/schemas/v1/dataset.ide.json",
+    "actorSpecification": 1,
+    "fields": {
+        "type": "object",
+        "properties": {
+            "ico": {"type": "string"},
+            "websiteUrl": {"type": "string"},
+            "score": {"type": "integer"},
+            "level": {"type": "string", "enum": ["low", "medium", "high"]},
+            "signals": {"type": "array"},
+            "checkedAt": {"type": "string"}
+        },
+        "required": ["ico", "websiteUrl", "score", "level", "signals", "checkedAt"]
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {"fields": ["ico", "websiteUrl", "level", "score", "checkedAt"]},
+            "display": {
+                "component": "table",
+                "properties": {
+                    "ico": {"label": "IČO", "format": "text"},
+                    "websiteUrl": {"label": "Website", "format": "link"},
+                    "level": {"label": "Risk level", "format": "text"},
+                    "score": {"label": "Score", "format": "number"},
+                    "checkedAt": {"label": "Checked at", "format": "date"}
+                }
+            }
+        },
+        "signals": {
+            "title": "Signals",
+            "transformation": {
+                "fields": ["ico", "level", "signals"],
+                "unwind": ["signals"]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "ico": {"label": "IČO", "format": "text"},
+                    "level": {"label": "Risk level", "format": "text"},
+                    "name": {"label": "Signal", "format": "text"},
+                    "value": {"label": "Value", "format": "text"},
+                    "source_url": {"label": "Source", "format": "link"},
+                    "explanation": {"label": "Explanation", "format": "text"}
+                }
+            }
+        }
+    }
+}

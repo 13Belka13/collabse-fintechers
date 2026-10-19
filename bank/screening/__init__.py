@@ -167,7 +167,7 @@ def _check(ico: str, wallet: str | None, website_url: str | None, live: bool) ->
         out = fx.get("company_check")
     elif website_url and config.APIFY_TOKEN:
         try:
-            out = website.run_actor(ico, website_url)
+            out = website.run_actor(ico, website_url, res["name"])
         except Exception as e:  # noqa: BLE001
             reasons.append(codes.reason("website_check_failed", False, f"company-check actor failed: {str(e)[:200]}",
                                         website_url))

@@ -6,14 +6,14 @@ from bank import codes, config
 ACTOR_TIMEOUT_S = 120
 
 
-def run_actor(ico: str, website_url: str) -> dict:
+def run_actor(ico: str, website_url: str, name: str | None = None) -> dict:
     """Live: call our actor on Apify (tens of seconds -> prefetch only, result cached)."""
     from datetime import timedelta
 
     from apify_client import ApifyClient
     client = ApifyClient(config.APIFY_TOKEN)
     run = client.actor(config.APIFY_COMPANY_CHECK_ACTOR).call(
-        run_input={"ico": ico, "websiteUrl": website_url, "checkMaps": True},
+        run_input={"ico": ico, "websiteUrl": website_url, "checkMaps": True, "companyName": name or ""},
         run_timeout=timedelta(seconds=ACTOR_TIMEOUT_S))
     items = client.dataset(run.default_dataset_id).list_items().items
     if not items:
