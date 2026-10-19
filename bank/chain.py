@@ -51,7 +51,7 @@ def w3() -> Web3:
     global _w3
     with _w3_lock:
         if _w3 is None:
-            # custom headers replace web3's defaults: keep Content-Type (anvil answers "Invalid request" without it)
+            # request_kwargs headers replace web3's defaults: keep Content-Type or anvil/Tatum reject the call
             headers = {"Content-Type": "application/json"}
             if "tatum" in config.RPC_URL and config.TATUM_API_KEY:
                 headers["x-api-key"] = config.TATUM_API_KEY
