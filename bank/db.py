@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS mandate_versions (
 CREATE TABLE IF NOT EXISTS reservations (
   id INTEGER PRIMARY KEY AUTOINCREMENT, mandate_id TEXT NOT NULL, mandate_version INTEGER,
   deal_id TEXT NOT NULL, amount INTEGER NOT NULL, state TEXT NOT NULL, created_at REAL NOT NULL,
-  updated_at REAL, UNIQUE (mandate_id, deal_id));
+  updated_at REAL, committed INTEGER NOT NULL DEFAULT 0, UNIQUE (mandate_id, deal_id));
 CREATE INDEX IF NOT EXISTS reservations_mandate ON reservations(mandate_id, state);
 CREATE TABLE IF NOT EXISTS sellers (
   seller_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, category TEXT, profile_url TEXT,
