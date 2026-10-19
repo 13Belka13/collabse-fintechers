@@ -612,6 +612,43 @@ def n14(ctx: Ctx):
     timer_scenario(ctx)
 
 
+def a01(ctx: Ctx):
+    """Auth at the bank API: no or a wrong agent token → 401; another company's mandate, buyer_id, deal or statement
+    → 403/404; a delivery without the seller token and a human action with the agent token → 401. No money moved."""
+    m = ctx.mandate()
+    deal, _ = ctx.open_deal("s-gama", m)
+    other = f"m-q-a01-beta-r{ctx.run}-{secrets.token_hex(2)}"
+    mandate.create(other, "beta", {}, by="human:scenarios")
+    foreign = f"d-q-a01-{secrets.token_hex(4)}"
+    db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, mandate_id, asset, state, created_at)"
+           " VALUES (?, 'beta', 's-gama', ?, 'EURC', 'offered', ?)", (foreign, other, time.time()))
+    task = {"text": TASK_TEXT, "category": "data", "asset": "EURC", "budget": {"value": "500", "currency": "EUR"},
+            "criteria": CRITERIA}
+    before = ctx.snapshot()
+    with httpx.Client(base_url=ctx.s.bank_url, timeout=30) as anon, \
+            httpx.Client(base_url=ctx.s.bank_url, timeout=30, headers={"x-agent-token": "not-a-token"}) as wrong:
+        cases = [
+            ("pay without a token → 401", anon.post(f"/api/deals/{deal}/pay", json={}), (401,)),
+            ("pay with a wrong token → 401", wrong.post(f"/api/deals/{deal}/pay", json={}), (401,)),
+            ("deal on another company's mandate → 403", ctx.bank.post("/api/deals", json={
+                "seller_id": "s-gama", "mandate_id": other, "task": task, "asset": "EURC"}), (403,)),
+            ("buyer_id of another company in the body → 403", ctx.bank.post("/api/deals", json={
+                "buyer_id": "beta", "seller_id": "s-gama", "mandate_id": m, "task": task, "asset": "EURC"}), (403,)),
+            ("pay another company's deal → 404", ctx.bank.post(f"/api/deals/{foreign}/pay", json={}), (403, 404)),
+            ("another company's statement → 404", ctx.bank.get("/api/statement", params={"mandate_id": other}), (403, 404)),
+            ("delivery without the seller token → 401", anon.post(f"/api/deals/{deal}/delivery",
+                                                                 json={"items": []}), (401,)),
+            ("human confirm with the agent token → 401", ctx.bank.post(f"/api/deals/{deal}/confirm",
+                                                                      json={"by": "agent"}), (401,)),
+        ]
+    for name, r, want in cases:
+        ctx.check(name, r.status_code in want, r.status_code)
+    ctx.decisions.append({"deal_id": deal, "status": "refused", "code": "HTTP 401/403/404"})
+    ctx.deals.append(foreign)
+    ctx.no_money_moved(before)
+    ctx.journal_chain()
+
+
 # ---- fault injection (FAULTS=..., one bank profile each) ----
 
 def f01(ctx: Ctx):
@@ -704,6 +741,7 @@ SCENARIOS = {
     "N12": ("Unpaid request to a paid route", n12),
     "N13": ("Buyer silent on flagged items → timer captures", n13),
     "N14": ("Seller silent after a rejection → timer voids", n14),
+    "A01": ("Bank API auth: tokens, other company's mandate/deal", a01),
 }
 FAULT_SCENARIOS = {  # id: (title, function, FAULTS for the bank profile)
     "F01": ("settle_fail_once → exactly one tx", f01, "settle_fail_once"),
@@ -713,7 +751,7 @@ FAULT_SCENARIOS = {  # id: (title, function, FAULTS for the bank profile)
     "F05": ("webhook_bad_hmac → rejected", webhook, "webhook_bad_hmac"),
 }
 # Attacks and refusals: the main claim is "no money moved" (counted in "attacks blocked X/X").
-ATTACKS = {"N01", "N03", "N04", "N05", "N06", "N09", "N10", "N11", "N12", "F02"}
+ATTACKS = {"N01", "N03", "N04", "N05", "N06", "N09", "N10", "N11", "N12", "A01", "F02"}
 
 
 def run_one(stack: Stack, sid: str, run: int, title: str, fn) -> dict:

@@ -156,7 +156,9 @@ class Stack:
             w3.provider.make_request("anvil_setBalance", [a, hex(10**18)])
         self.base_env = {
             "RPC_URL": self.rpc_url, "TCZK_NAME": "tCZK Deposit Token", "ALFA_ADDR": self.addr["alfa"],
-            "BANK_OPERATOR_ADDR": self.addr["operator"], "TATUM_API_KEY": "",
+            "BANK_OPERATOR_ADDR": self.addr["operator"], "MOCK": "1",
+            # a fork run never reaches live services, even when started from a checkout whose .env has real tokens
+            "TATUM_API_KEY": "", "APIFY_TOKEN": "", "MOSTLYRIGHT_API_KEY": "",
             **{KEY_VARS[r]: k for r, k in self.keys.items()}}
         self._apply_env({**self.base_env, "DB_PATH": str(self.run_dir / "setup.db"), "MOCK": "1", "FAULTS": ""})
         self._fund_eurc(w3, self.addr["alfa"], self.eurc_fund)
@@ -208,7 +210,7 @@ class Stack:
 
     # ---- environment + processes ----
     def env_for(self, db_path: str, faults: str) -> dict:
-        return {**self.base_env, "DB_PATH": db_path, "FAULTS": faults, "MOCK": os.getenv("MOCK", "1"),
+        return {"MOCK": os.getenv("MOCK", "1"), **self.base_env, "DB_PATH": db_path, "FAULTS": faults,
                 "BANK_URL": self.bank_url, "BANK_FACILITATOR_URL": f"{self.bank_url}/x402", "SELLER_URL": self.seller_url,
                 "SELLER_FACILITATOR_URL": f"{self.bank_url}/x402",
                 "SCENARIO_PRICE_EUR": config.SCENARIO_PRICE_EUR,
