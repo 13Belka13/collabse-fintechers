@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Dispute {{ deal.deal_id }} · Collabse bank{% endblock %}
+{% block main %}
+<div class="flex"><h1>Dispute · deal <a href="/deals/{{ deal.deal_id }}"><code>{{ deal.deal_id }}</code></a></h1>{% with r = deal %}{% include "_state.html" %}{% endwith %}
+  <span class="muted">{{ seller.name }} · {{ deal.asset }}</span></div>
+{% if error %}<div class="banner bad">{{ error }}</div>{% elif ok %}<div class="banner ok">Done. The bank executed the decision; money follows below.</div>{% endif %}
+{% if not d %}<div class="card">No dispute for this deal: the delivery has not been settled yet{% if deal.state in ('settled', 'closed') %} or settled without items in question{% endif %}.</div>{% else %}
+{% include "_money.html" %}
+{% set t = d.terms %}
+<div class="card small"><strong>Rules both sides accepted in the offer:</strong> buyer reviews flagged items {{ t.review_window_s }} s (silent → {{ t.on_buyer_silence }}); seller may object {{ t.objection_window_s }} s (silent → {{ t.on_seller_silence.replace('_', ' ') }}); the bank decides within {{ t.decision_sla_s }} s (otherwise {{ t.on_decision_timeout.replace('_', ' ') }}); holdback {{ t.holdback_bps / 100 }} % for {{ t.holdback_s }} s. The bank's timer applies these defaults; every capture comes before the final void.</div>
+{% if not d['items'] %}<div class="card">No items in question: everything delivered passed the rules.{% if ledger.holdback %} Only the holdback waits in escrow.{% endif %}</div>{% endif %}
+
+{% for it in d['items'] %}{% set src = raw.get(it.placeId, {}) %}
+<div class="card">
+  <div class="flex">
+    <h2 style="margin:0">{{ it.title }}</h2><code>{{ it.placeId }}</code>
+    {% if it.outcome == 'accepted' %}<span class="badge b-ok">accepted · seller paid</span>{% elif it.outcome == 'rejected' %}<span class="badge b-bad">rejected · back to the buyer</span>{% else %}<span class="badge b-warn">{{ STEP_TEXT[it.step] }}</span>{% endif %}
+    <span class="right">{{ (deal.amount // (deal.criteria.count if deal.criteria and deal.criteria.count else 20))|money(deal.asset) }} per item</span>
+  </div>
+  <div class="small muted">{{ src.address }} · {{ src.categoryName }}{% if src.totalScore %} · ★ {{ src.totalScore }}{% endif %} · sources: {% if src.url %}<a href="{{ src.url }}" target="_blank" rel="noopener">map listing</a>{% endif %}{% if src.website %} · <a href="{{ src.website }}" target="_blank" rel="noopener">website</a>{% endif %}</div>
+  <div class="cols" style="margin-top:10px">
+    <div>
+      <strong>Rule results</strong>
+      {% if it.failed %}<ul class="reasons">{% for f in it.failed %}<li><span class="badge b-bad">violated</span> <code>{{ f }}</code> {{ crit_text.get(f, '') }}</li>{% endfor %}</ul>{% else %}<div>All code rules passed.</div>{% endif %}
+      {% if it.judge %}<div style="margin-top:6px"><strong>Judge:</strong> {{ it.judge.reason }} {% if it.judge.ai_generated %}<span class="ai">{{ AI_LABEL }}</span>{% endif %}<div class="small muted">The judge only flags; it never moves money.</div></div>{% endif %}
+      {% if it.rejection %}<div style="margin-top:6px"><strong>Rejection</strong> by <code>{{ it.rejection.by }}</code> citing <code>{{ it.rejection.criterion }}</code>: {{ it.rejection.evidence }}</div>{% endif %}
+      {% if it.objection %}<div style="margin-top:6px"><strong>Seller statement</strong> <span class="untrusted">written by the seller</span><div>“{{ it.objection.statement }}”</div></div>{% endif %}
+      {% if it.outcome %}<div style="margin-top:6px" class="small">Decided by <code>{{ it.decided_by }}</code> · rule <code>{{ it.rule }}</code> · {{ it.decided_at|ts }}{% if it.note %} · {{ it.note }}{% endif %}</div>{% endif %}
+    </div>
+    {% if not it.outcome %}
+    <div>
+      <div class="banner sim" style="margin:0 0 8px">Time left: <span class="countdown" data-deadline="{{ it.deadline_at }}"></span><br><span class="small">If nobody acts: {{ silence(it, t) }}</span></div>
+      {% if it.step == 'review' %}
+      <div class="actor buyer"><h3>Buyer · {{ buyer_actor }}</h3>
+        <form method="post" action="/deals/{{ deal.deal_id }}/dispute/{{ it.placeId }}/review" class="flex"><input type="hidden" name="who" value="{{ buyer_actor }}"><input type="hidden" name="action" value="accept"><button class="okb" type="submit">Accept the item</button></form>
+        <form method="post" action="/deals/{{ deal.deal_id }}/dispute/{{ it.placeId }}/review" style="margin-top:8px"><input type="hidden" name="who" value="{{ buyer_actor }}"><input type="hidden" name="action" value="reject">
+          <div class="flex"><label>Criterion <select name="criterion">{% for c in criteria %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></label></div>
+          <textarea name="evidence" placeholder="Evidence: what breaks the criterion (link, fact). 'I don't like it' is not a reason."></textarea>
+          <button class="badb" type="submit">Reject with this criterion</button></form>
+      </div>
+      {% elif it.step == 'objection' %}
+      <div class="actor seller"><h3>Seller · {{ seller_actor }}</h3>
+        <form method="post" action="/deals/{{ deal.deal_id }}/dispute/{{ it.placeId }}/objection"><input type="hidden" name="who" value="{{ seller_actor }}">
+          <textarea name="statement" placeholder="Why the item meets the agreed criteria"></textarea>
+          <button type="submit">Object to the rejection</button></form>
+      </div>
+      {% elif it.step == 'decision' %}
+      <div class="actor bankr"><h3>Bank / arbiter · {{ officer }}</h3>
+        <form method="post" action="/deals/{{ deal.deal_id }}/dispute/{{ it.placeId }}/decide"><input type="hidden" name="who" value="{{ officer }}">
+          <textarea name="note" placeholder="Reason for the decision (optional)"></textarea>
+          <div class="flex"><button class="okb" type="submit" name="verdict" value="accept">Accept: pay the seller</button><button class="badb" type="submit" name="verdict" value="reject">Reject: return to the buyer</button></div></form>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+<h2>Dispute journal</h2>
+<table class="small"><tr><th>Time</th><th>Actor</th><th>Step</th></tr>
+  {% for e in events %}<tr><td>{{ e.ts|ts }}</td><td><code>{{ e.actor }}</code></td><td>{{ e.event }}{% if e.payload.placeId %} · <code>{{ e.payload.placeId }}</code>{% endif %}{% if e.payload.outcome %} → {{ e.payload.outcome }}{% endif %}{% if e.payload.rule %} <span class="muted">rule: {{ e.payload.rule }}</span>{% endif %}{% if e.payload.amount %} · {{ e.payload.amount|money(deal.asset) }}{% endif %}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

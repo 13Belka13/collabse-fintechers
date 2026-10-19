@@ -1,0 +1,4 @@
+{% if err %}<span class="badge b-warn">chain unreachable</span> <span class="small muted">{{ err }}</span>
+{% elif st %}<span class="badge {{ 'b-ok' if st.capturable == ledger.in_escrow else 'b-bad' }}">{{ 'matches our ledger' if st.capturable == ledger.in_escrow else 'MISMATCH' }}</span>
+  paymentState: capturable <strong>{{ st.capturable|money(deal.asset) }}</strong>, refundable {{ st.refundable|money(deal.asset) }}, collected {{ st.collected }}{% if sim() %} <span class="small muted">(simulated chain)</span>{% endif %}
+{% else %}<span class="muted">No PaymentInfo for this deal.</span>{% endif %}

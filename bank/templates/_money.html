@@ -1,0 +1,6 @@
+<div class="money">
+  <div class="stat info"><div class="k">Price</div><div class="v">{{ ledger.total|money(deal.asset) if ledger.total else '—' }}</div><div class="small muted">{{ 'locked in escrow' if ledger.locked else 'not locked' }}</div></div>
+  <div class="stat ok"><div class="k">Paid to the seller</div><div class="v">{{ ledger.captured|money(deal.asset) }}</div></div>
+  <div class="stat {{ 'warn' if ledger.in_escrow else 'info' }}"><div class="k">Still in escrow</div><div class="v">{{ ledger.in_escrow|money(deal.asset) }}</div>{% if ledger.holdback %}<div class="small muted">incl. holdback {{ ledger.holdback|money(deal.asset) }} · released in <span class="countdown" data-deadline="{{ ledger.holdback_until }}"></span></div>{% endif %}</div>
+  <div class="stat {{ 'bad' if ledger.returned else 'info' }}"><div class="k">Returned to the buyer</div><div class="v">{{ ledger.returned|money(deal.asset) }}</div></div>
+</div>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Collabse bank{% endblock %}</title>
+<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #fff; --ink: #14171f; --muted: #5b6372; --line: #dde1e7;
+  --ok: #0f7b3f; --ok-bg: #e5f5ea; --bad: #b42318; --bad-bg: #fdecea; --warn: #9a5b00; --warn-bg: #fff4dc;
+  --info: #2546b8; --info-bg: #e9eefc; --brand: #1f2a44; --ai: #6b3fb5; --ai-bg: #f1eafb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--info); }
+header { background: var(--brand); color: #fff; padding: 12px 28px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+header .logo { font-weight: 800; font-size: 22px; letter-spacing: .3px; }
+header nav a { color: #cdd6ee; text-decoration: none; margin-right: 18px; font-weight: 600; }
+header nav a.on { color: #fff; border-bottom: 3px solid #7aa2ff; padding-bottom: 4px; }
+header .net { margin-left: auto; font-size: 14px; color: #cdd6ee; }
+main { padding: 22px 28px 60px; max-width: 1400px; margin: 0 auto; }
+h1 { font-size: 30px; margin: 4px 0 16px; }
+h2 { font-size: 22px; margin: 26px 0 10px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
+.stat .k { color: var(--muted); font-size: 15px; text-transform: uppercase; letter-spacing: .4px; }
+.stat .v { font-size: 30px; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.stat.ok { border-left: 8px solid var(--ok); } .stat.bad { border-left: 8px solid var(--bad); }
+.stat.warn { border-left: 8px solid var(--warn); } .stat.info { border-left: 8px solid var(--info); }
+.badge { display: inline-block; font-weight: 800; font-size: 14px; letter-spacing: .5px; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; }
+.b-ok { background: var(--ok-bg); color: var(--ok); } .b-bad { background: var(--bad-bg); color: var(--bad); }
+.b-warn { background: var(--warn-bg); color: var(--warn); } .b-info { background: var(--info-bg); color: var(--info); }
+.b-muted { background: #eef0f3; color: var(--muted); }
+.ai { display: inline-block; background: var(--ai-bg); color: var(--ai); font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #d9c8f3; }
+.untrusted { display: inline-block; background: #fff1e6; color: #a04a00; font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.row { display: flex; gap: 14px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); }
+.row.ok { border-left: 8px solid var(--ok); } .row.bad { border-left: 8px solid var(--bad); background: #fffafa; }
+.row.warn { border-left: 8px solid var(--warn); } .row.info { border-left: 8px solid var(--info); }
+.row .when { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 78px; font-size: 16px; padding-top: 2px; }
+.row .body { flex: 1; min-width: 0; }
+.row .title { font-weight: 700; }
+.amount { font-weight: 800; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); } .small { font-size: 15px; }
+ul.reasons { margin: 6px 0 0; padding-left: 20px; } ul.reasons li { margin: 2px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--card); border-radius: 12px; overflow: hidden; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: #eef1f6; font-size: 15px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.toggle { display: inline-flex; border: 2px solid var(--brand); border-radius: 10px; overflow: hidden; }
+.toggle a { padding: 8px 16px; text-decoration: none; color: var(--brand); font-weight: 700; }
+.toggle a.on { background: var(--brand); color: #fff; }
+button, .btn { font: inherit; font-size: 16px; font-weight: 700; border-radius: 9px; border: 2px solid var(--brand); background: var(--brand); color: #fff; padding: 8px 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+button.ghost, .btn.ghost { background: #fff; color: var(--brand); }
+button.okb { background: var(--ok); border-color: var(--ok); } button.badb { background: var(--bad); border-color: var(--bad); }
+input, select, textarea { font: inherit; font-size: 16px; padding: 7px 9px; border: 1px solid #b9c0cc; border-radius: 8px; }
+textarea { width: 100%; min-height: 54px; }
+.banner { padding: 10px 16px; border-radius: 10px; margin-bottom: 14px; font-weight: 700; }
+.banner.sim { background: #fff4dc; color: #7a4700; border: 1px solid #f0d08a; }
+.banner.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid #f5c2bd; }
+.banner.ok { background: var(--ok-bg); color: var(--ok); }
+.money { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 10px 0 4px; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; overflow-wrap: anywhere; }
+.scen form { display: inline-block; margin: 4px 6px 4px 0; }
+.countdown { font-weight: 800; font-variant-numeric: tabular-nums; }
+.flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.right { margin-left: auto; }
+.cols { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.actor { border-top: 4px solid var(--line); padding-top: 10px; }
+.actor.buyer { border-color: #2546b8; } .actor.seller { border-color: #a04a00; } .actor.bankr { border-color: #1f2a44; }
+.actor h3 { margin: 0 0 6px; font-size: 17px; }
+</style>
+</head>
+<body hx-boost="true">
+<header>
+  <span class="logo">Collabse bank</span>
+  <nav>
+    <a href="/bank" class="{{ 'on' if active == 'bank' }}">Bank feed</a>
+    <a href="/mandate" class="{{ 'on' if active == 'mandate' }}">Mandate</a>
+    <a href="/deals" class="{{ 'on' if active in ('deals', 'deal', 'dispute') }}">Deals</a>
+    <a href="/statement" class="{{ 'on' if active == 'statement' }}">Statement</a>
+  </nav>
+  <span class="net">Base Sepolia testnet · prototype, no real funds</span>
+</header>
+<main>
+{% if sim() %}<div class="banner sim">SIMULATED CHAIN — demo without testnet keys: the transactions shown are not on Base Sepolia.</div>{% endif %}
+{% block main %}{% endblock %}
+</main>
+<script>
+// Countdown for every [data-deadline] (unix seconds): what happens if nobody acts is visible to both sides.
+function tickCountdowns() {
+  const now = Date.now() / 1000;
+  document.querySelectorAll("[data-deadline]").forEach(el => {
+    const s = Math.max(0, Math.round(parseFloat(el.dataset.deadline) - now));
+    el.textContent = s >= 3600 ? Math.floor(s / 3600) + " h " + Math.floor(s % 3600 / 60) + " min"
+                   : s >= 60 ? Math.floor(s / 60) + " min " + (s % 60) + " s" : (s ? s + " s" : "due now");
+  });
+}
+setInterval(tickCountdowns, 1000); document.addEventListener("DOMContentLoaded", tickCountdowns);
+document.addEventListener("htmx:afterSwap", tickCountdowns);
+</script>
+</body>
+</html>

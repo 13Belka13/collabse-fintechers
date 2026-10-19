@@ -28,3 +28,4 @@ def health():
 
 from bank import facilitator  # noqa: E402  (stream T: x402 facilitator for EURC and tCZK)
 app.include_router(facilitator.router)
+app.include_router(__import__("bank.ui", fromlist=["router"]).router)  # stream U: pages + dispute timer

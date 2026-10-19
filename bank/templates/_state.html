@@ -1,0 +1,1 @@
+{% set cls = {'closed': 'b-ok', 'settled': 'b-ok', 'refused': 'b-bad', 'awaiting_human': 'b-warn', 'disputed': 'b-warn', 'authorized': 'b-info', 'delivered': 'b-info', 'verified': 'b-info'} %}<span class="badge {{ cls.get(r.state, 'b-muted') }}">{{ r.state.replace('_', ' ') }}</span>

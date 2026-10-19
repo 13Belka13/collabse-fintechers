@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from bank import chain, db, deadlines, disputes, escrow, journal, llm, mandate
+from bank import chain, db, deadlines, disputes, escrow, journal, llm, mandate, verifier  # noqa: F401 (registers its mock first)
 from seller.app import DEMO_DISPUTE_TERMS, make_items
 
 ADDR = "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
