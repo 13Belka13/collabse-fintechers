@@ -1,0 +1,71 @@
+{
+ "_note": "Recorded-format registry answers for a SYNTHETIC demo company (SPEC §14, 'demo-režim registrů'). Same shapes as the live answers in recorded/ (ARES JSON, VAT and ISIR SOAP XML, company-check actor output); values invented, IČO verified absent from ARES on 2026-10-19.",
+ "demo_fixture": true,
+ "recorded_at": "2026-10-19",
+ "ico": "30181020",
+ "name": "Beta s.r.o.",
+ "ares": {
+  "status": 200,
+  "body": {
+   "ico": "30181020",
+   "obchodniJmeno": "Beta s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2019-03-01",
+   "dic": "CZ30181020",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "textovaAdresa": "Hněvkovského 2/2, Komárov, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "AKTIVNI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  }
+ },
+ "vat_xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?><soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"><soapenv:Header/><soapenv:Body><StatusNespolehlivyPlatceResponse xmlns=\"http://adis.mfcr.cz/rozhraniCRPDPH/\"><status odpovedGenerovana=\"2026-10-19\" statusCode=\"0\" statusText=\"OK\"/><statusPlatceDPH dic=\"30181020\" nespolehlivyPlatce=\"NE\" cisloFu=\"461\"><zverejneneUcty><ucet datumZverejneni=\"2019-04-01\"><standardniUcet cislo=\"5638829718\" kodBanky=\"9999\"/></ucet></zverejneneUcty></statusPlatceDPH></StatusNespolehlivyPlatceResponse></soapenv:Body></soapenv:Envelope>",
+ "isir_xml": "<?xml version='1.0' encoding='UTF-8'?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><ns2:getIsirWsCuzkDataResponse xmlns:ns2=\"http://isirws.cca.cz/types/\"><stav><kodChyby>WS2</kodChyby><textChyby>Prázdný výsledek</textChyby><popisChyby>Zadaným kritériím neodpovídají žádné záznamy</popisChyby></stav></ns2:getIsirWsCuzkDataResponse></soap:Body></soap:Envelope>",
+ "company_check": {
+  "ico": "30181020",
+  "websiteUrl": "https://beta-data.example",
+  "score": 0,
+  "level": "low",
+  "signals": [
+   {
+    "name": "website_reachable",
+    "value": true,
+    "source_url": "https://beta-data.example",
+    "explanation": "Home page answered HTTP 200."
+   },
+   {
+    "name": "website_mentions_ico",
+    "value": true,
+    "source_url": "https://beta-data.example/kontakt",
+    "explanation": "IČO 30181020 found on /kontakt (Civil Code §435)."
+   },
+   {
+    "name": "website_other_icos",
+    "value": [],
+    "source_url": "https://beta-data.example/kontakt",
+    "explanation": "No other IČO on the site."
+   },
+   {
+    "name": "maps_listing_found",
+    "value": true,
+    "source_url": "https://www.google.com/maps/search/Beta+s.r.o.+Brno",
+    "explanation": "A Google Maps place with this name exists in Brno."
+   },
+   {
+    "name": "maps_permanently_closed",
+    "value": false,
+    "source_url": null,
+    "explanation": "The place is open."
+   }
+  ],
+  "checkedAt": "2026-10-19T10:00:00Z",
+  "demo_fixture": true
+ }
+}

@@ -1,0 +1,73 @@
+{
+ "_note": "Recorded-format registry answers for a SYNTHETIC demo company (SPEC §14, 'demo-režim registrů'). Same shapes as the live answers in recorded/ (ARES JSON, VAT and ISIR SOAP XML, company-check actor output); values invented, IČO verified absent from ARES on 2026-10-19.",
+ "demo_fixture": true,
+ "recorded_at": "2026-10-19",
+ "ico": "54763363",
+ "name": "Delta s.r.o.",
+ "ares": {
+  "status": 200,
+  "body": {
+   "ico": "54763363",
+   "obchodniJmeno": "Delta s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2019-03-01",
+   "dic": "CZ54763363",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "textovaAdresa": "Kšírova 4/4, Horní Heršpice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  }
+ },
+ "vat_xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?><soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"><soapenv:Header/><soapenv:Body><StatusNespolehlivyPlatceResponse xmlns=\"http://adis.mfcr.cz/rozhraniCRPDPH/\"><status odpovedGenerovana=\"2026-10-19\" statusCode=\"0\" statusText=\"OK\"/><statusPlatceDPH dic=\"54763363\" nespolehlivyPlatce=\"NENALEZEN\"/></StatusNespolehlivyPlatceResponse></soapenv:Body></soapenv:Envelope>",
+ "isir_xml": "<?xml version='1.0' encoding='UTF-8'?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><ns2:getIsirWsCuzkDataResponse xmlns:ns2=\"http://isirws.cca.cz/types/\"><stav><kodChyby>WS2</kodChyby><textChyby>Prázdný výsledek</textChyby><popisChyby>Zadaným kritériím neodpovídají žádné záznamy</popisChyby></stav></ns2:getIsirWsCuzkDataResponse></soap:Body></soap:Envelope>",
+ "company_check": {
+  "ico": "54763363",
+  "websiteUrl": "https://delta-data.example",
+  "score": 80,
+  "level": "high",
+  "signals": [
+   {
+    "name": "website_reachable",
+    "value": true,
+    "source_url": "https://delta-data.example",
+    "explanation": "Home page answered HTTP 200."
+   },
+   {
+    "name": "website_mentions_ico",
+    "value": false,
+    "source_url": "https://delta-data.example/kontakt",
+    "explanation": "IČO 54763363 not found on the home page, /kontakt or /obchodni-podminky."
+   },
+   {
+    "name": "website_other_icos",
+    "value": [
+     "14645441"
+    ],
+    "source_url": "https://delta-data.example/kontakt",
+    "explanation": "The site shows IČO 14645441, which differs from the IČO in ARES."
+   },
+   {
+    "name": "maps_listing_found",
+    "value": true,
+    "source_url": "https://www.google.com/maps/search/Delta+s.r.o.+Brno",
+    "explanation": "A Google Maps place with this name exists in Brno."
+   },
+   {
+    "name": "maps_permanently_closed",
+    "value": false,
+    "source_url": null,
+    "explanation": "The place is open."
+   }
+  ],
+  "checkedAt": "2026-10-19T10:00:00Z",
+  "demo_fixture": true
+ }
+}
