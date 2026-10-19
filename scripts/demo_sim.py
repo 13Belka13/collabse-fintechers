@@ -79,7 +79,7 @@ def install():
     from fastapi.testclient import TestClient
     from x402.schemas import SettleResponse, SupportedKind, SupportedResponse, VerifyResponse
 
-    from bank import chain, config, deals, disputes, escrow
+    from bank import chain, config, core, deals, disputes, escrow, tczk
     from seller import app as seller_mod
 
     for name in ("BANK_OPERATOR_PK", "ALFA_PK"):
@@ -106,6 +106,9 @@ def install():
     SELLER = seller_mod.create_app(SimFacilitator())
     chain.sender = lambda pk: SIM
     escrow.read_state = SIM.read_state
+    # tCZK allowlist/freeze live on the token: simulated as "every bank client's wallet is allowed, none frozen"
+    tczk.is_allowed = lambda addr, address=None: core.company_by_wallet(addr) is not None
+    tczk.is_frozen = lambda addr, address=None: False
     seller_mod.read_retry = lambda fn, ok=None: fn()
     seller_mod.bank_post = lambda path, body, *a, **k: bank_client.post(
         path, json=body, headers={"x-seller-token": getattr(config, "SELLER_TOKEN", "")}).raise_for_status()
