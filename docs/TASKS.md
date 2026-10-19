@@ -59,6 +59,9 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
 - [ ] **L1 x402 EURC** — seller 402 with EURC option; buyer pays via the bank facilitator (fallback
       x402.org); tx hash in `PAYMENT-RESPONSE` and explorer. Client `allowed_assets` for EURC/tCZK.
       Route key `GET /data/:offer_id` (never `{offer_id}`); price via `DynamicPrice`; unpaid request → 402.
+  - [x] Seller 402 with EURC + tCZK from the offer (`DynamicPrice`, `:offer_id` keys), buyer helper with
+        `allowed_assets` caps, `scripts/demo_l1.py`; unpaid → 402 tested; paid run settled on an anvil fork (P)
+  - [ ] Live run on Base Sepolia through the bank facilitator (needs `ALFA_PK` + stream T's `/x402`)
 - [ ] **L2 Mandate + agents + negotiation + attack** — mandate JSON + versions + hash (limits in euro
       cents: 10 € per deal, confirm > 6 €, 30 €/month; task budget 5 €; tCZK → EUR at `CZK_PER_EUR_DEMO`); atomic reservations
       (`BEGIN IMMEDIATE`); every refusal code reproduced by a test; buyer tool loop (manual
@@ -71,6 +74,9 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       on-chain before fulfilling; rules per item + Haiku judge flags (JSON+pydantic; invalid → flag all
       to human); no ARES check on Google Maps places (they have no IČO); `website` required;
       18/20 → capture 4.50 + void 0.50. Reuse `prep/spikes/escrow_spike.py` techniques.
+  - [x] Escrow part (P): PaymentInfo stored before `authorize`, seller checks escrow on chain before
+        delivering, authorize → capture 4.50 → void 0.50 proven on an anvil fork against the real escrow/collector
+  - [ ] Verifier rules + judge (stream S), live Base Sepolia run (needs `BANK_OPERATOR_PK`, `ALFA_PK`)
 - [ ] **L4 Counterparty check** — IČO checksum, ARES, VAT payers SOAP (unreliable + published
       accounts), ISIR, EU sanctions XML (companies only, fuzzy ≥ 90), Mostly Right datasets (if key),
       Apify actor `company-check` (web footprint only: IČO on the site + Google Maps place; registries are
