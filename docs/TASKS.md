@@ -62,7 +62,8 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
   - [x] Seller 402 with EURC + tCZK from the offer (`DynamicPrice`, `:offer_id` keys), buyer helper with
         `allowed_assets` caps, `scripts/demo_l1.py`; unpaid → 402 tested; paid run settled on an anvil fork (P)
   - [ ] Live run on Base Sepolia through the bank facilitator (needs `ALFA_PK` + stream T's `/x402`)
-- [ ] **L2 Mandate + agents + negotiation + attack** — mandate JSON + versions + hash (limits in euro
+- [x] **L2 Mandate + agents + negotiation + attack** (stream A, MOCK + `agents/offline.py`; wiring to P's
+      `bank/api.py` and one live Bedrock run still to do) — mandate JSON + versions + hash (limits in euro
       cents: 10 € per deal, confirm > 6 €, 30 €/month; task budget 5 €; tCZK → EUR at `CZK_PER_EUR_DEMO`); atomic reservations
       (`BEGIN IMMEDIATE`); every refusal code reproduced by a test; buyer tool loop (manual
       `stop_reason == "tool_use"` loop, JSON+pydantic, MOCK mode); seller mode `injection` →
