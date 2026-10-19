@@ -406,3 +406,21 @@ def test_empty_env_values_fall_back_to_defaults(monkeypatch):
     config.reload()
     assert config.SELLER_TOKEN == "dev-seller" and config.HUMAN_TOKEN == "dev-human" and config.MOCK is True
     assert "dev-agent-alfa" in config.AGENT_TOKENS and config.BANK_OPERATOR_ADDR.startswith("0x")
+
+
+def test_an_old_db_gets_the_new_columns(tmp_path, monkeypatch):
+    """A bank.db from the morning (before disputes.closed_at and friends) must keep working after an update."""
+    import sqlite3
+    old = tmp_path / "old.db"
+    s = sqlite3.connect(old)
+    s.execute("CREATE TABLE disputes (deal_id TEXT PRIMARY KEY, items_json TEXT)")
+    s.execute("CREATE TABLE deals (deal_id TEXT PRIMARY KEY, buyer_id TEXT NOT NULL, seller_id TEXT NOT NULL,"
+              " state TEXT NOT NULL, created_at REAL NOT NULL)")
+    s.execute("INSERT INTO deals VALUES ('d1','alfa','s-beta','offered',0)")
+    s.commit(); s.close()
+    monkeypatch.setenv("DB_PATH", str(old))
+    db.close(); config.reload()
+    cols = {r["name"] for r in db.rows("PRAGMA table_info(disputes)")}
+    assert {"closed_at", "terms_json", "pending_json"} <= cols
+    assert "confirmed_by" in {r["name"] for r in db.rows("PRAGMA table_info(deals)")}
+    assert db.one("SELECT state FROM deals WHERE deal_id='d1'")["state"] == "offered"

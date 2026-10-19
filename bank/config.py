@@ -57,6 +57,10 @@ def reload():
     g["SELLER_URL"] = _env("SELLER_URL", "http://localhost:8001")
     g["PUBLIC_BASE_URL"] = _env("PUBLIC_BASE_URL")
     g["TATUM_HMAC_SECRET"] = _env("TATUM_HMAC_SECRET")
+    # incoming-transfer poll (bank/webhooks.py) when Tatum cannot reach us: 3 RPC calls per tick (block number + one
+    # eth_getLogs per asset). 1 s meets block -> feed <= 5 s (p95 3.6 s on the fork); raise it to save RPC credits
+    # when nobody watches the feed, or switch the poller off with BANK_POLLER=0
+    g["BANK_POLL_S"] = max(0.5, float(_env("BANK_POLL_S", "1.0")))
 
     g["APIFY_TOKEN"] = _env("APIFY_TOKEN")
     g["APIFY_COMPANY_CHECK_ACTOR"] = _env("APIFY_COMPANY_CHECK_ACTOR", "savvy_sauger/company-check")

@@ -123,9 +123,16 @@ def feed(view: str, limit: int = 60) -> list[dict]:
     asset_of = {r["deal_id"]: r["asset"] for r in db.rows("SELECT deal_id, asset FROM deals")}
     by_tx = {e["payload"].get("tx_hash"): (e["actor"], e["payload"].get("rule"))
              for e in entries if e["event"] in ("dispute.capture", "dispute.void")}
+    names = {r["id"]: r["name"] for r in db.rows("SELECT id, name FROM companies")}
     for e in entries:
         p = e["payload"]
-        if e["event"] in TRANSFER_EVENTS:
+        if e["event"] == "incoming_transfer":  # verified on chain by bank.webhooks (Tatum webhook or RPC poll)
+            source = {"tatum": "Tatum webhook", "rpc_poll": "bank's RPC poll"}.get(p.get("source"), p.get("source"))
+            rows.append({"ts": e["ts"], "kind": "transfer", "tone": "ok", "deal_id": e["deal_id"],
+                         "title": f"Received by {names.get(p.get('company_id'), p.get('to'))}", "amount": p.get("amount"),
+                         "asset": p.get("asset"), "tx": p.get("tx_hash"), "actor": None, "rule": None,
+                         "source": source})
+        elif e["event"] in TRANSFER_EVENTS:
             deal = deals.get(e["deal_id"]) if e["deal_id"] else None
             amount = p.get("amount")
             if e["event"] == "escrow_voided" and deal:

@@ -24,7 +24,7 @@ from web3.exceptions import TransactionNotFound
 
 from bank import chain, config, db, journal
 
-POLL_S = 1.0  # own RPC poll once a second (SPEC §19.4: block → feed ≤ 5 s)
+POLL_S = 1.0  # default only; the poller reads config.BANK_POLL_S on every tick (SPEC §19.4: block → feed ≤ 5 s)
 LOOKBACK = 30  # blocks re-read when the poller starts (about a minute on Base)
 RECEIPT_TRIES, RECEIPT_DELAY = 4, 1.0  # Tatum may notify before our RPC has the block; stays far below its 10 s
 TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
@@ -218,14 +218,14 @@ def _run():
             nxt = poll_once(nxt)
         except Exception as e:  # noqa: BLE001 — a flaky RPC must not kill the poller; the next tick retries the range
             print(f"[webhooks] transfer poll failed: {type(e).__name__}: {e}", flush=True)
-        _stop.wait(POLL_S)
+        _stop.wait(getattr(config, "BANK_POLL_S", POLL_S))
 
 
 def start() -> bool:
     """Start the poller unless Tatum can reach us (PUBLIC_BASE_URL set) or BANK_POLLER=0."""
     global _thread
-    if config.PUBLIC_BASE_URL or os.getenv("BANK_POLLER", "1") == "0":
-        return False
+    if config.PUBLIC_BASE_URL or os.getenv("BANK_POLLER", "1") == "0" or os.getenv("DEMO_SIM") == "1":
+        return False  # DEMO_SIM: real chain transfers must not appear under the "simulated chain" banner
     if _thread is None or not _thread.is_alive():
         _stop.clear()
         _thread = threading.Thread(target=_run, name="transfer-poller", daemon=True)

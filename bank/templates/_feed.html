@@ -30,7 +30,7 @@
       <span class="title">{{ r.title }}</span>
       {% if r.amount %}<span class="amount">{{ r.amount|money(r.asset) }}</span>{% endif %}
       {% set t = r.tx|tx %}{% if t %}{% if t.url %}<a class="mono" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.short }}</a>{% else %}<span class="mono muted">{{ t.short }} (simulated)</span>{% endif %}{% endif %}
-      <span class="right small muted">{% if r.actor %}by <code>{{ r.actor }}</code>{% endif %}{% if r.rule %} · rule: {{ r.rule }}{% endif %}{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>
+      <span class="right small muted">{% if r.source %}seen by the {{ r.source }}{% endif %}{% if r.actor %}by <code>{{ r.actor }}</code>{% endif %}{% if r.rule %} · rule: {{ r.rule }}{% endif %}{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>
     </div>
   {% else %}
     {% set p = r.payload %}

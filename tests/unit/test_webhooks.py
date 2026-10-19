@@ -204,3 +204,26 @@ def test_parse_reads_the_enriched_and_the_flat_template():
                            "amount": "2.5"})
     assert (flat["to"], flat["from"], flat["value"]) == (BETA, ALFA, "2.5")
     assert webhooks.parse([1, 2]) == {} and webhooks.parse({"data": {"txId": 5}})["tx_id"] is None
+
+
+def test_poll_interval_comes_from_config(monkeypatch):
+    from bank import config
+    monkeypatch.setenv("BANK_POLL_S", "10")
+    config.reload()
+    assert config.BANK_POLL_S == 10.0
+    monkeypatch.setenv("BANK_POLL_S", "0.01")  # never hammer the RPC
+    config.reload()
+    assert config.BANK_POLL_S == 0.5
+    monkeypatch.setenv("BANK_POLL_S", "")
+    config.reload()
+    assert config.BANK_POLL_S == 1.0
+
+
+def test_incoming_transfer_shows_in_the_bank_feed(seeded):
+    from bank import journal, ui
+    journal.append("bank", "incoming_transfer", {"source": "tatum", "tx_hash": "0x" + "ab" * 32, "asset": "EURC",
+                                                 "amount": 10_000, "to": "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1",
+                                                 "from": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140",
+                                                 "company_id": "beta", "block_number": 1, "transfers": []})
+    row = next(r for r in ui.feed("client") if r.get("title", "").startswith("Received by"))
+    assert row["title"] == "Received by Beta s.r.o." and row["amount"] == 10_000 and row["source"] == "Tatum webhook"

@@ -80,8 +80,25 @@ def conn() -> sqlite3.Connection:
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA busy_timeout=10000")
         c.executescript(SCHEMA)
+        _add_missing_columns(c)
         _local.conn, _local.path = c, config.DB_PATH
     return c
+
+
+def _add_missing_columns(c: sqlite3.Connection):
+    """CREATE TABLE IF NOT EXISTS never changes an existing table: a DB created before a stream added columns
+    (e.g. disputes.closed_at) would fail at runtime. Add every column the schema declares and the file lacks."""
+    ref = sqlite3.connect(":memory:")
+    ref.executescript(SCHEMA)
+    for (table,) in ref.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+        have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+        for _, name, ctype, notnull, default, _pk in ref.execute(f"PRAGMA table_info({table})"):
+            if name not in have:
+                # NOT NULL needs a default for existing rows; without one the column is added nullable
+                extra = f" NOT NULL DEFAULT {default}" if notnull and default is not None else (
+                    f" DEFAULT {default}" if default is not None else "")
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ctype}{extra}")
+    ref.close()
 
 
 def close():
