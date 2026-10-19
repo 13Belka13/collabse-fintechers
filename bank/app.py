@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Collabse bank", lifespan=lifespan)
+app.include_router(__import__("bank.api", fromlist=["router"]).router)
 
 
 @app.get("/health")
