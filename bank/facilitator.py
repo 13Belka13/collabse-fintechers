@@ -79,7 +79,7 @@ def _screen(payload, requirements) -> tuple[str, str] | None:
         return Code.COUNTERPARTY_NOT_IN_SCOPE, "payer_not_a_bank_client"
     if tczk.bank_frozen(pay_to) or (payer and tczk.bank_frozen(payer)):
         return Code.UNDER_REVIEW, "wallet_frozen_at_bank"  # non-public: the client sees only the neutral code
-    hit = _counterparty(core.company_by_wallet(pay_to))
+    hit = counterparty_refusal(core.company_by_wallet(pay_to))
     if hit:
         return hit
     if asset == "tCZK":
@@ -90,11 +90,11 @@ def _screen(payload, requirements) -> tuple[str, str] | None:
     return None
 
 
-def _counterparty(payee: dict) -> tuple[str, str] | None:
+def counterparty_refusal(payee: dict) -> tuple[str, str] | None:
     """The escrow path's counterparty rule (mandate step 5) for a direct x402 payment: the check cached during
     negotiation, or, if missing, the check now (registries in parallel, 2 s, fail-closed). The code is the one the
     client may see (codes.client_view: a non-public reason only ever shows as UNDER_REVIEW); level and reasons go
-    to the journal only."""
+    to the journal only. payee: a companies row. Reusable on any other money path that pays a bank client."""
     try:
         site = db.one("SELECT website_url FROM sellers WHERE company_id=?", (payee["id"],)) or {}
         res = screening.cached(payee["ico"]) or screening.check(payee["ico"], payee["wallet_address"],

@@ -217,3 +217,10 @@ def test_screening_error_fails_closed(monkeypatch):
     monkeypatch.setattr(screening, "check", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     r = req()
     assert facilitator.screen(pay(r), r) == "UNDER_REVIEW"
+
+
+def test_counterparty_refusal_is_reusable_for_any_bank_client():
+    from bank import core
+    assert facilitator.counterparty_refusal(core.company("beta")) is None
+    code, reason = facilitator.counterparty_refusal(core.company("delta"))
+    assert code == "COUNTERPARTY_NOT_TRUSTED" and reason == "screening_blocked:ico_mismatch_on_website"
