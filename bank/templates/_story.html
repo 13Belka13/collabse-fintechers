@@ -33,6 +33,7 @@
         {% if st.ms %}<span class="badge b-muted">decided in {{ '%.0f'|format(st.ms) }} ms</span>{% endif %}
         <span class="right small muted">{{ st.ts|ts }}</span></div>
       {% if st.text %}<div>{{ st.text }}</div>{% endif %}
+      {% if st.apify %}{% with w = st.apify %}{% include "_apify_check.html" %}{% endwith %}{% endif %}
       {% if st.talk %}
         <div class="chat">
         {% for t in st.talk %}

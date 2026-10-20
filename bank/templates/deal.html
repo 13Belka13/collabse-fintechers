@@ -6,6 +6,7 @@
 {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}{% if ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
 {% include "_money.html" %}
 {% with deal_id = deal.deal_id %}{% include "_economics.html" %}{% endwith %}
+{% if web and not web.hidden %}<div class="card">{% with w = web %}{% include "_apify_check.html" %}{% endwith %}</div>{% endif %}
 {% set marks = [] %}{% for e in events %}{% for m in (e.payload.marks or []) %}{% if m not in marks %}{% set _ = marks.append(m) %}{% endif %}{% endfor %}{% endfor %}
 {% if marks %}<div class="flex">{% for m in marks %}<span class="badge b-warn">{{ m }}</span>{% endfor %}</div>{% endif %}
 

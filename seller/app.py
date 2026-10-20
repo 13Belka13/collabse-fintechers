@@ -30,6 +30,7 @@ from x402.server import x402ResourceServer
 from agents import seller_agent
 from bank import config, escrow, money, receipts
 from bank.chain import read_retry
+from seller import maps_live
 
 FIXTURE = config.ROOT / "fixtures" / "companies.json"
 # Never "{offer_id}" in an x402 route key: it matches nothing and the route silently becomes free (SPEC §18.16).
@@ -114,19 +115,27 @@ def company_items(count: int, mode: str) -> list[dict]:
     return items
 
 
-def make_items(count: int, mode: str, data: str | None = None) -> list[dict]:
+def make_items(count: int, mode: str, data: str | None = None, predicates: list[dict] | None = None) -> list[dict]:
     """Delivery. Default: warehouse companies with IČO (company_items). SELLER_DATA=maps: real places recorded via
     Apify (fixtures/maps/brno_warehouses_recorded.json); SELLER_DATA=places: synthetic places in the Google Maps
     shape (SPEC §10.2). No phone fields anywhere. fake_data breaks a few items so the predicates reject them.
-    data: "companies" | "places" | "maps" per seller from the demo console; None = the SELLER_DATA setting."""
+    data: "companies" | "places" | "maps" | "apify" per seller from the demo console; None = the SELLER_DATA setting.
+    "apify": live Google Maps places for the buyer's own predicates (seller/maps_live.py, recorded on failure)."""
     data = data or os.getenv("SELLER_DATA", "").strip()
-    if data not in ("maps", "places"):
+    if data not in ("maps", "places", "apify"):
         return company_items(count, mode)
-    if data == "maps" and RECORDED_MAPS.exists():
-        items = recorded_items(count)
-        if mode == "fake_data" and len(items) >= 2:
+    if data == "apify" or (data == "maps" and RECORDED_MAPS.exists()):
+        if data == "apify":
+            items, meta = maps_live.places(count, predicates)
+            print(f"seller: {len(items)} places from Apify ({meta['source']}, run {(meta['run'] or {}).get('id')}, "
+                  f"{meta['passing']}/{meta['returned']} pass the buyer's terms){' — ' + meta['error'] if meta['error'] else ''}")
+        else:
+            items = recorded_items(count)
+        if mode == "fake_data" and len(items) >= 2:  # one place without a website, one moved to another city
             items[-1].update(website=None)
-            items[-2].update(city="Praha", address="Fiktivní 1, 110 00 Praha", postalCode="110 00")
+            items[-2].update(**({"city": "Brno", "address": "Fiktivní 1, 602 00 Brno", "postalCode": "602 00"}
+                                if str(items[-2].get("postalCode") or "").startswith("1") else
+                                {"city": "Praha", "address": "Fiktivní 1, 110 00 Praha", "postalCode": "110 00"}))
         return items
     items = []
     for i in range(1, count + 1):
@@ -252,7 +261,7 @@ class ModeIn(BaseModel):
     rule: str | None = None  # "A" | "B" | "C" overrides the quality rule; "" clears it (demo and scenario control)
     say: str | None = Field(None, max_length=500)
     opening: Literal["list", "min"] | None = None
-    data: Literal["companies", "places", "maps"] | None = None
+    data: Literal["companies", "places", "maps", "apify"] | None = None
 
 
 def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
@@ -348,6 +357,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         list_c, min_c = ((count * int(fixed),) * 2 if fixed
                          else (count * LIST_PER_ITEM_EUR_CENTS, count * MIN_PER_ITEM_EUR_CENTS))
         opening = list_c if (seller.get("opening") or os.getenv("SELLER_OPENING", "min").strip()) == "list" else min_c
+        if seller.get("data") == "apify":  # start the live Google Maps run while the agents haggle
+            maps_live.prefetch(maps_live.query_of(count, terms.get("predicates")))
         state = app.state.negotiations.setdefault(body.deal_id, {"turns": 0, "last": None})
         state["turns"] += 1
         said = seller_agent.negotiate_turn(body.message, list_cents=list_c, min_cents=min_c, turn=state["turns"],
@@ -357,8 +368,9 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         text, cents = said["reply_text"], said["price_eur_cents"]
         state["last"] = cents
         offer = {"offer_id": "o-" + secrets.token_hex(6), "deal_id": body.deal_id, "seller_id": body.seller_id,
-                 "items_spec": f"{count} warehouse companies in Brno, by the buyer's {len(terms.get('predicates') or [])}"
-                               " confirmed predicates", "count": count, "price_eur_cents": cents,
+                 "items_spec": (f"{count} warehouse places from Google Maps (live Apify run)" if seller.get("data") == "apify"
+                                else f"{count} warehouse companies in Brno")
+                               + f", by the buyer's {len(terms.get('predicates') or [])} confirmed predicates", "count": count, "price_eur_cents": cents,
                  "prices": {a: str(money.from_eur_cents(a, cents)) for a in quoted}, "pay_to": seller["pay_to"],
                  # the buyer's confirmed predicates verbatim; a seller may add its own (only narrowing, AND)
                  "predicates": list(terms.get("predicates") or []), **offer_rule(terms, cents, body.requirements, seller.get("rule")),
@@ -377,11 +389,12 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]
         data = app.state.sellers[offer["seller_id"]].get("data")
-        return {"offer_id": offer_id, "deal_id": offer["deal_id"], "items": make_items(offer["count"], mode, data)}
+        return {"offer_id": offer_id, "deal_id": offer["deal_id"],
+                "items": make_items(offer["count"], mode, data, offer.get("predicates"))}
 
     def signed_delivery(offer_id: str, mode: str, version: int = 1) -> dict:
         offer = app.state.offers[offer_id]
-        items = make_items(offer["count"], mode, app.state.sellers[offer["seller_id"]].get("data"))
+        items = make_items(offer["count"], mode, app.state.sellers[offer["seller_id"]].get("data"), offer.get("predicates"))
         manifest = {"deal_id": offer["deal_id"], "offer_hash": receipts.offer_hash(offer), "version": version,
                     "count": len(items), "merkle_root": receipts.merkle_root(items),
                     "nonce": "0x" + secrets.token_hex(32)}
@@ -411,6 +424,15 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             app.state.delivering.discard(offer_id)
             print(f"seller: delivery of {offer_id} to the bank failed: {e!r}")
 
+    def build_and_deliver(offer_id: str, deal_id: str, mode: str):
+        try:
+            payload = signed_delivery(offer_id, mode)
+        except Exception as e:  # noqa: BLE001 — the next escrow notice from the bank retries
+            app.state.delivering.discard(offer_id)
+            print(f"seller: building delivery {offer_id} failed: {e!r}")
+            return
+        deliver_to_bank(offer_id, deal_id, payload)
+
     @app.post("/order/{offer_id}/escrow")
     def order_escrow(offer_id: str, body: EscrowIn, background: BackgroundTasks,
                      x_bank_token: str | None = Header(None)):
@@ -430,7 +452,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             return {"ok": True, "offer_id": offer_id, "delivering": False}
         if offer_id not in app.state.delivered and offer_id not in app.state.delivering:
             app.state.delivering.add(offer_id)
-            background.add_task(deliver_to_bank, offer_id, body.deal_id, signed_delivery(offer_id, mode_of(offer)))
+            # items are built in the background too: live Apify places may still be on their way (maps_live)
+            background.add_task(build_and_deliver, offer_id, body.deal_id, mode_of(offer))
         return {"ok": True, "offer_id": offer_id, "delivering": True}
 
     def staff(token: str | None):

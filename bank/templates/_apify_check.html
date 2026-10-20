@@ -1,0 +1,6 @@
+{# One line: the seller's web footprint from our Apify actor company-check (bank/screening/website.py summary). #}
+<div class="small"><strong>Apify company-check:</strong> {{ w.text }} —
+  <span class="badge {{ {'low': 'b-ok', 'medium': 'b-warn', 'high': 'b-bad'}.get(w.level, 'b-muted') }}">risk {{ w.level }}</span>
+  {% if w.run_url %}· <a class="mono" href="{{ w.run_url }}" target="_blank" rel="noopener">run {{ w.run_id }}</a>{% if w.origin == 'cached' %} <span class="muted">(cached result)</span>{% endif %}
+  {% elif w.origin == 'recorded' %}<span class="muted">· recorded result (synthetic demo company, not a live run)</span>{% endif %}
+</div>

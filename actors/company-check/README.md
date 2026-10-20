@@ -93,6 +93,7 @@ Live runs (2026-10-19, 512 MB):
 | --- | --- | --- | --- |
 | ČEZ, IČO 45274649, `https://www.cez.cz`, Maps in Praha, 3 places | [BZXkhNLHWn1GdqFbE](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/BZXkhNLHWn1GdqFbE) | `medium` (30): site reachable, IČO not on the home page, `/kontakt` (404) or `/obchodni-podminky`; Maps place found, open, 3.9 | $0.0002 + $0.0122 (child crawler-google-places run Vp1xOhdg7vnhD0NXp, 3 places) |
 | Synthetic Gama s.r.o., IČO 59093994, `https://gama-sklad.invalid`, no Maps | [VMWtKXHYycP9leChx](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/VMWtKXHYycP9leChx) | run SUCCEEDED, `medium` (50): `website_reachable=false` (ConnectError) | $0.0002 |
+| O2 Czech Republic a.s., IČO 60193336, `https://www.o2.cz`, Maps in Praha, 1 place (called by the bank, 2026-10-20) | [gdFGBxG9ZmZ5MT9Lt](https://console.apify.com/view/runs/gdFGBxG9ZmZ5MT9Lt) | `low` (0): IČO on the home page, no other IČO; Maps place found, open, ★2.7 (507 reviews, count only); 36 s end to end | $0.0009 + $0.0042 (child run eGQkeSDW39sA51zY0, 1 place) |
 
 cez.cz shows its IČO on a page other than the three the Actor reads, and the first Maps hit for "ČEZ" in Praha
 is a ČEZ charging station. Pass `companyName` and `city` for a sharper Maps match.
@@ -100,7 +101,19 @@ is a ČEZ charging station. Pass `companyName` and `city` for a sharper Maps mat
 The Brno warehouse dataset the seller delivers was recorded with the same account
 (`fixtures/maps/record_maps.py`, compass/crawler-google-places run w9XlXOBtETIUObLGm, $0.37, 74 places);
 see `fixtures/maps/brno_warehouses_recorded.json`. Total Apify spend for the push, the two runs and the
-recording: about **$0.38** of the $105 monthly limit.
+recording: about **$0.38** (cycle to 2026-10-19). The account is on the FREE plan: $5 of platform credit per
+monthly cycle, hard usage cap $105; the cycle from 2026-10-20 shows $0.053 after the O2 check and one live
+Google Maps run of the demo console (DyUodCZn9bdCVmRDZ, 12 places in Praha, $0.048).
+
+## How the bank uses the answer
+
+`bank/screening/website.py` runs the Actor during negotiation only (never on the money path), with
+`companyName` and `city` from ARES and `maxPlaces: 1`, keeps the run id, duration and cost, and caches the
+answer a day. Signals map to reasons: another IČO on the site or a permanently closed place blocks the seller;
+a missing IČO or an unreachable site sends it to review. The level itself counts too, fail-closed: `high`
+without a mapped signal is `website_risk_high` (review), and an answer without a known level or without the
+website signal is `website_check_failed` (review, never clean). The deal page and the story show one line:
+where the IČO was found, the Maps place, the level and a link to the run.
 
 ## Develop, validate, push
 
@@ -114,5 +127,5 @@ apify call savvy_sauger/company-check -i '{"ico": "45274649", "websiteUrl": "htt
 ```
 
 The bank calls it with `APIFY_COMPANY_CHECK_ACTOR=savvy_sauger/company-check` (the default in
-`bank/config.py`). Tests: `pytest tests/evals/test_company_check.py` from the repository root (8 eval cases,
-mocked HTTP).
+`bank/config.py`). Tests: `pytest tests/evals/test_company_check.py` from the repository root (14 eval cases,
+mocked HTTP) and `tests/unit/test_company_check_bank.py` (the bank side).

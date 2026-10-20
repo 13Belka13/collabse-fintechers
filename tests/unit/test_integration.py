@@ -223,7 +223,8 @@ def test_seller_cannot_weaken_the_confirmed_predicates(bank, monkeypatch):
 def test_invalid_buyer_criteria_fall_back_to_defaults():
     c = deals.buyer_criteria({"criteria": {"count": "lots", "city": ""}})
     assert c["count"] == 20 and c["city"] == "Brno" and c["postcode_prefix"] == "6"
-    assert deals.buyer_criteria({"criteria": {"city": "Praha"}})["postcode_prefix"] is None
+    assert deals.buyer_criteria({"criteria": {"city": "Praha"}})["postcode_prefix"] == "1"  # Maps: "Praha 5"
+    assert deals.buyer_criteria({"criteria": {"city": "Ostrava"}})["postcode_prefix"] is None
 
 
 def test_mandate_of_another_company_is_refused(bank):
