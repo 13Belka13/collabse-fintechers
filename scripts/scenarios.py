@@ -539,7 +539,7 @@ def n02(ctx: Ctx):
     ctx.check("exactly 3 reservations hold budget", len(rows) == 3, rows)
     for d in oks:
         ctx.expect_lock(d, "EURC")
-        ctx.wait_state(d)
+        ctx.wait_state(d, ("delivered", "settled"))  # rule A settles only at the deadline: the timer below
     locks = chain.transfers(config.EURC, before["block"] + 1, frm=ctx.s.addr["alfa"])
     price = ctx.deal_amount(deals[0])
     ctx.check("buyer debited exactly 3 × price on chain (no extra debit)",
