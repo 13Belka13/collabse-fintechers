@@ -52,8 +52,27 @@ def level_of(reasons: list[dict]) -> str:
 
 
 def fixture(ico: str) -> dict | None:
+    """A recorded demo company, or one of the synthetic item companies (fixtures/registries/items.json: ARES only;
+    VAT and ISIR answer "not found" in the recorded live format)."""
     p = FIXTURES / f"{ico}.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    body = _items().get(ico)
+    if body is None:
+        return None
+    rec = FIXTURES / "recorded"
+    return {"demo_fixture": True, "ico": ico, "ares": {"status": 200, "body": body},
+            "vat_xml": (rec / "vat_nenalezen.xml").read_text(encoding="utf-8"),
+            "isir_xml": (rec / "isir_empty_ws2.xml").read_text(encoding="utf-8")}
+
+
+_items_cache: dict = {}
+
+
+def _items() -> dict:
+    if not _items_cache:
+        _items_cache.update(json.loads((FIXTURES / "items.json").read_text(encoding="utf-8"))["ares"])
+    return _items_cache
 
 
 def _registry_fail(source: str, exc: BaseException | None) -> dict:
@@ -129,8 +148,11 @@ def _check(ico: str, wallet: str | None, website_url: str | None, live: bool) ->
             # Not found, or not a legal entity: keep nothing else (a sole trader's data is personal data).
             res["reasons"] = ares.reasons(a, ico)
             res["sources"] = [ares.url(ico)]
+            res["registry"] = {"found": a["found"], "legal_entity": bool(a.get("legal_entity"))}
             return res
         res["name"] = a["name"]
+        res["registry"] = {k: a.get(k) for k in ("found", "legal_entity", "name", "address", "street", "psc",
+                                                  "founded", "dissolved")}
         reasons += ares.reasons(a, ico)
 
     v = None

@@ -1,0 +1,636 @@
+{
+ "_note": "Synthetic warehouse companies in Brno for the item deliveries (MODEL_V2 §14 episodes 2-3). IČO pass the mod-11 checksum and returned 404 in ARES on 2026-10-20, so they belong to no real company; names, seats and dates are invented. The bank answers registry_active and the ARES source snapshot for these IČO from this file in demo mode (screening.fixture), never from live ARES. No personal data.",
+ "ares": {
+  "97537071": {
+   "ico": "97537071",
+   "obchodniJmeno": "Sklady Morava s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2000-01-11",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Hněvkovského",
+    "cisloDomovni": 11,
+    "psc": 61700,
+    "textovaAdresa": "Hněvkovského 11, Komárov, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "98313614": {
+   "ico": "98313614",
+   "obchodniJmeno": "Logistika Komárov s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2003-11-22",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Vídeňská",
+    "cisloDomovni": 72,
+    "psc": 61900,
+    "textovaAdresa": "Vídeňská 72, Štýřice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "98320025": {
+   "ico": "98320025",
+   "obchodniJmeno": "Skladový areál Slatina s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2019-12-09",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Škaloudova",
+    "cisloDomovni": 15,
+    "psc": 61400,
+    "textovaAdresa": "Škaloudova 15, Maloměřice, 61400 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "97643718": {
+   "ico": "97643718",
+   "obchodniJmeno": "Skladování Tuřany s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2021-04-03",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Tuřanka",
+    "cisloDomovni": 41,
+    "psc": 62700,
+    "textovaAdresa": "Tuřanka 41, Slatina, 62700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "99908379": {
+   "ico": "99908379",
+   "obchodniJmeno": "Překladiště Jih s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2010-06-06",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Kaštanová",
+    "cisloDomovni": 28,
+    "psc": 62000,
+    "textovaAdresa": "Kaštanová 28, Tuřany, 62000 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "94992100": {
+   "ico": "94992100",
+   "obchodniJmeno": "Distribuční centrum Svratka s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "1999-04-22",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Řípská",
+    "cisloDomovni": 47,
+    "psc": 62700,
+    "textovaAdresa": "Řípská 47, Slatina, 62700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "91630860": {
+   "ico": "91630860",
+   "obchodniJmeno": "Sklad a logistika Špilberk s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2013-11-17",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Jihlavská",
+    "cisloDomovni": 115,
+    "psc": 62500,
+    "textovaAdresa": "Jihlavská 115, Bohunice, 62500 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "96922664": {
+   "ico": "96922664",
+   "obchodniJmeno": "Skladovací služby Vlněna s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2019-11-06",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Olomoucká",
+    "cisloDomovni": 27,
+    "psc": 61800,
+    "textovaAdresa": "Olomoucká 27, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "94757674": {
+   "ico": "94757674",
+   "obchodniJmeno": "Logistické centrum Ponávka s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2010-04-07",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Vinohradská",
+    "cisloDomovni": 107,
+    "psc": 61800,
+    "textovaAdresa": "Vinohradská 107, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90083181": {
+   "ico": "90083181",
+   "obchodniJmeno": "Expediční sklad Zbrojovka s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2000-06-06",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Karásek",
+    "cisloDomovni": 71,
+    "psc": 62100,
+    "textovaAdresa": "Karásek 71, Řečkovice, 62100 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90127871": {
+   "ico": "90127871",
+   "obchodniJmeno": "Sklady Lesná s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2001-05-01",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Hájecká",
+    "cisloDomovni": 74,
+    "psc": 61800,
+    "textovaAdresa": "Hájecká 74, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "95447784": {
+   "ico": "95447784",
+   "obchodniJmeno": "Logistika Petrov s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2003-07-16",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Mírová",
+    "cisloDomovni": 89,
+    "psc": 61800,
+    "textovaAdresa": "Mírová 89, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "95371478": {
+   "ico": "95371478",
+   "obchodniJmeno": "Skladový areál Mendlák s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "1999-11-03",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Svatopetrská",
+    "cisloDomovni": 63,
+    "psc": 61700,
+    "textovaAdresa": "Svatopetrská 63, Komárov, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "96869607": {
+   "ico": "96869607",
+   "obchodniJmeno": "Skladování Královo Pole s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2010-03-20",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Dornych",
+    "cisloDomovni": 29,
+    "psc": 61700,
+    "textovaAdresa": "Dornych 29, Trnitá, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90647769": {
+   "ico": "90647769",
+   "obchodniJmeno": "Překladiště Líšeň s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2021-01-14",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Plotní",
+    "cisloDomovni": 112,
+    "psc": 60200,
+    "textovaAdresa": "Plotní 112, Trnitá, 60200 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "95084681": {
+   "ico": "95084681",
+   "obchodniJmeno": "Distribuční centrum Bystrc s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2011-10-05",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Hněvkovského",
+    "cisloDomovni": 76,
+    "psc": 61700,
+    "textovaAdresa": "Hněvkovského 76, Komárov, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "91303354": {
+   "ico": "91303354",
+   "obchodniJmeno": "Sklad a logistika Židenice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2020-09-07",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Vídeňská",
+    "cisloDomovni": 46,
+    "psc": 61900,
+    "textovaAdresa": "Vídeňská 46, Štýřice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90856121": {
+   "ico": "90856121",
+   "obchodniJmeno": "Skladovací služby Medlánky s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2005-02-05",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Škaloudova",
+    "cisloDomovni": 70,
+    "psc": 61400,
+    "textovaAdresa": "Škaloudova 70, Maloměřice, 61400 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "ZANIKLY",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   },
+   "datumZaniku": "2025-06-30"
+  },
+  "94725756": {
+   "ico": "94725756",
+   "obchodniJmeno": "Logistické centrum Obřany s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2002-12-22",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Tuřanka",
+    "cisloDomovni": 5,
+    "psc": 62700,
+    "textovaAdresa": "Tuřanka 5, Slatina, 62700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "97631744": {
+   "ico": "97631744",
+   "obchodniJmeno": "Expediční sklad Chrlice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2008-06-24",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Kaštanová",
+    "cisloDomovni": 101,
+    "psc": 62000,
+    "textovaAdresa": "Kaštanová 101, Tuřany, 62000 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "97065820": {
+   "ico": "97065820",
+   "obchodniJmeno": "Sklady Holásky s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2008-03-05",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Řípská",
+    "cisloDomovni": 54,
+    "psc": 62700,
+    "textovaAdresa": "Řípská 54, Slatina, 62700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "91189101": {
+   "ico": "91189101",
+   "obchodniJmeno": "Logistika Ivanovice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2021-09-08",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Jihlavská",
+    "cisloDomovni": 3,
+    "psc": 62500,
+    "textovaAdresa": "Jihlavská 3, Bohunice, 62500 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "92994512": {
+   "ico": "92994512",
+   "obchodniJmeno": "Skladový areál Jundrov s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "1999-11-09",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Olomoucká",
+    "cisloDomovni": 89,
+    "psc": 61800,
+    "textovaAdresa": "Olomoucká 89, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90512065": {
+   "ico": "90512065",
+   "obchodniJmeno": "Skladování Kníničky s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "1997-12-22",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Vinohradská",
+    "cisloDomovni": 102,
+    "psc": 61800,
+    "textovaAdresa": "Vinohradská 102, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "95813357": {
+   "ico": "95813357",
+   "obchodniJmeno": "Překladiště Komín s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2008-05-28",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Karásek",
+    "cisloDomovni": 16,
+    "psc": 62100,
+    "textovaAdresa": "Karásek 16, Řečkovice, 62100 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "91660696": {
+   "ico": "91660696",
+   "obchodniJmeno": "Distribuční centrum Maloměřice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "1996-02-12",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Hájecká",
+    "cisloDomovni": 23,
+    "psc": 61800,
+    "textovaAdresa": "Hájecká 23, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "92405991": {
+   "ico": "92405991",
+   "obchodniJmeno": "Sklad a logistika Ořešín s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2005-07-20",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Mírová",
+    "cisloDomovni": 108,
+    "psc": 61800,
+    "textovaAdresa": "Mírová 108, Černovice, 61800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "96398159": {
+   "ico": "96398159",
+   "obchodniJmeno": "Skladovací služby Soběšice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2014-12-24",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Svatopetrská",
+    "cisloDomovni": 39,
+    "psc": 61700,
+    "textovaAdresa": "Svatopetrská 39, Komárov, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "93115440": {
+   "ico": "93115440",
+   "obchodniJmeno": "Logistické centrum Útěchov s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2001-03-22",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Dornych",
+    "cisloDomovni": 23,
+    "psc": 61700,
+    "textovaAdresa": "Dornych 23, Trnitá, 61700 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "91686181": {
+   "ico": "91686181",
+   "obchodniJmeno": "Expediční sklad Žebětín s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2006-10-10",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Plotní",
+    "cisloDomovni": 38,
+    "psc": 60200,
+    "textovaAdresa": "Plotní 38, Trnitá, 60200 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  }
+ }
+}

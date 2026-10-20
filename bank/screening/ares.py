@@ -32,8 +32,10 @@ def parse(raw: dict) -> dict:
     if form not in LEGAL_ENTITY_FORMS:
         return {"found": True, "legal_form": form, "legal_entity": False}
     regs = body.get("seznamRegistraci") or {}
+    seat = body.get("sidlo") or {}
     return {"found": True, "legal_form": form, "legal_entity": True, "ico": body.get("ico"),
-            "name": body.get("obchodniJmeno"), "address": (body.get("sidlo") or {}).get("textovaAdresa"),
+            "name": body.get("obchodniJmeno"), "address": seat.get("textovaAdresa"),
+            "street": seat.get("nazevUlice"), "psc": str(seat["psc"]) if seat.get("psc") else None,
             "founded": body.get("datumVzniku"), "dissolved": body.get("datumZaniku"), "dic": body.get("dic"),
             "vat_registered": regs.get("stavZdrojeDph") == "AKTIVNI",
             "insolvency_flag": regs.get("stavZdrojeIr") == "AKTIVNI",
