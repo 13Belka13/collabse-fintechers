@@ -12,9 +12,12 @@ Commands are in the [README](../README.md#run-it-locally).
 - [ ] **Fresh stand, warm it up.** After a deploy the stand starts on a fresh database. Press each scene once
       before the jury arrives, so every page has a deal to show and the registry answers are cached.
 - [ ] **Balances:** `python -m scripts.credits` shows ETH for the relayer, the operator and Alfa, and EURC and
-      tCZK for Alfa, with how many demo runs each still covers (read-only, nothing is signed).
-- [ ] **Mandate:** on `/mandate`, check the month's use against the 30 € monthly limit; raise it there if the
-      rehearsal used it up.
+      tCZK for Alfa, with how many demo runs each still covers (read-only, nothing is signed). One pass of the
+      EURC scenes locks about 18 EURC (Honest 5, Fake data 5, Jury approves 8): keep Alfa at 50 EURC or more
+      (Circle faucet, Base Sepolia, address `0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140`). tCZK needs no faucet.
+- [ ] **Mandate:** on `/mandate`, check the month's use against the 30 € monthly limit. One pass of the seven
+      scenes spends 23 € of it, so a rehearsal leaves too little for the jury: raise the monthly limit there
+      (a new mandate version) before the jury arrives.
 - [ ] **Spacing:** leave a few minutes between scenes. Under rule B the claim window holds the deal's slot in the
       mandate until it closes; "Run the timer now" on `/bank` applies due deadlines at once.
 - [ ] **Model mode:** the console marks each agent reply as AI-generated (Claude on Bedrock) or as a scripted
