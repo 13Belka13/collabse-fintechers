@@ -35,6 +35,11 @@ def _module(name: str):
     return importlib.import_module(f"bank.{name}")
 
 
+# a negotiation turn is the seller's live model call: 10.4 s once on Bedrock (2026-10-20), past the 10 s default;
+# the demo's bank client waits 30 s, so the proxy gives up first and answers a clean 504 the agent can retry
+NEGOTIATE_TIMEOUT_S = 25
+
+
 def seller_http(base_url: str) -> httpx.Client:
     return httpx.Client(base_url=base_url, timeout=10)
 
@@ -160,12 +165,14 @@ def _negotiate(deal_id: str, message: str) -> dict:
         raise DealError(409, f"deal is {deal['state']}")
     seller, buyer = core.seller(deal["seller_id"]), core.company(deal["buyer_id"])
     journal.append("agent:buyer", "buyer_message", {"message": message}, deal_id=deal_id)
-    with timing.timed("negotiate_proxy", deal_id):
-        with seller_http(seller["base_url"]) as http:
+    try:
+        with timing.timed("negotiate_proxy", deal_id), seller_http(seller["base_url"]) as http:
             r = http.post("/negotiate", json={"deal_id": deal_id, "seller_id": deal["seller_id"],
                                               "buyer_ico": buyer["ico"], "task": deal["task"],
                                               "terms": deal["criteria"], "requirements": _requirements(deal),
-                                              "message": message})
+                                              "message": message}, timeout=NEGOTIATE_TIMEOUT_S)
+    except httpx.TimeoutException as e:
+        raise DealError(504, "the seller did not answer in time; ask again") from e
     r.raise_for_status()
     body = r.json()
     reply, offer = str(body.get("reply_text", "")), body.get("offer")
