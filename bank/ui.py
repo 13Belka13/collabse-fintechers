@@ -13,7 +13,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, receipts, timing
+from bank import (approve, codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money,
+                  receipts, timing)
 
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
@@ -69,7 +70,8 @@ def _tx(h: str | None) -> dict | None:
 templates.env.filters.update(ts=_fmt_ts, money=_fmt_money, tx=_tx,
                              eur=lambda c: f"{(c or 0) / 100:.2f} €".replace(".", ","),
                              left=lambda t: max(0, int((t or 0) - time.time())))
-templates.env.globals.update(AI_LABEL=explain.AI_LABEL, sim=_sim, STEP_TEXT=STEP_TEXT)
+templates.env.globals.update(AI_LABEL=explain.AI_LABEL, sim=_sim, STEP_TEXT=STEP_TEXT,
+                             approve_qr=approve.story_qr)  # P3: the QR to approve from a phone
 
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
@@ -220,6 +222,7 @@ PLAIN = {  # decision codes in words for the audience; the code itself stays vis
     "VELOCITY_EXCEEDED": "too many payments too fast", "CONFIRMATION_REQUIRED": "a person must confirm this amount",
     "VAT_LIABILITY_RISK": "Czech VAT liability risk (§109)", "UNDER_REVIEW": "the payment is under review at the bank",
     "TERMS_MISMATCH": "the offer's terms fall short of the confirmed task terms",
+    "DECLINED": "a person declined the payment",  # not a bank code: deals.decline, on /story only
 }
 
 
@@ -283,7 +286,7 @@ def story(deal_id: str | None = None) -> dict | None:
     stopped = None
     for r in decided:
         x = explain_row(r, "client")
-        human = next((e for e in ev if e["event"] in ("vat_risk_acknowledged", "payment_confirmed")
+        human = next((e for e in ev if e["event"] in ("vat_risk_acknowledged", "payment_confirmed", "payment_declined")
                       and e["ts"] >= r["created_at"]), None)
         plain = PLAIN.get(x["code"], x["code"])
         if x["status"] == "ok":
@@ -295,16 +298,23 @@ def story(deal_id: str | None = None) -> dict | None:
             status = "done" if human else "wait"
             title = f"The bank asked a person first: {plain}"
             reasons = [rr["text"] for rr in x["reasons"]][:2] or [x["text"]]
+            if human and human["event"] == "payment_declined":
+                status, stopped = "blocked", {**x, "code": "DECLINED"}
         else:
             status, title = "blocked", f"The bank refused: {plain}"
             stopped = x
             reasons = [rr["text"] for rr in x["reasons"]][:2] or [x["text"]]
         if human:
-            reasons.append(f"{human['actor'].removeprefix('human:')} "
-                           + ("acknowledged the VAT risk once." if human["event"] == "vat_risk_acknowledged"
-                              else "confirmed the payment."))
+            jury = human["actor"] == approve.BY
+            if jury and human["event"] == "payment_confirmed":
+                reasons.append("Confirmed by a jury member from a phone (one-time QR link).")
+            else:
+                reasons.append(("A jury member" if jury else human["actor"].removeprefix("human:")) + {
+                    "vat_risk_acknowledged": " acknowledged the VAT risk once.",
+                    "payment_declined": " declined the payment."}.get(human["event"], " confirmed the payment."))
         steps.append(_step("decision", title, status, " ".join(t for t in reasons if t), ts=r["created_at"],
-                           ms=r["ms"], code=x["code"]))
+                           ms=r["ms"], code=x["code"], approve=did if x["code"] == "CONFIRMATION_REQUIRED"
+                           and status == "wait" and deal["state"] == "awaiting_human" else None))
     if not decided and talk:
         steps.append(_step("decision", "The bank decides before any money moves", "wait",
                            "Waiting for the agent to pay."))

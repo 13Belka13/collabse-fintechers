@@ -617,6 +617,18 @@ def confirm(deal_id: str, by: str) -> dict:
     return pay(deal_id)
 
 
+def decline(deal_id: str, by: str) -> dict:
+    """A human declines a payment the bank asked about. Nothing was reserved or signed before the question, so
+    nothing moves; a new pay() would ask a person again."""
+    with _locks[deal_id]:
+        deal = _require(deal_id)
+        if deal["state"] != "awaiting_human":
+            raise DealError(409, f"deal is {deal['state']}")
+        _set(deal_id, "refused", "payment_declined", {"by": by, "money_moved": False}, actor=by)
+    return {"status": "refused", "deal_id": deal_id, "money_moved": False,
+            "explanation": "A person declined this payment. No money moved."}
+
+
 def ack_vat(deal_id: str, by: str) -> dict:
     """A human accepts the §109 VAT risk for this seller and asset once (new mandate version), then the bank pays."""
     deal = _require(deal_id)

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Approve payment · Collabse bank</title>
+<style>
+:root { --bg: #f6f7f9; --card: #fff; --ink: #14171f; --muted: #5b6372; --line: #dde1e7; --ok: #0f7b3f; --ok-bg: #e5f5ea;
+  --bad: #b42318; --bad-bg: #fdecea; --brand: #1f2a44; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { background: var(--brand); color: #fff; padding: 14px 16px; font-weight: 800; }
+main { max-width: 480px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+.lead { font-size: 22px; line-height: 1.35; margin: 0 0 12px; }
+.amount { font-size: 34px; font-weight: 800; }
+.muted { color: var(--muted); } .small { font-size: 15px; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 12px 0 0; }
+dt { color: var(--muted); } dd { margin: 0; font-weight: 600; }
+button { font: inherit; font-weight: 800; border-radius: 12px; border: 2px solid var(--brand); cursor: pointer; width: 100%; }
+.approve { background: var(--ok); border-color: var(--ok); color: #fff; font-size: 26px; padding: 20px; margin-bottom: 12px; }
+.decline { background: #fff; color: var(--bad); border-color: var(--bad); font-size: 18px; padding: 12px; }
+.banner { border-radius: 14px; padding: 18px; font-size: 20px; font-weight: 700; margin-bottom: 14px; }
+.banner.ok { background: var(--ok-bg); color: var(--ok); } .banner.bad { background: var(--bad-bg); color: var(--bad); }
+</style>
+</head>
+<body>
+<header>Collabse bank · approve an agent's payment</header>
+<main>
+{% if error %}
+  <div class="banner bad">{{ error }}</div>
+  <p class="muted small">Nothing was paid from this page.</p>
+{% elif done %}
+  {% if done.action == 'approve' and done.status == 'ok' %}
+  <div class="banner ok">Approved. Thank you!</div>
+  {% elif done.action == 'approve' %}
+  <div class="banner bad">Approved, but the bank did not pay.</div>
+  {% else %}
+  <div class="banner bad">Declined. No money moved.</div>
+  {% endif %}
+  {% if done.text %}<div class="card small">{{ done.text }}</div>{% endif %}
+  <p class="muted small">Look at the big screen: the deal continues there.</p>
+{% elif card %}
+  <div class="card">
+    <p class="lead">The AI agent of <strong>{{ card.buyer }}</strong> wants to pay</p>
+    <div class="amount">{{ card.price }}{% if card.asset != 'EURC' %} <span class="muted small">≈ {{ card.eur }}</span>{% endif %}</div>
+    <p class="lead">to <strong>{{ card.seller }}</strong>{% if card.count %} for {{ card.count }} warehouse records{% endif %}.</p>
+    <dl class="small">
+      {% if card.threshold %}<dt>Limit without confirmation</dt><dd>{{ card.threshold }}</dd>{% endif %}
+      {% if card.per_deal %}<dt>Limit per deal</dt><dd>{{ card.per_deal }}</dd>{% endif %}
+      <dt>Why you are asked</dt><dd>{{ card.why }}</dd>
+    </dl>
+  </div>
+  <p class="small muted">If you approve, the bank locks the money in an escrow safe on chain; the seller is paid only for items that pass the agreed checks, the rest comes back.</p>
+  <form method="post" action="/approve/{{ card.deal_id }}">
+    <input type="hidden" name="t" value="{{ token }}">
+    <button class="approve" type="submit" name="action" value="approve">Approve</button>
+    <button class="decline" type="submit" name="action" value="decline">Decline</button>
+  </form>
+  <p class="muted small">One-time link for this payment only, valid until <span id="exp" data-t="{{ expires_at }}"></span>. Testnet prototype: no real money.</p>
+{% endif %}
+</main>
+<script>
+(function () {
+  var el = document.getElementById("exp");
+  if (el) { el.textContent = new Date(parseFloat(el.dataset.t) * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}); }
+  document.querySelectorAll("form").forEach(function (f) {  // one tap only: a second tap would find the link used
+    f.addEventListener("submit", function () { setTimeout(function () { f.querySelectorAll("button").forEach(function (b) { b.disabled = true; }); }, 0); });
+  });
+})();
+</script>
+</body>
+</html>

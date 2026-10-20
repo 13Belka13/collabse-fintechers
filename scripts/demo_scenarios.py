@@ -1,10 +1,10 @@
-# Demo scenarios (SPEC §13): the five buttons on /bank. Each runs the buyer agent (MOCK replies when MOCK=1)
+# Demo scenarios (SPEC §13): the six buttons on /bank. Each runs the buyer agent (MOCK replies when MOCK=1)
 # against the bank HTTP API, with the seller in the scenario's mode. The money path is the bank's own code:
 # deals.pay -> mandate -> escrow; the seller delivers through the bank, the predicates decide each item and the
 # deal's rule moves the money (rule B: 90 % at acceptance, the rest at window end; timer for the rest).
 # The demo console (/story, "Run your own deal") runs the same agent with the viewer's task, budget, asset, seller,
 # seller behaviour and own seller text (run_custom). One run at a time; RUN holds what the UI shows while it runs.
-# Usage: python -m scripts.demo_scenarios honest|fake_data|attack|suspicious|tczk [--sim]
+# Usage: python -m scripts.demo_scenarios honest|fake_data|attack|suspicious|tczk|jury [--sim]
 #        (--sim: simulated chain + in-process seller, no keys; otherwise bank :8000 and seller :8001 must run)
 import argparse
 import json
@@ -27,6 +27,9 @@ SCENARIOS = {
                    "story": "Delta's website shows another IČO than ARES: refused before any payment."},
     "tczk": {"title": "Same deal in tCZK", "seller": "s-beta", "mode": "honest", "asset": "tCZK", "opening": "list",
              "story": "The bank's tokenized deposit: 125,00 Kč, the account is published, no VAT risk."},
+    "jury": {"title": "Jury approves", "seller": "s-gama", "mode": "honest", "asset": "EURC", "floor": 800, "budget": 1000,
+             "story": "Gama will not go below 8,00 €: above the mandate's 6,00 € confirmation threshold, within the 10,00 € "
+                      "limit. The bank asks a person; a jury member scans the QR on /story and approves from a phone."},
 }
 
 
@@ -87,10 +90,10 @@ def _transport():
     return httpx.Client(base_url=config.BANK_URL, timeout=30), httpx.Client(base_url=config.SELLER_URL, timeout=10)
 
 
-def _set_seller(seller_api, sid: str, mode: str, say=None, opening="min", data=None, check=True):
+def _set_seller(seller_api, sid: str, mode: str, say=None, opening="min", data=None, check=True, floor=None):
     from bank import core, screening
     seller_api.post("/mode", json={"seller_id": sid, "mode": mode, "say": say, "opening": opening,
-                                   "data": data}).raise_for_status()
+                                   "data": data, "floor_eur_cents": floor}).raise_for_status()
     if check:
         sel = core.seller(sid)
         screening.check(sel["ico"], sel["wallet_address"], sel.get("website_url"))  # prefetched as during negotiation
@@ -113,10 +116,12 @@ def run(name: str) -> dict:
     s = SCENARIOS[name]
     mandate.ensure_demo()
     bank, seller = _transport()
-    _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"))
+    _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"), floor=s.get("floor"))
 
     call = _agent_call(bank)
-    result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"]).run()
+    # "jury": the agent stops at CONFIRMATION_REQUIRED; the bank pays by itself once a person approves (deals.confirm)
+    result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"],
+                   budget_eur_cents=s.get("budget", 500)).run()
     RUN.update(agent_text=result["text"])
     if not result["payments"] and name == "suspicious":
         # the agent stopped at check_seller; show that the bank refuses even if an agent pushed on anyway
