@@ -628,7 +628,7 @@ DEMO_SIM=1 uvicorn bank.app:app --port 8000      # open http://localhost:8000/st
 code, and the UI shows a **SIMULATED CHAIN** banner. From the command line:
 
 ```bash
-python -m scripts.demo_scenarios honest --sim    # or fake_data | attack | suspicious | tczk
+python -m scripts.demo_scenarios honest --sim    # or fake_data | attack | suspicious | tczk | sanctions_hit | jury
 python -m scripts.verify_journal                 # checks the journal's hash chain
 ```
 
@@ -669,8 +669,8 @@ python -m scripts.scenarios --p0 --runs 1 --target sepolia   # real transactions
 | Needed for | Variables |
 | --- | --- |
 | Chain | `BANK_RELAYER_PK`, `BANK_ADMIN_PK`, `BANK_OPERATOR_PK`, `BANK_CLEARING_PK` (or `BANK_CLEARING_ADDR`), `ALFA_PK` (throwaway testnet keys with Base Sepolia ETH; Alfa also holds EURC and tCZK); `TCZK=0x18245366edA63Ca583c11B27d1134F3d233A115F` with `TCZK_NAME="tCZK Deposit Token"`; `RPC_URL` + `TATUM_API_KEY` (or `RPC_URL=https://sepolia.base.org`) |
-| Auth between the parts | `AGENT_TOKEN_ALFA`, `SELLER_TOKEN`, `BANK_TO_SELLER_TOKEN`, `HUMAN_TOKEN`, `DECIDER_TOKEN` (any random strings; the bank warns at start-up while development defaults are in use) |
-| Claude on Bedrock | `MOCK=0`, `AWS_REGION`, then `AWS_PROFILE` (SSO) or `AWS_BEARER_TOKEN_BEDROCK`; `MODEL_MAIN` / `MODEL_FAST`. `python -m scripts.check_bedrock` makes one tiny call per model |
+| Auth between the parts | `AGENT_TOKEN_ALFA`, `SELLER_TOKEN` (or one per seller in `SELLER_TOKENS`), `BANK_TO_SELLER_TOKEN`, `HUMAN_TOKEN`, `DECIDER_TOKEN` (or one per decider in `DECIDER_TOKENS`); any random strings, and the bank warns at start-up while development defaults are in use |
+| Claude on Bedrock | `MOCK=0`, `AWS_REGION`, then `AWS_PROFILE` (SSO) or `AWS_BEARER_TOKEN_BEDROCK`; `MODEL_MAIN` / `MODEL_FAST`; `LLM_DAILY_USD` caps the day's model spend. `python -m scripts.check_bedrock` makes one tiny call per model |
 | Apify (optional) | `APIFY_TOKEN`, `APIFY_COMPANY_CHECK_ACTOR=<user>/company-check`; without them the synthetic sellers use recorded web footprints |
 | Mostly Right datasets (optional) | `MOSTLYRIGHT_API_KEY`: screening then also queries the hackathon datasets (Czech companies with KYB risk flags; EU financial-firm licences and regulator warnings); without it the source is skipped and the skip is recorded |
 | Tatum webhooks (optional) | `TATUM_HMAC_SECRET`, `PUBLIC_BASE_URL`, then `python -m scripts.tatum_subscribe`; without them the bank polls the RPC |
