@@ -362,7 +362,7 @@ that no money moved.
 | Budget race: 10 parallel `pay()` with budget for 3 | exactly 3 locks on Base Sepolia (N02); 20 offline rounds, overspend 0 | [validation-sepolia.md](reports/validation-sepolia.md), [numbers.md](reports/numbers.md) |
 | Automated tests (unit + evals, MOCK, every push in CI) | **757** (753 pass, 4 need live keys or a fork) | [CI](https://github.com/13Belka13/collabse-fintechers/actions/workflows/ci.yml) |
 | Contract tests (Foundry) | **24** unit + 3 fork tests | `contracts/test/` |
-| Coverage of `bank/` | **89.8 %** lines, 82.8 % branches | [numbers.md](reports/numbers.md), from `reports/coverage.json` |
+| Coverage of `bank/` on the final code | **92.0 %** lines, 85.5 % branches (6 183 statements) | [coverage.json](reports/coverage.json) |
 | Prompt-injection evals | Money-level block **20/20** variants (50/50 runs: scripted, deliberately compromised, live Claude Opus 4.5, run of 19.10); live Opus buyer: 0 calls the bank had to reject in 17 runs | [evals](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run) |
 | Injected delivered items paid | **0** of 3 variants; predicate engine 27/27 labelled items as expected | same |
 | Explanations | Cited sources ⊆ evidence 64/64; client texts without a non-public reason 32/32; AI texts labelled 29/29 | same |
