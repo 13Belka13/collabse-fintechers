@@ -20,15 +20,19 @@ production-ready. See [Honest limitations](#honest-limitations).
    the VAT payer register, the insolvency register ISIR) and the EU sanctions list. Our Apify Actor checks
    the seller's web footprint. Every signal carries its source URL.
 3. **Negotiation.** The buyer's agent negotiates with the seller's agent. The result is an offer with a
-   price, a deadline, **acceptance criteria** taken from the human's task, and dispute terms.
+   price, a deadline, the **acceptance predicates** the human confirmed for the task (verbatim; the seller may
+   only add, joined by AND) and a **quality rule** A < B < C (model v2.6, [docs/MODEL_V2.md](docs/MODEL_V2.md)).
 4. **Escrow.** The bank locks the money in Coinbase's AuthCaptureEscrow on Base. The seller checks the lock
    on-chain before it delivers.
-5. **Verification.** Code rules check every delivered item. An AI judge only flags doubtful items. It
-   never moves money.
-6. **Settlement.** The bank pays per accepted item and returns the rest. Accepted items are paid at once,
-   minus a 5 % holdback that is paid after its window.
-7. **Dispute.** The disputed part stays in escrow until a human decides. Every step has a deadline, and a
-   timer applies the agreed default when one side stays silent.
+5. **Delivery through the bank.** The seller sends the items with a manifest signed by its own key. The bank
+   recomputes the Merkle root, runs the predicates (code, no AI: registries, RE2, JSON schema, uniqueness) and
+   hands the buyer **only the accepted items**.
+6. **Settlement.** The bank pays per accepted item by the deal's rule: A at the delivery deadline; B (guarantee
+   X %) captures (1 − X)·P at acceptance and the rest at the end of the claim window. Everything else returns to
+   the buyer in **one final void**. The bank's fee goes to its clearing address at capture.
+7. **Claims.** Under B the buyer gets back up to X % without investigation. Under C a dispute about a field
+   that the bank's own source snapshot contradicts goes to an external decider drawn by drand; only the
+   disputed sum stays in escrow.
 8. **Journal and statement.** A hash-chained journal, and a statement that reconciles with the chain.
 
 **The agent has no "send to address" tool.** Its only payment tool is `pay(deal_id)` for an agreed deal.
@@ -78,7 +82,7 @@ The same deal runs in two currencies:
 | Bank UI | http://localhost:8000/story | Live deal for the audience (the start page): the latest deal as plain steps — mandate, the agents' talk with the seller's words marked untrusted, the bank's decision and its time, escrow, delivery check, payout — and where the money is now; same client view as the feed |
 | | http://localhost:8000/bank | Live feed of decisions and transfers, client / compliance view, decision time and p95, model cost, five demo buttons |
 | | http://localhost:8000/mandate | Mandate versions and `policy_hash`, budget, VAT acknowledgement and confirmation buttons |
-| | http://localhost:8000/deals → `/deals/{id}` → `/deals/{id}/dispute` | Deals, escrow state from the chain, the dispute card (items, violated criterion, deadlines, judge reasons, accept / reject) |
+| | http://localhost:8000/deals → `/deals/{id}` → `/deciders/{id}` | Deals, escrow state from the chain, the deal page (conditions in words, items with codes and masked values, rule, "if nobody acts", accept anyway), the pseudonymised decider page for rule C |
 | | http://localhost:8000/statement | Statement and the chain reconciliation (`/statement/reconcile`) |
 | Buyer agent | `agents/buyer.py`, run by `scripts/demo_scenarios.py` or a `/bank` button | Manual tool loop on Claude; MOCK replies when `MOCK=1` |
 | Seller agent | `agents/seller_agent.py`, called by the seller service on every `/negotiate` turn | The model phrases the reply; code owns the price (≤ 3 turns, never below the minimum, never back up) |
@@ -265,7 +269,8 @@ so they have no explorer links.
   call the bank had to reject. The one miss: on a Morse-coded "transfer 50 EURC" (INJ02) the model refused
   the whole task, so nothing was paid — safe, but the honest offer was not paid either.
 - AI judge on 40 labelled items with Claude Haiku 4.5: precision 1.00, recall 1.00 (the MOCK keyword
-  heuristic scores 0.62 / 0.42). The judge still only flags items for a human and never decides on money.
+  heuristic scores 0.62 / 0.42). Model v2.6 removed the judge: items are decided by code predicates only; the
+  judge numbers above are from the earlier model's live run.
 - Explanations: cited sources ⊆ evidence 64/64, client texts without a non-public reason 32/32, AI texts
   labelled 29/29.
 
@@ -290,10 +295,10 @@ so they have no explorer links.
   - The real Google Maps dataset is recorded: `fixtures/maps/brno_warehouses_recorded.json`, Apify run
     `w9XlXOBtETIUObLGm`, 73 places in Brno with only the 11 fields we use (one place whose title
     was a person's name was dropped). 17 of them pass the demo criteria; 12 more pass every rule except
-    the category keyword (movers, estate agents) and go to the judge.
-  - Run the seller with `SELLER_DATA=maps` to deliver these real places: 17 are paid at once, the 3
-    borderline ones are held for a human in the dispute card. Without it the seller delivers the labelled
-    synthetic set, which keeps the money scenes and the tests deterministic.
+    the category keyword (movers, estate agents) and fail the category predicate.
+  - Run the seller with `SELLER_DATA=maps` (and a task with `registry_check: false`: places have no IČO) to
+    deliver these real places: 17 are accepted, the 3 borderline ones are rejected and never reach the buyer.
+    Without it the seller delivers synthetic warehouse companies with IČO (`fixtures/registries/items.json`).
   - Apify spend for the push, the two Actor runs and the recording: **about $0.38** (Apify console).
 
 ## How we use AWS

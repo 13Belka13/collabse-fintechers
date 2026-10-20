@@ -142,3 +142,27 @@ Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tic
       disclosure, run instructions, Apify usage highlighted, list of what came from `prep/`, AWS credit
       spend from the per-call token log, numbers from `reports/validation.md`); three clean demo runs in a
       row within 4 minutes; `smoke.py` green right before the demo; freeze 13:30.
+
+## Model v2.6 rework (docs/MODEL_V2.md §15; replaces SPEC §8/§9)
+
+- [x] V1 `bank/receipts.py`: I-JSON/NFC, JCS (RFC 8785), Merkle tree (leaf 0x00‖uint64_be‖JCS, node 0x01‖l‖r,
+      odd node promoted) with vectors in `fixtures/merkle_vectors.json`, EIP-712 manifest, seller key registry
+- [x] V2 `bank/verifier.py`: predicate engine (AND only, auto-required fields, RE2, json_schema limits without
+      external `$ref`, unique/max_count over versions and the task, registry_active bound to ARES/ISIR, source);
+      LLM judge removed, predicate eval replaces the judge eval
+- [x] V3 delivery through the bank: signed manifest, bank root, quotas, versions (P never decreases), only
+      accepted items reach the buyer (with proofs); "accept anyway" by a person
+- [x] V4 escrow terms with the seller's `verify_escrow`: feeReceiver = clearing address, min = max fee = tariff,
+      salt keccak(deal_id‖n), long expiries, "paid" over seller PaymentInfos
+  - [ ] Prove the fee capture on the anvil fork (`tests/unit/test_escrow_fork.py`, needs anvil) and live
+- [x] V5 rules A and B (§8.2 schedule, one final void, B slots at pay, no void on a failed capture)
+- [x] V6 rule C demo path: `bank/snapshots.py`, admissibility at filing, fees to the clearing address, negotiation and
+      fee deadlines, `bank/deciders.py` (pool ≥ 3, commit-reveal, drand + committed salt, sample), split-off of D,
+      execution after 10 business days; decider page `/deciders/{deal_id}`
+  - [ ] Paid re-review by the loser (two new deciders, majority of three) and 5 % random re-review — not built
+  - [ ] Queue limits on C under review (§7C.10) — not built; salt hash only in the journal, not on chain
+- [x] V7 mandate §2: tier_sum, dispute_floor, require_b_for / require_c_above_eur with person-confirmed fallbacks,
+      unprotected daily cap, claim-fee budget; demo scale ÷100 / ÷90 in `bank/config.py`
+  - [ ] EvSM related sellers (TODO data), sessions with vouchers (§4), monitoring statistics `bank/monitoring.py` (§9)
+- [x] V8 buyer agent tools `fetch_delivery`, `file_claim`; scenario runner and demo scripts on the new schedule
+  - [ ] Run `scripts/scenarios.py` on the fork and on Base Sepolia (not run in the rework session: no anvil, no keys)

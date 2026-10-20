@@ -278,10 +278,13 @@ def test_fail_closed_result_expires_sooner(monkeypatch):
 def test_prefetch_fills_cache():
     screening.prefetch(DELTA)
     deadline = time.time() + 5
-    while screening.cached(DELTA) is None and time.time() < deadline:
+
+    def checked():  # check() writes the cache row, then the journal entry: wait for both
+        return db.rows("SELECT event, payload_json FROM journal WHERE event='screening.checked'")
+    while (screening.cached(DELTA) is None or not checked()) and time.time() < deadline:
         time.sleep(0.02)
     assert screening.cached(DELTA)["level"] == "blocked"
-    rows = db.rows("SELECT event, payload_json FROM journal WHERE event='screening.checked'")
+    rows = checked()
     assert rows and json.loads(rows[-1]["payload_json"])["ico"] == DELTA
 
 
