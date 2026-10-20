@@ -176,3 +176,14 @@ def test_wait_extension_is_capped_at_five_business_days(w, monkeypatch):
     # items accepted anyway by a person do not count as waiting (their decided_at is the waiver)
     db.run("UPDATE items SET status='accepted', waived_by='human:anna', decided_at=? WHERE deal_id=?", (far, deal_id))
     assert deadlines.waited(deal_id, far) == 0
+
+
+def test_accept_anyway_never_pays_more_items_than_ordered(w):
+    deal_id = k.make_deal(w, now=T0)
+    send(w, deal_id, k.signed(w, deal_id, company_items(20, "fake_data")))
+    rejected = [(r["version"], r["idx"]) for r in receipts.items_of(deal_id, "rejected")]
+    accepted = receipts.counts(deal_id)["accepted_items"]
+    assert len(rejected) >= 2
+    with pytest.raises(receipts.Refused, match=f"at most {accepted + 1}"):  # room for one waiver only
+        receipts.waive(deal_id, rejected[:2], "human:anna", accepted + 1)
+    assert receipts.counts(deal_id)["accepted_items"] == accepted  # the refused waiver changed nothing (one tx)
