@@ -7,11 +7,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from x402.schemas import PaymentPayload, PaymentRequirements
 
-from bank import config, db, facilitator, journal, tczk
+from bank import config, db, facilitator, journal, screening, tczk
 
 ALFA = "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
 BETA = "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1"
 STRANGER = "0x000000000000000000000000000000000000dEaD"
+DELTA = "0xeCFf7a2FF48b85eE48150D94f6FAe9338A1D4388"  # website shows another IČO: blocked, public reason
+GAMA = "0x19d12f1e3869e75D819aD9190065D3B77b4c7Ac1"
+BETA_ICO, GAMA_ICO = "30181020", "59093994"
 TCZK_ADDR = "0x6a99C9e95DD220172d07D5f730f2e82B466D4B67"
 # public anvil dev key #0 — never holds real funds; the facilitator never reaches the chain in these tests
 DUMMY_RELAYER = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -162,3 +165,55 @@ def test_supported_lists_base_sepolia_and_both_assets(client):
 def test_bank_app_mounts_the_facilitator():
     from bank.app import app
     assert TestClient(app).get("/x402/supported").json()["kinds"][0]["network"] == "eip155:84532"
+
+
+# ---- counterparty check: the same rule as the escrow path (mandate step 5), so x402 is no way around it ----
+
+def test_payee_the_escrow_path_refuses_is_refused_over_x402(client):
+    r = req(pay_to=DELTA)
+    for stage in ("verify", "settle"):
+        out = client.post(f"/x402/{stage}", json=body(pay(r), r)).json()
+        assert out["isValid"] is False and out["invalidReason"] == "COUNTERPARTY_NOT_TRUSTED"
+        assert journal.entries()[0]["payload"]["stage"] == stage
+        assert journal.entries()[0]["payload"]["reason"].startswith("screening_blocked:")
+    assert db.rows("SELECT * FROM onchain_txs") == []
+
+
+def test_clean_payee_still_valid_and_reads_the_cache(monkeypatch):
+    r = req()
+    assert facilitator.screen(pay(r), r) is None
+    assert screening.cached(BETA_ICO)["level"] == "ok"
+    monkeypatch.setattr(screening, "check", lambda *a, **k: pytest.fail("a cached check must not run again"))
+    assert facilitator.screen(pay(r), r) is None
+
+
+def test_missing_cache_runs_the_check(monkeypatch):
+    calls, real = [], screening.check
+    monkeypatch.setattr(screening, "check", lambda ico, *a, **k: calls.append(ico) or real(ico, *a, **k))
+    assert screening.cached(BETA_ICO) is None
+    r = req()
+    assert facilitator.screen(pay(r), r) is None and calls == [BETA_ICO]
+
+
+def test_sanctions_near_match_is_under_review_and_hidden(client, monkeypatch):
+    fx = screening.fixture(GAMA_ICO)
+    fx["ares"]["body"]["obchodniJmeno"] = "Arab Revolutionary Brigade s.r.o."
+    monkeypatch.setattr(screening, "fixture", lambda ico: fx)
+    r = req(pay_to=GAMA)
+    res = client.post("/x402/verify", json=body(pay(r), r))
+    assert res.status_code == 200 and res.json()["invalidReason"] == "UNDER_REVIEW"
+    assert "sanction" not in res.text.lower() and "Arab" not in res.text
+    assert journal.entries()[0]["payload"]["reason"] == "screening_review:sanctions_near_match"
+
+
+def test_registry_timeout_fails_closed(monkeypatch):
+    monkeypatch.setenv("FAULTS", "registry_timeout")
+    config.reload()
+    r = req()
+    assert facilitator.screen(pay(r), r) == "UNDER_REVIEW"
+
+
+def test_screening_error_fails_closed(monkeypatch):
+    monkeypatch.setattr(screening, "check", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    r = req()
+    assert facilitator.screen(pay(r), r) == "UNDER_REVIEW"
