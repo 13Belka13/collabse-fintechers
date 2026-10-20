@@ -1,5 +1,6 @@
 {% for a in alarms %}
-<div class="banner bad">ALARM · deal <a href="/deals/{{ a.deal_id }}">{{ a.deal_id }}</a> ({{ a.state }}): escrow authorization expires in <span class="countdown" data-deadline="{{ a.expiry }}">{{ a.left }} s</span> — after that the seller can no longer be paid, only void / reclaim.</div>
+{% if a.stuck %}<div class="banner bad">ALARM · deal <a href="/deals/{{ a.deal_id }}">{{ a.deal_id }}</a> ({{ a.state }}): settlement stuck — the timer failed on this deal several times in a row; the money stays in escrow until a person looks at it.</div>
+{% else %}<div class="banner bad">ALARM · deal <a href="/deals/{{ a.deal_id }}">{{ a.deal_id }}</a> ({{ a.state }}): escrow authorization expires in <span class="countdown" data-deadline="{{ a.expiry }}">{{ a.left }} s</span> — after that the seller can no longer be paid, only void / reclaim.</div>{% endif %}
 {% endfor %}
 <div class="grid">
   <div class="stat info"><div class="k">Last decision</div><div class="v">{{ '%.1f'|format(panel.last_ms) if panel.last_ms is not none else '—' }} ms</div></div>
@@ -44,6 +45,7 @@
       {% elif r.event == 'claim_b.filed' %}B claim: {{ p['items'] }} item(s), {{ p.amount|money(r.asset) }} back to the buyer without investigation ({{ p.reason }})
       {% elif r.event == 'settlement.accepted' %}A person confirmed acceptance (rule A)
       {% elif r.event == 'settlement.closed' %}Escrow settled: {{ p.captured|money(r.asset) }} to the seller{% if p.voided %}, the rest returned to the buyer in one final void{% endif %}
+      {% elif r.event == 'settlement.stuck' %}Settlement stuck: the timer failed {{ p.attempts }} times in a row; the money waits for a person
       {% elif r.event == 'escrow_expiry_alarm' %}Escrow authorization expires in {{ p.seconds_left }} s and the deal is still open
       {% elif r.event == 'x402_refused' %}x402 transfer refused by the bank: <code>{{ p.code }}</code>
       {% elif r.event == 'demo.scenario' %}Demo scenario “{{ p.title }}”: {{ p.outcome or 'started' }}

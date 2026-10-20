@@ -1,4 +1,6 @@
 # Settings from .env (SPEC §16). Read once at import; tests override via monkeypatch + reload().
+import hashlib
+import hmac
 import os
 from pathlib import Path
 
@@ -14,6 +16,16 @@ def _env(name, default=""):
     # python-dotenv already drops inline " # comments"; don't cut values (an HMAC secret may contain '#').
     # An empty value ("TOKEN=" copied from .env.example) means "not set": the default applies.
     return os.getenv(name, "").strip().strip('"') or default
+
+
+def seller_token(seller_id: str) -> str:
+    """One seller's credential towards the bank: SELLER_TOKENS[seller_id] or HMAC-SHA256(SELLER_TOKEN, seller_id) hex,
+    so the bank and the seller service derive it from the secret they already share (no new setting needed)."""
+    if seller_id in SELLER_TOKENS:
+        return SELLER_TOKENS[seller_id]
+    if not SELLER_TOKEN:
+        return ""
+    return hmac.new(SELLER_TOKEN.encode(), seller_id.encode(), hashlib.sha256).hexdigest()
 
 
 def reload():
@@ -91,6 +103,10 @@ def reload():
     # Agent token -> the one company that agent acts for: the API never takes buyer_id from the caller.
     g["AGENT_TOKENS"] = {_env("AGENT_TOKEN_ALFA", "dev-agent-alfa"): "alfa"}
     g["SELLER_TOKEN"] = _env("SELLER_TOKEN", "dev-seller")     # seller service -> bank (deliveries)
+    # each seller has its own token (seller_token below); SELLER_TOKENS="s-beta:tok,..." overrides it per seller;
+    # the shared SELLER_TOKEN itself is accepted for any seller only with ALLOW_SHARED_SELLER_TOKEN=1 (legacy)
+    g["SELLER_TOKENS"] = dict(t.strip().split(":", 1) for t in _env("SELLER_TOKENS").split(",") if ":" in t)
+    g["ALLOW_SHARED_SELLER_TOKEN"] = _env("ALLOW_SHARED_SELLER_TOKEN", "0") == "1"
     g["BANK_TO_SELLER_TOKEN"] = _env("BANK_TO_SELLER_TOKEN", "dev-bank")  # bank -> seller (escrow notices)
     g["HUMAN_TOKEN"] = _env("HUMAN_TOKEN", "dev-human")        # bank UI: confirmations, VAT acknowledgements
     g["DECIDER_TOKEN"] = _env("DECIDER_TOKEN", "dev-decider")  # rule C deciders submit decisions (demo: on stage)

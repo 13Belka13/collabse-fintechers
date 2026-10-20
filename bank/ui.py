@@ -27,6 +27,8 @@ INFO_EVENTS = {"settlement.opened", "delivery.autocodes", "delivery.refused", "d
 BAD_EVENTS = {"escrow_expiry_alarm", "timer_error", "settlement.tx_failed", "x402_refused", "delivery.refused"}
 INFO_EVENTS |= {"agent_unavailable", "seller_unavailable"}  # a slow / failing model or seller shows, never silent
 BAD_EVENTS |= {"agent_unavailable", "seller_unavailable"}
+INFO_EVENTS.add("settlement.stuck")  # the timer failed a deal STUCK_AFTER times in a row (bank.deadlines)
+BAD_EVENTS.add("settlement.stuck")
 STEP_TEXT = {"delivery": "Waiting for the delivery", "window": "Claim window open", "settling": "Settling",
              "dispute_c": "C dispute: only the disputed sum stays in escrow", "closed": "Settled"}
 
@@ -169,7 +171,8 @@ def panel() -> dict:
 
 
 def alarms(now: float | None = None) -> list[dict]:
-    """Open deals whose escrow can no longer be paid out within the hour (§9.6)."""
+    """Open deals whose escrow can no longer be paid out within the hour (§9.6), and open deals the timer could
+    not move (settlement.stuck)."""
     now = time.time() if now is None else now
     out = []
     for d in db.rows("SELECT deal_id, state, payment_info_json FROM deals WHERE payment_info_json IS NOT NULL"
@@ -177,6 +180,9 @@ def alarms(now: float | None = None) -> list[dict]:
         exp = int((db.loads(d["payment_info_json"]) or {}).get("authorizationExpiry") or 0)
         if exp and exp - now < deadlines.ALARM_S:
             out.append({"deal_id": d["deal_id"], "state": d["state"], "left": max(0, int(exp - now)), "expiry": exp})
+    for d in db.rows("SELECT DISTINCT j.deal_id, d.state FROM journal j JOIN deals d ON d.deal_id = j.deal_id"
+                     " JOIN settlements s ON s.deal_id = j.deal_id WHERE j.event='settlement.stuck' AND s.closed_at IS NULL"):
+        out.append({"deal_id": d["deal_id"], "state": d["state"], "stuck": True})
     return out
 
 

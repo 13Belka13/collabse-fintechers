@@ -21,7 +21,7 @@ from x402.mechanisms.evm.data_suffix import append_data_suffix
 from x402.mechanisms.evm.exact import register_exact_evm_facilitator
 from x402.schemas import AbortResult, PaymentAbortedError, parse_payment_payload, parse_payment_requirements
 
-from bank import chain, config, core, journal, money, tczk, timing
+from bank import chain, codes, config, core, db, journal, money, screening, tczk, timing
 from bank.codes import Code
 
 log = logging.getLogger(__name__)
@@ -48,7 +48,8 @@ def _asset(address: str) -> str | None:
 
 
 def _screen(payload, requirements) -> tuple[str, str] | None:
-    """(code, fine-grained reason for the journal) or None. Cheap: SQLite + for tCZK two eth_calls."""
+    """(code, fine-grained reason for the journal) or None. Cheap: SQLite (the counterparty check is cached
+    during negotiation) + for tCZK two eth_calls."""
     if getattr(payload, "x402_version", None) != 2 or requirements.network != config.NETWORK \
             or requirements.scheme != "exact":
         return Code.QUOTE_MISMATCH, "unsupported_network_or_scheme"
@@ -78,12 +79,34 @@ def _screen(payload, requirements) -> tuple[str, str] | None:
         return Code.COUNTERPARTY_NOT_IN_SCOPE, "payer_not_a_bank_client"
     if tczk.bank_frozen(pay_to) or (payer and tczk.bank_frozen(payer)):
         return Code.UNDER_REVIEW, "wallet_frozen_at_bank"  # non-public: the client sees only the neutral code
+    hit = counterparty_refusal(core.company_by_wallet(pay_to))
+    if hit:
+        return hit
     if asset == "tCZK":
         if not tczk.is_allowed(pay_to):
             return Code.COUNTERPARTY_NOT_IN_SCOPE, "payee_not_on_tczk_allowlist"
         if tczk.is_frozen(pay_to) or (payer and tczk.is_frozen(payer)):
             return Code.UNDER_REVIEW, "wallet_frozen_on_chain"
     return None
+
+
+def counterparty_refusal(payee: dict) -> tuple[str, str] | None:
+    """The escrow path's counterparty rule (mandate step 5) for a direct x402 payment: the check cached during
+    negotiation, or, if missing, the check now (registries in parallel, 2 s, fail-closed). The code is the one the
+    client may see (codes.client_view: a non-public reason only ever shows as UNDER_REVIEW); level and reasons go
+    to the journal only. payee: a companies row. Reusable on any other money path that pays a bank client."""
+    try:
+        site = db.one("SELECT website_url FROM sellers WHERE company_id=?", (payee["id"],)) or {}
+        res = screening.cached(payee["ico"]) or screening.check(payee["ico"], payee["wallet_address"],
+                                                                site.get("website_url"))
+    except Exception as e:  # noqa: BLE001 — no answer is no payment
+        return Code.UNDER_REVIEW, f"screening_error:{type(e).__name__}"
+    level, reasons = res.get("level"), res.get("reasons") or []
+    if level == "ok":
+        return None
+    code = Code.COUNTERPARTY_NOT_TRUSTED if level == "blocked" else Code.UNDER_REVIEW
+    shown = codes.client_view(codes.refuse(code, reasons))["code"]
+    return Code(shown), f"screening_{level}:" + ",".join(r.get("code", "?") for r in reasons)
 
 
 def screen(payload, requirements) -> str | None:

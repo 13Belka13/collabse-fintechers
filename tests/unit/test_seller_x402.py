@@ -167,7 +167,7 @@ def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, captu
                                                                     "refundable": 0})
     monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())
     posted = []
-    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: posted.append((path, body)))
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body, seller_id: posted.append((path, body)))
     body = {"deal_id": "d-1", "asset": "EURC", "payment_info": _pi(o, **over), "n": 0, "tier": "T1", "rule": "B"}
     assert client.post(f"/order/{o['offer_id']}/escrow", json=body).status_code == 401  # only the bank may announce
     r = client.post(f"/order/{o['offer_id']}/escrow", json=body, headers={"x-bank-token": config.BANK_TO_SELLER_TOKEN})
@@ -191,7 +191,7 @@ def test_seller_registers_its_key_before_every_delivery(seller, monkeypatch):
                                                                     "refundable": 0})
     monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())
     posted = []
-    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: posted.append(path))
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body, seller_id: posted.append(path))
     for deal_id in ("d-1", "d-2"):
         o = offer(client, deal_id=deal_id)
         body = {"deal_id": deal_id, "asset": "EURC", "payment_info": _pi(o, salt=str(seller_mod.escrow.salt(deal_id, 0))),

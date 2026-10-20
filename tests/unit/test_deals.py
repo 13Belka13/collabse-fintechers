@@ -76,8 +76,8 @@ def world(monkeypatch, seeded):
     bank_app = FastAPI()
     bank_app.include_router(api.router)
     bank = TestClient(bank_app, headers={"x-agent-token": "dev-agent-alfa"})
-    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: bank.post(
-        path, json=body, headers={"x-seller-token": config.SELLER_TOKEN}).raise_for_status())
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body, seller_id: bank.post(
+        path, json=body, headers=seller_mod.seller_headers(seller_id)).raise_for_status())
     locked = {"capturable": 0}
     monkeypatch.setattr(escrow, "read_state", lambda h: {"collected": True, "refundable": 0, **locked})
     monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())

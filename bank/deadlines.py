@@ -6,6 +6,8 @@
 # The delivery deadline moves by the time items waited for a registry or a source snapshot (§5.1, §5.2 p. 9): the
 # seller cannot replace an item before the bank has decided it. Capped at 5 business days — after that a person of
 # the buyer decides the item (§5.1), and the escrow's authorizationExpiry (deadline + window + 30 days) stays ahead.
+# One deal that raises never stops the others: its failure is journalled (timer.deal_failed, bank-internal detail)
+# and after STUCK_AFTER failures in a row the deal raises one settlement.stuck alarm on /bank for a person.
 # tick(now) takes the clock as a parameter, so tests drive it with a fake clock.
 import threading
 import time
@@ -16,6 +18,8 @@ INTERVAL_S = 5
 ALARM_S = 3600
 MAX_WAIT_BD = 5
 LOCKED_STATES = ("authorized", "delivered", "dispute_c")
+STUCK_AFTER = 3
+_fails: dict[str, int] = {}  # deal_id -> consecutive failed ticks (this process)
 _thread: threading.Thread | None = None
 _stop = threading.Event()
 _tick_lock = threading.Lock()
@@ -33,12 +37,28 @@ def tick(now: float | None = None) -> list[dict]:
             journal.append("timer", "snapshot.drain_failed", {"error": repr(e)[:200]})
         for deal_id in disputes.open_ids():
             before = journal.entries(deal_id, limit=1)
-            disputes.tick(deal_id, now=now)
+            try:
+                disputes.tick(deal_id, now=now)
+            except Exception as e:  # noqa: BLE001 — the next deal still settles
+                done += _failed(deal_id, e)
+                continue
+            _fails.pop(deal_id, None)
             after = journal.entries(deal_id, limit=1)
             if after and (not before or after[0]["id"] != before[0]["id"]):
                 done.append({"deal_id": deal_id, "event": after[0]["event"]})
         done += alarms(now)
     return done
+
+
+def _failed(deal_id: str, e: Exception) -> list[dict]:
+    n = _fails[deal_id] = _fails.get(deal_id, 0) + 1
+    journal.append("timer", "timer.deal_failed", {"attempt": n, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                   deal_id=deal_id)
+    if n < STUCK_AFTER or db.one("SELECT 1 FROM journal WHERE deal_id=? AND event='settlement.stuck'", (deal_id,)):
+        return []
+    journal.append("timer", "settlement.stuck", {"attempts": n, "rule": f"{STUCK_AFTER} failed timer runs in a row: "
+                                                 "the money waits for a person"}, deal_id=deal_id)
+    return [{"deal_id": deal_id, "alarm": "settlement.stuck"}]
 
 
 def waited(deal_id: str, now: float) -> float:

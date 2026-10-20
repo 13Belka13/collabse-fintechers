@@ -122,8 +122,8 @@ def install():
     tczk.is_allowed = lambda addr, address=None: core.company_by_wallet(addr) is not None
     tczk.is_frozen = lambda addr, address=None: False
     seller_mod.read_retry = lambda fn, ok=None: fn()
-    seller_mod.bank_post = lambda path, body, *a, **k: bank_client.post(
-        path, json=body, headers={"x-seller-token": getattr(config, "SELLER_TOKEN", "")}).raise_for_status()
+    seller_mod.bank_post = lambda path, body, seller_id, *a, **k: bank_client.post(
+        path, json=body, headers=seller_mod.seller_headers(seller_id)).raise_for_status()
     deals.seller_http = lambda base_url: TestClient(SELLER)
     deals.auto_settle = lambda deal_id: disputes.advance(deal_id)  # the rule's schedule (MODEL_V2 §8.2)
     ACTIVE = True

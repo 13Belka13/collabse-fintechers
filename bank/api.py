@@ -2,7 +2,8 @@
 # Every Decision leaves through codes.client_view (non-public reasons never reach the client, SPEC §6.7).
 # Three callers, three shared secrets (prototype auth; config.*_TOKEN):
 #   agent  (x-agent-token)  -> acts for exactly one company: buyer_id comes from the token, never from the body;
-#   seller (x-seller-token) -> may only register its manifest key and post deliveries;
+#   seller (x-seller-token) -> one token per seller (config.seller_token): registers its own manifest key, posts
+#                              deliveries and acts in C claims only for its own deals (own_seller / seller_deal);
 #   human  (x-human-token)  -> bank UI: confirmations above the threshold, VAT-risk acknowledgements.
 import hmac
 
@@ -25,9 +26,33 @@ def agent_company(x_agent_token: str | None = Header(None)) -> str:
     raise HTTPException(401, "agent token required")
 
 
-def seller_caller(x_seller_token: str | None = Header(None)) -> None:
-    if not _same(x_seller_token, config.SELLER_TOKEN):
-        raise HTTPException(401, "seller token required")
+ANY_SELLER = "*"  # the legacy shared SELLER_TOKEN (only with ALLOW_SHARED_SELLER_TOKEN=1) acts for every seller
+
+
+def seller_caller(x_seller_token: str | None = Header(None)) -> str:
+    """The seller_id this token belongs to (config.seller_token), or ANY_SELLER for the allowed legacy token."""
+    for s in core.sellers():
+        if _same(x_seller_token, config.seller_token(s["seller_id"])):
+            return s["seller_id"]
+    if config.ALLOW_SHARED_SELLER_TOKEN and _same(x_seller_token, config.SELLER_TOKEN):
+        return ANY_SELLER
+    raise HTTPException(401, "seller token required")
+
+
+def own_seller(seller_id: str, caller: str = Depends(seller_caller)) -> str:
+    """Route dependency for /{seller_id}/... paths: a seller acts only for itself (403 otherwise)."""
+    if caller not in (seller_id, ANY_SELLER):
+        raise HTTPException(403, "this seller token belongs to another seller")
+    return seller_id
+
+
+def seller_deal(deal_id: str, caller: str = Depends(seller_caller)) -> dict:
+    """Route dependency for /deals/{deal_id}/... seller paths: only the deal's own seller (403 otherwise)."""
+    deal = deals.get(deal_id)
+    if deal is None:
+        raise HTTPException(404, f"unknown deal {deal_id}")
+    own_seller(deal["seller_id"], caller)
+    return deal
 
 
 def human_caller(x_human_token: str | None = Header(None)) -> None:
@@ -176,7 +201,7 @@ def statement(mandate_id: str, company_id: str = Depends(agent_company)):
     return deals.statement(mandate_id)
 
 
-@router.post("/sellers/{seller_id}/keys", dependencies=[Depends(seller_caller)])
+@router.post("/sellers/{seller_id}/keys", dependencies=[Depends(own_seller)])
 def register_key(seller_id: str, body: KeyIn):
     from bank import receipts
     if core.seller(seller_id) is None:
@@ -189,7 +214,7 @@ def register_key(seller_id: str, body: KeyIn):
             "revoked_at": row["revoked_at"]}
 
 
-@router.post("/deals/{deal_id}/delivery", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/delivery", dependencies=[Depends(seller_deal)])
 def delivery(deal_id: str, body: DeliveryIn, background: BackgroundTasks):
     out = _call(deals.record_delivery, deal_id, body.model_dump())
     if out.get("accepted"):
@@ -282,31 +307,31 @@ def c_buyer_reveal(deal_id: str, body: RevealIn, company_id: str = Depends(agent
     return _call(deciders.reveal, _call(claims_c._claim, deal_id)["id"], "buyer", body.deciders, body.nonce)
 
 
-@router.get("/deals/{deal_id}/claims/c/fee-terms", dependencies=[Depends(seller_caller)])
+@router.get("/deals/{deal_id}/claims/c/fee-terms", dependencies=[Depends(seller_deal)])
 def c_fee_terms(deal_id: str):
     from bank import claims_c
     return _call(claims_c.fee_terms, deal_id, "seller")
 
 
-@router.post("/deals/{deal_id}/claims/c/seller-fee", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/claims/c/seller-fee", dependencies=[Depends(seller_deal)])
 def c_seller_fee(deal_id: str, body: SignatureIn):
     from bank import claims_c
     return _call(claims_c.pay_fee, deal_id, "seller", "seller", body.signature)
 
 
-@router.post("/deals/{deal_id}/claims/c/agree", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/claims/c/agree", dependencies=[Depends(seller_deal)])
 def c_agree(deal_id: str):
     from bank import claims_c
     return _call(claims_c.agree, deal_id, "seller")
 
 
-@router.post("/deals/{deal_id}/claims/c/seller-challenge", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/claims/c/seller-challenge", dependencies=[Depends(seller_deal)])
 def c_seller_challenge(deal_id: str, body: CommitIn):
     from bank import claims_c, deciders
     return _call(deciders.commit, _call(claims_c._claim, deal_id)["id"], "seller", body.hash)
 
 
-@router.post("/deals/{deal_id}/claims/c/seller-reveal", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/claims/c/seller-reveal", dependencies=[Depends(seller_deal)])
 def c_seller_reveal(deal_id: str, body: RevealIn):
     from bank import claims_c, deciders
     return _call(deciders.reveal, _call(claims_c._claim, deal_id)["id"], "seller", body.deciders, body.nonce)
@@ -325,13 +350,13 @@ def c_buyer_rereview(deal_id: str, company_id: str = Depends(agent_company)):
     return _call(claims_c.request_rereview, deal_id, "buyer", "agent:buyer")
 
 
-@router.get("/deals/{deal_id}/claims/c/rereview-terms", dependencies=[Depends(seller_caller)])
+@router.get("/deals/{deal_id}/claims/c/rereview-terms", dependencies=[Depends(seller_deal)])
 def c_rereview_terms(deal_id: str):
     from bank import claims_c
     return _call(claims_c.rereview_terms, deal_id, "seller")
 
 
-@router.post("/deals/{deal_id}/claims/c/seller-rereview", dependencies=[Depends(seller_caller)])
+@router.post("/deals/{deal_id}/claims/c/seller-rereview", dependencies=[Depends(seller_deal)])
 def c_seller_rereview(deal_id: str, body: SignatureIn):
     from bank import claims_c
     return _call(claims_c.request_rereview, deal_id, "seller", "seller", body.signature)
