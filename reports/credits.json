@@ -1,0 +1,463 @@
+{
+ "generated": "2026-10-20 10:20 CEST",
+ "rpc": "https://sepolia.base.org",
+ "network": "Base Sepolia (84532)",
+ "gas_price_wei": 6000000,
+ "base_fee_wei": 5000000,
+ "priority_fee_wei": 1000000,
+ "max_fee_wei": 11000000,
+ "block": 48358081,
+ "gas": {
+  "by_kind": {
+   "attack_direct_transfer": {
+    "n": 1,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 26666,
+    "gas_max": 26666,
+    "gas_min": 26666,
+    "l1_fee_wei_median": 99,
+    "paid_wei_median": 159996000099,
+    "reverted": 1
+   },
+   "x402_settle": {
+    "n": 2,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 82518,
+    "gas_max": 85708,
+    "gas_min": 79329,
+    "l1_fee_wei_median": 195,
+    "paid_wei_median": 495111000195,
+    "reverted": 0
+   },
+   "attack_replay": {
+    "n": 1,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 32431,
+    "gas_max": 32431,
+    "gas_min": 32431,
+    "l1_fee_wei_median": 214,
+    "paid_wei_median": 194586000214,
+    "reverted": 1
+   },
+   "authorize": {
+    "n": 13,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 161439,
+    "gas_max": 161459,
+    "gas_min": 144323,
+    "l1_fee_wei_median": 277,
+    "paid_wei_median": 968634000277,
+    "reverted": 0
+   },
+   "capture": {
+    "n": 25,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 68475,
+    "gas_max": 85587,
+    "gas_min": 62894,
+    "l1_fee_wei_median": 201,
+    "paid_wei_median": 410850000201,
+    "reverted": 0
+   },
+   "void": {
+    "n": 5,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 61208,
+    "gas_max": 64066,
+    "gas_min": 55639,
+    "l1_fee_wei_median": 195,
+    "paid_wei_median": 367248000195,
+    "reverted": 0
+   },
+   "mint": {
+    "n": 1,
+    "effective_gas_price_wei_median": 6000000,
+    "gas_median": 71222,
+    "gas_max": 71222,
+    "gas_min": 71222,
+    "l1_fee_wei_median": 92,
+    "paid_wei_median": 427332000092,
+    "reverted": 0
+   }
+  },
+  "receipts": 48,
+  "receipt_errors": 14,
+  "source": "eth_getTransactionReceipt of the tx hashes in reports/scenarios-sepolia*.json (+ the tCZK mint linked in docs/REFERENCE.md)"
+ },
+ "tx_cost_now": {
+  "allow": {
+   "gas": 50000,
+   "measured": false,
+   "cost_wei_now": 300000000000,
+   "needs_wei": 550000000000
+  },
+  "attack_direct_transfer": {
+   "gas": 26666,
+   "measured": true,
+   "cost_wei_now": 159996000099,
+   "needs_wei": 293326000099
+  },
+  "attack_replay": {
+   "gas": 32431,
+   "measured": true,
+   "cost_wei_now": 194586000214,
+   "needs_wei": 356741000214
+  },
+  "authorize": {
+   "gas": 161439,
+   "measured": true,
+   "cost_wei_now": 968634000277,
+   "needs_wei": 1775829000277
+  },
+  "burn": {
+   "gas": 50000,
+   "measured": false,
+   "cost_wei_now": 300000000000,
+   "needs_wei": 550000000000
+  },
+  "capture": {
+   "gas": 68475,
+   "measured": true,
+   "cost_wei_now": 410850000201,
+   "needs_wei": 753225000201
+  },
+  "freeze": {
+   "gas": 50000,
+   "measured": false,
+   "cost_wei_now": 300000000000,
+   "needs_wei": 550000000000
+  },
+  "mint": {
+   "gas": 71222,
+   "measured": true,
+   "cost_wei_now": 427332000092,
+   "needs_wei": 783442000092
+  },
+  "transfer": {
+   "gas": 40000,
+   "measured": false,
+   "cost_wei_now": 240000000000,
+   "needs_wei": 440000000000
+  },
+  "void": {
+   "gas": 61208,
+   "measured": true,
+   "cost_wei_now": 367248000195,
+   "needs_wei": 673288000195
+  },
+  "x402_settle": {
+   "gas": 82518,
+   "measured": true,
+   "cost_wei_now": 495108000195,
+   "needs_wei": 907698000195
+  }
+ },
+ "addresses": [
+  {
+   "address": "0xD23DB197CC1294b049AeDf0d9ea1BA216691de48",
+   "roles": [
+    "relayer",
+    "admin"
+   ],
+   "pays_gas_for": [
+    "x402_settle",
+    "mint",
+    "burn",
+    "allow",
+    "freeze"
+   ],
+   "eth_wei": 235490171986843,
+   "eth": 0.000235490171986843,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": false,
+   "txs_left": {
+    "x402_settle": 259,
+    "mint": 300,
+    "burn": 428,
+    "allow": 428,
+    "freeze": 428
+   }
+  },
+  {
+   "address": "0x0469ceC178789072bc61435835D0BB38214D4e53",
+   "roles": [
+    "operator"
+   ],
+   "pays_gas_for": [
+    "authorize",
+    "capture",
+    "void"
+   ],
+   "eth_wei": 171994771989005,
+   "eth": 0.000171994771989005,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": false,
+   "txs_left": {
+    "authorize": 96,
+    "capture": 228,
+    "void": 255
+   }
+  },
+  {
+   "address": "0xC1ea41a6C0000000000000000000000000000bA4",
+   "roles": [
+    "clearing (fee receiver)"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": false,
+   "txs_left": {}
+  },
+  {
+   "address": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140",
+   "roles": [
+    "buyer alfa"
+   ],
+   "pays_gas_for": [
+    "attack_direct_transfer"
+   ],
+   "eth_wei": 29290835999384,
+   "eth": 2.9290835999384e-05,
+   "eurc": 17.945,
+   "tczk": 990.5,
+   "is_contract": false,
+   "txs_left": {
+    "attack_direct_transfer": 99
+   }
+  },
+  {
+   "address": "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1",
+   "roles": [
+    "seller beta"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.495,
+   "tczk": 9.5,
+   "is_contract": false,
+   "txs_left": {}
+  },
+  {
+   "address": "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88",
+   "roles": [
+    "collector (ERC-3009)"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": true,
+   "txs_left": {}
+  },
+  {
+   "address": "0xd2b0C305F62427414e9624a2beD72a3792e15cf8",
+   "roles": [
+    "operator token store"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": true,
+   "txs_left": {}
+  },
+  {
+   "address": "0xf96815976523E00e65Be8f34cA5e64b4f41EB19c",
+   "roles": [
+    "escrow contract"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": true,
+   "txs_left": {}
+  },
+  {
+   "address": "0x7a03443724d14798c4AB4622F1DAAcA761Fea486",
+   "roles": [
+    "refund collector"
+   ],
+   "pays_gas_for": [],
+   "eth_wei": 0,
+   "eth": 0.0,
+   "eurc": 0.0,
+   "tczk": 0.0,
+   "is_contract": true,
+   "txs_left": {}
+  }
+ ],
+ "demo_run": {
+  "EURC_spent": 9.25,
+  "EURC_peak_lock": 10.0,
+  "tCZK_spent": 125.0,
+  "tCZK_peak_lock": 125.0,
+  "operator_txs": {
+   "authorize": 3,
+   "capture": 6,
+   "void": 1
+  }
+ },
+ "runway": {
+  "operator ETH (escrow txs)": {
+   "demo_runs": 29,
+   "per_demo_run_wei": 5738250002232,
+   "min_balance_for_next_tx_wei": 1775829000277
+  },
+  "buyer EURC": {
+   "demo_runs": 1,
+   "per_demo_run": 9.25,
+   "balance": 17.945,
+   "sepolia_matrices": 9
+  },
+  "buyer tCZK": {
+   "demo_runs": 7,
+   "per_demo_run": 125.0,
+   "balance": 990.5,
+   "sepolia_matrices": 220
+  },
+  "relayer ETH (x402 settles)": {
+   "settles": 259
+  },
+  "admin ETH (tCZK mint/burn/allow)": {
+   "txs": 300
+  },
+  "operator ETH (Sepolia scenario matrices)": {
+   "matrices": 7,
+   "gas_per_matrix": 3767966,
+   "note": "upper bound: the matrix gas is split between operator and relayer"
+  },
+  "operator ETH at 10x gas price": {
+   "demo_runs": 2
+  },
+  "operator ETH at 100x gas price": {
+   "demo_runs": 0
+  }
+ },
+ "sepolia_matrix": {
+  "eurc_spent": 1.97,
+  "czk_spent": 4.5,
+  "gas": 3767966,
+  "txs_landed": 40
+ },
+ "apify": {
+  "ok": true,
+  "cycle": {
+   "startAt": "2026-10-20T00:00:00.000Z",
+   "endAt": "2026-11-19T23:59:59.999Z"
+  },
+  "monthly_usage_usd": 3.4157116632067004e-06,
+  "max_monthly_usage_usd": 105,
+  "left_usd": 105.0,
+  "actor_compute_units": 0,
+  "max_actor_compute_units": 625,
+  "actor_memory_gbytes": 0,
+  "max_actor_memory_gbytes": 16,
+  "active_actor_jobs": 0,
+  "max_concurrent_actor_jobs": 5,
+  "last_runs": {
+   "n": 5,
+   "usd_median": 0.0122,
+   "usd_max": 0.3702,
+   "runtime_s_median": 26.0,
+   "succeeded": 5
+  },
+  "runs_left_at_median": 8606
+ },
+ "tatum": {
+  "ok": true,
+  "/v3/tatum/version": {
+   "version": "3.18.3",
+   "testnet": true,
+   "planName": "Pay as you go",
+   "planCode": "PAYGO",
+   "price": 0,
+   "expiration": 4127621166987,
+   "creditLimit": 4000000,
+   "usage": 158773,
+   "rolloverDay": 19,
+   "build": {
+    "commit": "b7475a2e2973141381e64985c0ddb5cb97f263a4",
+    "branch": "master",
+    "pipelineId": "2963681014",
+    "baseCommit": "c13a2642c446463d9daf8100d476d7dd890f4bd8",
+    "date": "2026-10-19T14:34:26Z"
+   }
+  },
+  "/v3/tatum/version status": 200,
+  "/v3/tatum/usage": {
+   "statusCode": 404,
+   "message": "Cannot GET /v3/tatum/usage"
+  },
+  "/v3/tatum/usage status": 404,
+  "credit_limit": 4000000,
+  "credit_usage": 158773,
+  "credits_left": 3841227,
+  "poller": {
+   "on": true,
+   "rpc_calls_per_hour": 10800,
+   "via_tatum": true,
+   "note": "poller on: 3 RPC calls per BANK_POLL_S tick against RPC_URL"
+  }
+ },
+ "bedrock": {
+  "mode": "live eu.anthropic.claude-opus-4-5-20251101-v1:0 / eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "eval_run_usd": 1.1254,
+  "eval_run_calls": 117,
+  "per_stage": {
+   "buyer": {
+    "calls": 67,
+    "usd": 1.0386,
+    "mean_ms_per_call": 3671,
+    "usd_per_call": 0.0155
+   },
+   "criteria": {
+    "calls": 17,
+    "usd": 0.0334,
+    "mean_ms_per_call": 1830,
+    "usd_per_call": 0.00196
+   },
+   "explain": {
+    "calls": 29,
+    "usd": 0.0174,
+    "mean_ms_per_call": 1059,
+    "usd_per_call": 0.0006
+   },
+   "judge": {
+    "calls": 4,
+    "usd": 0.0361,
+    "mean_ms_per_call": 5453,
+    "usd_per_call": 0.00901
+   }
+  },
+  "usd_per_deal": 0.0823,
+  "usd_per_demo_run": 0.3724,
+  "aws_budget_usd": 800.0,
+  "ec2_usd_per_day": 0.6,
+  "creds": "expired (MOCK=1): AWS Cost Explorer not readable; spend so far estimated from logged tokens",
+  "how": "list prices x tokens logged per call (bank/timing.py, EU profile +10 %); buyer+criteria per live agent deal = stage cost / 17 live runs; judge per item = judge cost / 40 items",
+  "demo_runs_affordable": 2134,
+  "days_left_today": 0.57
+ },
+ "seconds": 8.6,
+ "conclusion": [
+  "First to run out: buyer EURC — after 1 demo runs (five buttons each).",
+  "  then buyer tCZK: 7 demo runs",
+  "  then operator ETH (escrow txs): 29 demo runs",
+  "  then Apify (5 company checks per demo run, upper bound): 1721 demo runs",
+  "TOP UP before the jury: buyer EURC covers only 1 demo runs",
+  "TOP UP before the jury: buyer tCZK covers only 7 demo runs",
+  "Gas spike risk: operator ETH lasts 2 demo runs 10x gas price, 0 demo runs 100x gas price -> top up operator and relayer ETH from a Base Sepolia faucet (cheap insurance)",
+  "tCZK needs no faucet: the bank mints it (admin key, bank/tczk.py mint) — a tx the team sends",
+  "Tatum credits left: 3,841,227 of 4,000,000 (plan Pay as you go); the bank poller (ON) makes 10,800 RPC calls/h -> ~356 h at 1 credit/call, ~36 h at 10 credits/call"
+ ]
+}
