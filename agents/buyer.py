@@ -126,12 +126,14 @@ def http_transport(base_url: str | None = None, client=None, company_id: str = "
 
 class Buyer:
     def __init__(self, task_text: str, *, transport: Transport | None = None, mandate_id: str = mandate.DEMO_MANDATE_ID,
-                 buyer_id: str = "alfa", budget_eur_cents: int = 500, asset: str = "EURC", seller_hint: str | None = None):
+                 buyer_id: str = "alfa", budget_eur_cents: int = 500, asset: str = "EURC", seller_hint: str | None = None,
+                 registry_check: bool = True):
         self.call = transport or http_transport()
         self.mandate_id, self.buyer_id = mandate_id, buyer_id
         self.task = {"text": task_text, "category": "data", "asset": asset, "task_id": "t-" + uuid.uuid4().hex[:12],
                      "budget": {"value": str(budget_eur_cents), "currency": "EUR"}, "criteria": None}
         self.seller_hint = seller_hint
+        self.registry_check = registry_check  # False: the human buys Google Maps places (no IČO to check in ARES)
         self.deals: dict[str, str] = {}  # seller_id -> deal_id (only these deals may be paid)
         self.payments: list[dict] = []
         self.tool_log: list[dict] = []
@@ -188,6 +190,8 @@ class Buyer:
     # ---- the loop ----
     def run(self, max_turns: int = MAX_TURNS) -> dict:
         self.task["criteria"] = extract_criteria(self.task["text"])
+        if not self.registry_check:
+            self.task["criteria"] = {**(self.task["criteria"] or {}), "registry_check": False}
         budget = int(self.task["budget"]["value"])
         intro = (f"Task from the human: {self.task['text']}\nTask budget: {budget / 100:.2f} € "
                  f"(pay in {self.task['asset']}).")

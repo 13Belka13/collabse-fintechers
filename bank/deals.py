@@ -107,6 +107,9 @@ class Criteria(BaseModel):
     registry_check: bool = True  # registry_active on IČO; False for data without IČO (Google Maps places)
 
 
+POSTCODE_PREFIX = {"brno": "6", "praha": "1", "prague": "1"}
+
+
 def buyer_criteria(task: dict | None) -> dict:
     """Criteria from the buyer's task; anything invalid falls back to the demo defaults (never to the seller's)."""
     raw = (task or {}).get("criteria") or {}
@@ -114,7 +117,8 @@ def buyer_criteria(task: dict | None) -> dict:
         c = Criteria.model_validate(raw).model_dump()
     except ValidationError:
         c = Criteria().model_dump()
-    c["postcode_prefix"] = "6" if c["city"].strip().lower() == "brno" else None  # Brno postcodes are 6xx xx
+    # Brno postcodes are 6xx xx, Prague ones 1xx xx; Google Maps names districts ("Brno-střed", "Praha 5")
+    c["postcode_prefix"] = POSTCODE_PREFIX.get(c["city"].strip().lower())
     return c
 
 
