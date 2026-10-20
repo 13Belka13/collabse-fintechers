@@ -686,7 +686,8 @@ TOOL_TEXT = {"find_seller": ("Our agent looks for a data seller", "the agent loo
              "check_seller": ("Our agent asks the bank to check the seller", "the bank checks the seller"),
              "pay": ("Our agent asks the bank to pay", "the bank decides"),
              "fetch_delivery": ("Our agent fetches the delivery through the bank", "the delivery is checked"),
-             "file_claim": ("Our agent files a claim", "a claim is filed")}
+             "file_claim": ("Our agent files a claim", "a claim is filed"),
+             "get_statement": ("Our agent reads the mandate's statement", None)}
 WAITING_S = 8  # no new journal entry for this long while running: "waiting for the model…"
 
 
