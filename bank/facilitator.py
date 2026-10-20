@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from web3 import Web3
 from x402 import x402FacilitatorSync
 from x402.mechanisms.evm import FacilitatorWeb3Signer
@@ -204,7 +204,11 @@ def _settle_refused(reason: str, body: dict, message: str | None = None) -> dict
 
 @router.get("/supported")
 def supported():
-    sup = facilitator().get_supported()
+    try:
+        sup = facilitator().get_supported()
+    except RuntimeError as e:  # no relayer key (TODO(credential)): a clear 503, the seller falls back to x402.org
+        log.warning("x402 supported: %s", e)
+        raise HTTPException(503, str(e)) from e
     kinds = [k.model_dump(by_alias=True, exclude_none=True) for k in sup.kinds
              if k.x402_version == 2 and k.network == config.NETWORK]
     assets = [{"asset": symbol, "address": m["address"], "decimals": m["decimals"],

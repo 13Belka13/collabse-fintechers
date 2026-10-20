@@ -408,8 +408,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                 app.state.key_registered.add(seller_id)
             bank_post(f"/api/deals/{deal_id}/delivery", payload)
             app.state.delivered[offer_id] = time.time()  # only once the bank has the delivery
-        except httpx.HTTPError as e:
-            app.state.delivering.discard(offer_id)  # the next escrow notice from the bank retries
+        except Exception as e:  # noqa: BLE001 — any failure: the next escrow notice from the bank retries
+            app.state.delivering.discard(offer_id)
             print(f"seller: delivery of {offer_id} to the bank failed: {e!r}")
 
     @app.post("/order/{offer_id}/escrow")

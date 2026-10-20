@@ -94,3 +94,13 @@ def test_facilitator_settle_error_is_a_clean_failure_not_a_500(seeded, monkeypat
     assert db.rows("SELECT * FROM onchain_txs") == []
     e = journal.entries()[0]
     assert e["event"] == "x402_settle_failed" and "RPC down" in e["payload"]["error"]
+
+
+def test_supported_without_a_relayer_key_is_a_clear_503(monkeypatch):
+    monkeypatch.setenv("BANK_RELAYER_PK", "")
+    config.reload()
+    facilitator.reset()
+    app = FastAPI()
+    app.include_router(facilitator.router)
+    r = TestClient(app).get("/x402/supported")
+    assert r.status_code == 503 and "BANK_RELAYER_PK missing" in r.json()["detail"]

@@ -83,7 +83,7 @@ class Smoke:
         return not low, "; ".join(low) if low else ", ".join(parts)
 
     def unpaid_402(self):
-        offer = httpx.post(f"{self.seller_url}/negotiate", timeout=10, json={
+        offer = httpx.post(f"{self.seller_url}/negotiate", timeout=config.NEGOTIATE_TIMEOUT_S, json={
             "deal_id": f"smoke-{int(time.time())}", "seller_id": "s-beta", "task": {"criteria": {"count": 1}}}).json()["offer"]
         got = [httpx.get(f"{self.seller_url}/{p}/{offer['offer_id']}", timeout=10).status_code for p in ("order", "data")]
         return got == [402, 402], f"/order → {got[0]}, /data → {got[1]}"
