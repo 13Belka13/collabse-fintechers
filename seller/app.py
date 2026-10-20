@@ -138,26 +138,50 @@ def make_items(count: int, mode: str) -> list[dict]:
     return items
 
 
-def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None) -> str | None:
-    """Seller-side check before delivering (SPEC §5.4 step 5), read from chain. Returns a reason or None.
-    The hash is recomputed from the PaymentInfo, never taken from the bank's message."""
-    now = time.time() if now is None else now
+EXPIRY_SLACK_S = 600  # the bank built the PaymentInfo a little before the seller reads it
+
+
+def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None, notice: dict | None = None) -> str | None:
+    """Seller-side check before delivering (MODEL_V2 §5.2 p. 1, §8.3), read from chain. Returns a reason or None.
+    The hash is recomputed from the PaymentInfo, never taken from the bank's message. Checks: receiver, operator,
+    feeReceiver = the bank's clearing address, minFeeBps ≤ maxFeeBps = the published tariff of the tier and rule,
+    token, amount, salt = keccak(deal_id ‖ n), long expiries, a payer, and the lock on chain."""
+    now, notice = time.time() if now is None else now, notice or {}
     if Web3.to_checksum_address(pi["receiver"]) != offer["pay_to"]:
         return "receiver_not_our_pay_to"
     if Web3.to_checksum_address(pi["operator"]) != Web3.to_checksum_address(config.BANK_OPERATOR_ADDR):
         return "operator_not_the_bank"  # a lock someone else controls could be voided at will
-    if int(pi["maxFeeBps"]) != 0 or int(pi["minFeeBps"]) != 0:
-        return "fees_not_zero"
+    if Web3.to_checksum_address(pi["feeReceiver"]) != Web3.to_checksum_address(config.BANK_CLEARING_ADDR):
+        return "fee_receiver_not_the_bank"  # with feeReceiver = 0 the operator could pick any fee receiver
+    tier, rule = notice.get("tier") or offer.get("tier") or "T1", offer.get("rule") or "A"
+    tiers = ("T0", "T1", "T2")
+    if (tier, rule) not in config.TARIFF_BPS or tiers.index(tier) < tiers.index(offer.get("tier") or "T0"):
+        return "tier_not_offered"
+    tariff = config.TARIFF_BPS[(tier, rule)]
+    if not int(pi["minFeeBps"]) <= int(pi["maxFeeBps"]) == tariff:
+        return "fee_not_tariff"
     if Web3.to_checksum_address(pi["token"]) != Web3.to_checksum_address(config.ASSETS[asset]["address"]):
         return "token_not_quoted_asset"
     price = int(offer["prices"][asset])
-    if int(pi["maxAmount"]) != price:
+    want = price if notice.get("kind", "deal") == "deal" else int(notice.get("amount") or -1)
+    if int(pi["maxAmount"]) != want or want > price:
         return "amount_not_offer_price"
-    if int(pi["authorizationExpiry"]) < now + offer["deadline_s"] + float(offer.get("window_s") or 0):
+    n = notice.get("n", 0)
+    if not isinstance(n, int) or n < 0 or int(pi["salt"]) != escrow.salt(offer["deal_id"], n):
+        return "salt_not_this_deal"
+    need = now - EXPIRY_SLACK_S + offer["deadline_s"] + float(offer.get("window_s") or 0) \
+        + config.ESCROW_EXTRA_DAYS[tier] * escrow.DAY_S
+    if notice.get("kind", "deal") != "deal":  # a split-off or rollover: the delivery is behind us
+        need = now - EXPIRY_SLACK_S + config.ESCROW_EXTRA_DAYS[tier] * escrow.DAY_S
+    if int(pi["authorizationExpiry"]) < need:
         return "authorization_expires_too_early"
+    if int(pi["refundExpiry"]) < int(pi["authorizationExpiry"]):
+        return "refund_expiry_before_authorization_expiry"
+    if int(pi["payer"], 16) == 0 or pi["payer"].lower() == pi["receiver"].lower():
+        return "payer_not_a_buyer"
     h = escrow.payment_hash(pi)
-    st = read_retry(lambda: escrow.read_state(h), ok=lambda s: s["capturable"] >= price)  # reads lag writes
-    if st["capturable"] != price:
+    st = read_retry(lambda: escrow.read_state(h), ok=lambda s: s["capturable"] >= want)  # reads lag writes
+    if st["capturable"] != want:
         return "escrow_capturable_not_price"
     return None
 
@@ -205,6 +229,11 @@ class EscrowIn(BaseModel):
     payment_info: dict
     payment_hash: str | None = None
     tx_hash: str | None = None
+    n: int = 0              # the PaymentInfo's number in the deal: salt = keccak(deal_id ‖ n)
+    kind: str = "deal"      # deal | split_off (the disputed sum D, §8.2) | rollover (§8.4)
+    tier: str | None = None
+    rule: str | None = None
+    amount: int | None = None
 
 
 class ModeIn(BaseModel):
@@ -366,7 +395,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             raise HTTPException(404, "unknown offer")
         if body.asset not in offer["prices"]:
             raise HTTPException(409, "asset_not_quoted")
-        reason = verify_escrow(offer, body.asset, body.payment_info)
+        reason = verify_escrow(offer, body.asset, body.payment_info, notice=body.model_dump())
         if reason:
             raise HTTPException(409, reason)
         if offer_id not in app.state.delivered and offer_id not in app.state.delivering:

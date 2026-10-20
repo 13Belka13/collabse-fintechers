@@ -135,10 +135,13 @@ def test_fake_data_breaks_three_items():
 
 
 def _pi(o, **over):
+    from bank import escrow
+    now = int(time.time())
+    auth = now + 300 + int(o["window_s"]) + 30 * 86400
     pi = {"operator": "0x0469ceC178789072bc61435835D0BB38214D4e53", "payer": "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140",
-          "receiver": BETA, "token": config.EURC, "maxAmount": 5_000_000, "preApprovalExpiry": int(time.time()) + 600,
-          "authorizationExpiry": int(time.time()) + 86400, "refundExpiry": int(time.time()) + 7 * 86400,
-          "minFeeBps": 0, "maxFeeBps": 0, "feeReceiver": "0x" + "0" * 40, "salt": "7"}
+          "receiver": BETA, "token": config.EURC, "maxAmount": 5_000_000, "preApprovalExpiry": now + 600,
+          "authorizationExpiry": auth, "refundExpiry": auth + 30 * 86400, "minFeeBps": 120, "maxFeeBps": 120,
+          "feeReceiver": config.BANK_CLEARING_ADDR, "salt": str(escrow.salt("d-1", 0))}
     return {**pi, **over}
 
 
@@ -147,10 +150,15 @@ def _pi(o, **over):
     ({"receiver": seller_mod.SWAP_PAYTO}, 5_000_000, "receiver_not_our_pay_to"),
     ({"token": TCZK}, 5_000_000, "token_not_quoted_asset"),
     ({"maxAmount": 4_000_000}, 4_000_000, "amount_not_offer_price"),
-    ({"authorizationExpiry": int(time.time()) + 60}, 5_000_000, "authorization_expires_too_early"),
+    ({"authorizationExpiry": int(time.time()) + 86400}, 5_000_000, "authorization_expires_too_early"),
     ({}, 0, "escrow_capturable_not_price"),
     ({"operator": "0x000000000000000000000000000000000000bEEF"}, 5_000_000, "operator_not_the_bank"),
-    ({"maxFeeBps": 100}, 5_000_000, "fees_not_zero"),
+    ({"feeReceiver": "0x" + "0" * 40}, 5_000_000, "fee_receiver_not_the_bank"),
+    ({"maxFeeBps": 1000, "minFeeBps": 1000}, 5_000_000, "fee_not_tariff"),
+    ({"minFeeBps": 200}, 5_000_000, "fee_not_tariff"),
+    ({"salt": "7"}, 5_000_000, "salt_not_this_deal"),
+    ({"refundExpiry": 1}, 5_000_000, "refund_expiry_before_authorization_expiry"),
+    ({"payer": BETA}, 5_000_000, "payer_not_a_buyer"),
 ])
 def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, capturable, reason):
     _, _, client = seller
@@ -160,7 +168,7 @@ def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, captu
     monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())
     posted = []
     monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: posted.append((path, body)))
-    body = {"deal_id": "d-1", "asset": "EURC", "payment_info": _pi(o, **over)}
+    body = {"deal_id": "d-1", "asset": "EURC", "payment_info": _pi(o, **over), "n": 0, "tier": "T1", "rule": "B"}
     assert client.post(f"/order/{o['offer_id']}/escrow", json=body).status_code == 401  # only the bank may announce
     r = client.post(f"/order/{o['offer_id']}/escrow", json=body, headers={"x-bank-token": config.BANK_TO_SELLER_TOKEN})
     if reason is None:

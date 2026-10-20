@@ -4,7 +4,10 @@
 # ERC-3009 nonce = getHash(PaymentInfo with payer = 0), capture(pi, amount, 0, 0x0), void(pi).
 # Rules: PaymentInfo is persisted BEFORE authorize; capture never at/after authorizationExpiry; the final
 # void comes after every capture (void returns the whole remainder, there is no partial void).
-import secrets
+# MODEL_V2 §8.1-8.4 terms: feeReceiver = the bank's clearing address, minFeeBps = maxFeeBps = the tariff of the
+# deal's tier and rule (fee = floor(amount·bps/10000) at capture, taken from the capture), salt =
+# keccak(deal_id ‖ n) so the seller links the lock to the deal itself, authorizationExpiry = delivery deadline +
+# window + 30 days (T1) / 120 days (T2), refundExpiry = authorizationExpiry + 30 days.
 import time
 
 from eth_abi import encode
@@ -21,8 +24,7 @@ PI_FIELDS = [("operator", "address"), ("payer", "address"), ("receiver", "addres
 PI_TYPEHASH = Web3.keccak(text="PaymentInfo(" + ",".join(f"{t} {n}" for n, t in PI_FIELDS) + ")")
 ADDRESS_FIELDS = {n for n, t in PI_FIELDS if t == "address"}
 
-# Demo windows (SPEC §5.1): authorize within 10 min, dispute and holdback over within 24 h, refunds 7 days.
-PRE_APPROVAL_S, AUTHORIZATION_S, REFUND_S = 600, 24 * 3600, 7 * 24 * 3600
+PRE_APPROVAL_S, DAY_S = 600, 86400  # the authorize must land within 10 min of the PaymentInfo
 CAPTURE_MARGIN_S = 30  # a capture sent this close to authorizationExpiry may land after it: don't
 
 _PI = {"name": "paymentInfo", "type": "tuple", "components": [{"name": n, "type": t} for n, t in PI_FIELDS]}
@@ -91,18 +93,39 @@ def stored_payment_info(deal_id: str) -> dict:
     return pi
 
 
+def salt(deal_id: str, n: int) -> int:
+    """keccak(utf8(deal_id) ‖ uint256_be(n)): the n-th PaymentInfo of a deal (0 = the lock at pay, then rebuilt
+    ones and the split-off of a disputed sum). The seller recomputes it to link a lock to its deal."""
+    return int.from_bytes(Web3.solidity_keccak(["string", "uint256"], [deal_id, int(n)]), "big")
+
+
+def expiries(terms: dict, now: int) -> tuple[int, int]:
+    """(authorizationExpiry, refundExpiry) by MODEL_V2 §8.3: long — the bank closes the deal itself."""
+    tier = terms.get("tier") or "T1"
+    auth = now + int(terms.get("deadline_s") or 0) + int(terms.get("window_s") or 0) \
+        + config.ESCROW_EXTRA_DAYS[tier] * DAY_S
+    return auth, auth + config.REFUND_EXTRA_DAYS * DAY_S
+
+
+def fee_terms(terms: dict) -> dict:
+    bps = int(terms.get("fee_bps") or 0)
+    return {"minFeeBps": bps, "maxFeeBps": bps, "feeReceiver": Web3.to_checksum_address(config.BANK_CLEARING_ADDR)}
+
+
 def payment_info(deal: dict, now: int | None = None) -> dict:
-    """Build PaymentInfo for the deal's quote (§5.1; maxAmount = price, new random salt) and persist it with its
-    hash to deals.payment_info_json BEFORE anything is signed: without it locked funds cannot be captured or voided."""
+    """Build PaymentInfo for the deal's quote and terms (maxAmount = price, salt = keccak(deal_id ‖ n)) and persist
+    it with its hash BEFORE anything is signed: without it locked funds cannot be captured or voided."""
     quote = db.loads(deal["quote_json"]) or {}
     if not quote.get("pay_to") or not deal.get("asset") or not deal.get("amount"):
         raise EscrowError(f"{deal['deal_id']}: no accepted quote (pay_to, asset, amount)")
     now = int(time.time()) if now is None else now
+    terms = db.loads(deal.get("terms_json")) or {}
+    auth, refund = expiries(terms, now)
     pi = {"operator": operator_address(), "payer": core.company(deal["buyer_id"])["wallet_address"],
           "receiver": quote["pay_to"], "token": config.ASSETS[deal["asset"]]["address"],
           "maxAmount": int(quote["amount"]), "preApprovalExpiry": now + PRE_APPROVAL_S,
-          "authorizationExpiry": now + AUTHORIZATION_S, "refundExpiry": now + REFUND_S,
-          "minFeeBps": 0, "maxFeeBps": 0, "feeReceiver": ZERO, "salt": str(secrets.randbits(256))}
+          "authorizationExpiry": auth, "refundExpiry": refund, **fee_terms(terms),
+          "salt": str(salt(deal["deal_id"], int(deal.get("pi_n") or 0)))}
     pi = {k: (Web3.to_checksum_address(v) if k in ADDRESS_FIELDS else v) for k, v in pi.items()}
     h = payment_hash(pi)
     with db.immediate():
@@ -181,19 +204,26 @@ def authorize(deal_id: str) -> dict:
     return tx
 
 
+def fee_of(pi: dict, amount: int) -> int:
+    """The bank's fee taken from a capture: floor(amount · maxFeeBps / 10000), within [min, max] bps."""
+    return int(amount) * int(pi["maxFeeBps"]) // 10_000
+
+
 def capture(deal_id: str, amount: int, n: int) -> dict:
-    """Pay `amount` (atomic units) of the locked funds to the seller, fee 0. Refused locally at/after
-    authorizationExpiry (minus a margin): the contract would revert and the timer must void instead."""
+    """Pay `amount` (atomic units, gross) of the locked funds: the seller gets amount − fee, the clearing address
+    the fee. Refused locally at/after authorizationExpiry (minus a margin): the contract would revert."""
     pi = stored_payment_info(deal_id)
     if amount <= 0 or amount > int(pi["maxAmount"]):
         raise EscrowError(f"{deal_id}: bad capture amount {amount}")
     if time.time() >= int(pi["authorizationExpiry"]) - CAPTURE_MARGIN_S:
         raise EscrowError(f"{deal_id}: authorizationExpiry reached, capture is no longer possible (void only)")
-    call = contract().functions.capture(as_tuple(pi), int(amount), 0, ZERO)
+    fee = fee_of(pi, amount)
+    call = contract().functions.capture(as_tuple(pi), int(amount), fee,
+                                        Web3.to_checksum_address(pi["feeReceiver"]) if fee else ZERO)
     with timing.timed("escrow_capture", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="capture", deal_id=deal_id,
                                                         idem_key=idem_key(deal_id, f"capture:{n}"))
-    journal.append("bank", "escrow_captured", {"amount": int(amount), "n": n, "tx_hash": tx["tx_hash"],
+    journal.append("bank", "escrow_captured", {"amount": int(amount), "fee": fee, "n": n, "tx_hash": tx["tx_hash"],
                                                "link": tx["link"]}, deal_id=deal_id)
     return tx
 
@@ -220,6 +250,16 @@ def finish(deal_id: str, to_seller: int) -> dict:
     if to_seller < int(pi["maxAmount"]):
         out["void"] = void(deal_id)
     return out
+
+
+def paid(deal_id: str) -> int:
+    """'Paid' at deal level (§8.4): gross captures over every PaymentInfo of the deal whose receiver is the seller —
+    fee authorizations (receiver = the clearing address) never count."""
+    deal = _deal(deal_id)
+    seller = (db.loads(deal["quote_json"]) or {}).get("pay_to") or ""
+    return sum(r["captured"] for r in db.rows(
+        "SELECT receiver, captured FROM payment_infos WHERE deal_id=?", (deal_id,))
+        if r["receiver"].lower() == seller.lower())
 
 
 def locked_amount(deal_id: str) -> int:

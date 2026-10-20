@@ -425,8 +425,8 @@ def _refresh_payment_info(deal: dict, quote: dict):
             return
         escrow.void(deal_id)  # an old lock with other terms: give it back before locking anew
         journal.append("bank", "old_lock_returned", {"payment_hash": deal["payment_hash"]}, deal_id=deal_id)
-    db.run("UPDATE deals SET payment_info_json=NULL, payment_hash=NULL, updated_at=? WHERE deal_id=?",
-           (time.time(), deal_id))
+    db.run("UPDATE deals SET payment_info_json=NULL, payment_hash=NULL, pi_n=pi_n+1, updated_at=? WHERE deal_id=?",
+           (time.time(), deal_id))  # the next PaymentInfo gets the next salt keccak(deal_id ‖ n+1)
     journal.append("bank", "payment_info_dropped", {"reason": "terms_changed" if not same else "expired",
                                                     "payment_hash": deal["payment_hash"]}, deal_id=deal_id)
 
@@ -489,8 +489,10 @@ def notify_seller(deal_id: str) -> bool | None:
     """Tell the seller the escrow is locked. True = accepted, False = rejected, None = not reached (retry later)."""
     deal = _require(deal_id)
     seller = core.seller(deal["seller_id"])
+    terms = deal["terms"] or {}
     body = {"deal_id": deal_id, "asset": deal["asset"], "payment_info": deal["payment_info"],
-            "payment_hash": deal["payment_hash"],
+            "payment_hash": deal["payment_hash"], "n": int(deal["pi_n"] or 0), "kind": "deal",
+            "tier": terms.get("tier"), "rule": terms.get("rule"), "amount": int(deal["amount"]),
             "tx_hash": (db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (escrow.idem_key(deal_id, "authorize"),)) or {}).get("tx_hash")}
     try:
         with timing.timed("notify_seller", deal_id):
