@@ -91,11 +91,11 @@ offers its own tokenized deposit for the same flow.
 2. **Seller check.** Before any payment the bank checks the seller in the public Czech registries (ARES, the
    VAT payer register, the insolvency register ISIR), the EU sanctions list and, through our Apify Actor, the
    seller's web footprint. Every signal carries its source URL. Sellers linked through a common beneficial owner
-   (an EvSM extract, synthetic in the demo) count as one when the bank sums the buyer's deals to set the tier.
+   (an EvSM extract, synthetic in the demo) count as one when the bank sums the buyer's deals of one task to set the tier.
 3. **Negotiation.** The buyer's agent haggles with the seller's agent. The result is an offer with a price, a
-   deadline, the **acceptance predicates** and a **quality rule** A < B < C. The model drafts the predicates from
-   the task into a fixed dictionary joined by AND (schema, ranges, RE2 patterns, uniqueness, registry checks);
-   code validates and hashes them, and the seller must carry them verbatim (otherwise `TERMS_MISMATCH`).
+   deadline, the **acceptance predicates** and a **quality rule** A < B < C. The model fills five bounded fields from
+   the task (count, city, rating, keywords, website); code builds the predicates from a fixed dictionary joined
+   by AND (schema, ranges, RE2 patterns, uniqueness, registry checks), validates and hashes them, and the seller must carry them verbatim (otherwise `TERMS_MISMATCH`).
 4. **Escrow.** The bank locks the money in Coinbase's AuthCaptureEscrow on Base. Before it delivers, the seller
    checks the lock on-chain: payee, operator, the bank's fee terms, deadlines.
 5. **Delivery through the bank.** The seller sends the items with a manifest signed by its own key (EIP-712)
@@ -170,14 +170,16 @@ Seven buttons on `/story`, seven scenes, plus the console. They run on the live 
 
 ## Demo video
 
-[![Demo video: the deal from the mandate to crowns on the seller's account, about four minutes](docs/assets/video/demo-full.png)](#demo-video)
+![Demo video: the deal from the mandate to crowns on the seller's account, about four minutes](docs/assets/video/demo-full.png)
 
-Video: link will be added before judging
+The recording is linked here by the team.
 
 The four-minute stage demo from [docs/DEMO.md](docs/DEMO.md): your own deal in the console, the tCZK deal ending
 with crowns on the seller's account and the economics panel, approval by QR from a phone, and no tipping-off.
 
 ## Screenshots
+
+Captured on the keyless local stack (simulated chain); the live stand shows the same pages on Base Sepolia.
 
 | | |
 | --- | --- |
@@ -196,7 +198,8 @@ with crowns on the seller's account and the economics panel, approval by QR from
 
 One bank service (FastAPI) holds every rule and every key; the agents only call it with ids. The seller runs
 its own service with x402-paid routes and delivers through the bank. The chain is the shared, verifiable record
-between two companies. The full deal model (in Russian) is [docs/MODEL_V2.md](docs/MODEL_V2.md).
+between two companies. The full deal model (in Russian) is [docs/MODEL_V2.md](docs/MODEL_V2.md); rules A/B/C are summarised above in
+[What it does](#what-it-does) and the tiers in [Business model](#business-model-who-pays-whom).
 
 ```mermaid
 flowchart TB
@@ -639,8 +642,8 @@ python3.12 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts
 pip install -r requirements.txt
 ```
 
-**Without keys** (MOCK models, simulated chain). Copy the example config without the five empty auth lines so
-the development defaults apply, seed the demo deals and start the bank:
+**Without keys** (MOCK models, simulated chain). Copy the example config (an empty value counts as unset, so the
+development defaults apply), seed the demo deals and start the bank:
 
 ```bash
 grep -vE '^(AGENT_TOKEN_ALFA|SELLER_TOKEN|BANK_TO_SELLER_TOKEN|HUMAN_TOKEN|BANK_OPERATOR_ADDR)=' .env.example > .env
@@ -700,8 +703,8 @@ python -m scripts.scenarios --p0 --runs 1 --target sepolia   # real transactions
 | Tatum webhooks (optional) | `TATUM_HMAC_SECRET`, `PUBLIC_BASE_URL`, then `python -m scripts.tatum_subscribe`; without them the bank polls the RPC |
 | Demo scale | `DEMO_MONEY_DIVISOR` (default 100), `DEMO_TIME_DIVISOR` (default 90: a 30-minute window takes 20 s) |
 
-A plain `cp .env.example .env` leaves the auth tokens and `BANK_OPERATOR_ADDR` as empty strings, which is not
-the same as unset: give each token a value and set or delete `BANK_OPERATOR_ADDR`. `.env` is gitignored.
+An empty value in `.env` counts as unset, so the default applies: give each auth token a value for a live run.
+`.env` is gitignored.
 
 </details>
 
