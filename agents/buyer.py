@@ -91,11 +91,12 @@ TOOLS = [{"name": n, "description": DESCRIPTIONS[n], "input_schema": _schema(m)}
 
 
 class AcceptanceCriteria(BaseModel):
+    """The same bounds as the bank's deals.Criteria: criteria the bank would refuse are no criteria here (None)."""
     model_config = ConfigDict(extra="forbid")
-    count: int = Field(ge=1, le=1000)
-    city: str
+    count: int = Field(ge=1, le=100)
+    city: str = Field(min_length=1, max_length=80)
     min_rating_exclusive: float = Field(ge=0, le=5)
-    category_keywords: list[str]
+    category_keywords: list[str] = Field(min_length=1, max_length=20)
     require_website: bool
 
 

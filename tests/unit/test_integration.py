@@ -229,6 +229,24 @@ def test_invalid_buyer_criteria_fall_back_to_defaults():
     assert deals.buyer_criteria({"criteria": {"city": "Ostrava"}})["postcode_prefix"] is None
 
 
+def test_out_of_range_task_criteria_are_refused_never_replaced_by_the_defaults(bank):
+    """The verifier pays on the deal's terms: 150 in Praha above 4.5 must not become 20 in Brno above 4.0."""
+    from agents import buyer
+    task = {**TASK, "text": "150 warehouses in Praha with rating above 4.5 and a website",
+            "criteria": {**TASK["criteria"], "count": 150, "city": "Praha", "min_rating_exclusive": 4.5}}
+    r = bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1", "task": task})
+    assert r.status_code == 400 and "task terms are not valid" in r.json()["detail"]
+    assert db.one("SELECT COUNT(*) AS n FROM deals")["n"] == 0
+    assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1",
+                                             "task": {**TASK, "criteria": {**TASK["criteria"], "category_keywords": []}}}
+                         ).status_code == 400
+    assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1",
+                                             "task": {"text": "x"}}).status_code == 200  # no criteria: defaults
+    # the agent's code fallback never produces criteria the bank would refuse: it stops instead
+    assert buyer.criteria_by_code(task["text"]) is None
+    assert buyer.criteria_by_code("20 warehouses in Praha with rating above 4.5")["count"] == 20
+
+
 def test_mandate_of_another_company_is_refused(bank):
     db.run("INSERT INTO mandates (mandate_id, company_id, current_version) VALUES ('m-gama', 'gama', 1)")
     assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-gama",
