@@ -80,8 +80,8 @@ def bank(monkeypatch, seeded):
     bank_app = FastAPI()
     bank_app.include_router(api.router)
     client = TestClient(bank_app, headers=AGENT)
-    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: client.post(
-        path, json=body, headers={"x-seller-token": config.SELLER_TOKEN}).raise_for_status())
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body, seller_id: client.post(
+        path, json=body, headers=seller_mod.seller_headers(seller_id)).raise_for_status())
     locked = {"capturable": 0}
     monkeypatch.setattr(escrow, "read_state", lambda h: {"collected": False, "refundable": 0,
                                                          "capturable": locked["capturable"]})
@@ -245,7 +245,7 @@ def test_delivery_needs_the_seller_token_a_signed_manifest_and_never_stores_phon
     assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
     seller_app = bank.seller.app
     payload = seller_app.state.signed_delivery(offer["offer_id"], "honest")
-    seller = {"x-seller-token": config.SELLER_TOKEN}
+    seller = {"x-seller-token": config.seller_token("s-beta")}
     assert bank.api.post(f"/api/deals/{deal_id}/delivery", json=payload).status_code == 401
     out = bank.api.post(f"/api/deals/{deal_id}/delivery", json=payload, headers=seller).json()
     assert out["accepted"] is False and out["code"] == "BAD_SIGNATURE"  # the key is not registered yet

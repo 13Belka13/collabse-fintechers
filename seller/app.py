@@ -198,12 +198,17 @@ def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None, n
     return None
 
 
-def bank_post(path: str, body: dict, tries: int = 3) -> None:
+def seller_headers(seller_id: str) -> dict:
+    """The bank knows each seller by its own token (config.seller_token): one service, one token per seller it runs."""
+    return {"x-seller-token": config.seller_token(seller_id)}
+
+
+def bank_post(path: str, body: dict, seller_id: str, tries: int = 3) -> None:
     last = None
     for i in range(tries):
         try:
             httpx.post(config.BANK_URL.rstrip("/") + path, json=body, timeout=30,
-                       headers={"x-seller-token": config.SELLER_TOKEN}).raise_for_status()
+                       headers=seller_headers(seller_id)).raise_for_status()
             return
         except httpx.HTTPError as e:
             last = e
@@ -417,8 +422,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         try:
             # before every delivery (idempotent at the bank): a bank restarted on a fresh DB no longer knows the key
             # and would refuse every delivery BAD_SIGNATURE, so each paid deal would end in a NO_DELIVERY void
-            bank_post(f"/api/sellers/{seller_id}/keys", {"address": app.state.signing_key.address})
-            bank_post(f"/api/deals/{deal_id}/delivery", payload)
+            bank_post(f"/api/sellers/{seller_id}/keys", {"address": app.state.signing_key.address}, seller_id)
+            bank_post(f"/api/deals/{deal_id}/delivery", payload, seller_id)
             app.state.delivered[offer_id] = time.time()  # only once the bank has the delivery
         except Exception as e:  # noqa: BLE001 — any failure: the next escrow notice from the bank retries
             app.state.delivering.discard(offer_id)
@@ -460,15 +465,20 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         if not token or not hmac.compare_digest(token.encode(), config.SELLER_TOKEN.encode()):
             raise HTTPException(401, "seller staff token required")
 
+    def seller_of(deal_id: str, default: str) -> str:
+        """The seller this service quoted the deal for; the query parameter only once the offer is gone (restart)."""
+        return next((o["seller_id"] for o in app.state.offers.values() if o.get("deal_id") == deal_id), default)
+
     @app.post("/claims/{deal_id}/fee")
     def c_fee(deal_id: str, seller_id: str = "s-beta", x_seller_token: str | None = Header(None)):
         """Rule C (MODEL_V2 §7C.4): the seller pays its dispute fee itself — an ERC-3009 authorization signed with
         its own wallet key ({SELLER_ID}_WALLET_PK), never by the bank."""
         staff(x_seller_token)
+        seller_id = seller_of(deal_id, seller_id)
         pk = os.getenv(f"{seller_id.upper().replace('-', '_')}_WALLET_PK", "").strip()
         if not pk:
             raise HTTPException(503, "no wallet key for this seller (TODO(credential))")
-        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers={"x-seller-token": config.SELLER_TOKEN}) as c:
+        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers=seller_headers(seller_id)) as c:
             pi = c.get(f"/api/deals/{deal_id}/claims/c/fee-terms").raise_for_status().json()
             asset = next(a for a, m in config.ASSETS.items() if (m["address"] or "").lower() == pi["token"].lower())
             sig = escrow.buyer_signature(pi, asset, pk)  # the same ERC-3009 shape, signed with the seller's key
@@ -476,9 +486,10 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                           json={"signature": "0x" + sig.hex()}).raise_for_status().json()
 
     @app.post("/claims/{deal_id}/agree")
-    def c_agree(deal_id: str, x_seller_token: str | None = Header(None)):
+    def c_agree(deal_id: str, seller_id: str = "s-beta", x_seller_token: str | None = Header(None)):
         staff(x_seller_token)
-        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers={"x-seller-token": config.SELLER_TOKEN}) as c:
+        headers = seller_headers(seller_of(deal_id, seller_id))
+        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers=headers) as c:
             return c.post(f"/api/deals/{deal_id}/claims/c/agree").raise_for_status().json()
 
     return app
