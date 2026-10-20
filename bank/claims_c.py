@@ -13,6 +13,10 @@
 #     ≥ 3 lost C claims in 30 days.
 #  5. Both fees in -> the decider stage (bank/deciders.py). The decider rules on the sampled items; the buyer gets
 #     back D × upheld / sampled. Fees: each side gets back its fee times its winning share, the decider the rest.
+#  6. Re-review: within 5 business days the loser (share < 50 %) may pay F3 = 2 × the 50 € base; two new deciders
+#     decide the same sample, the majority of three per item is final and the 10 days of p. 9 run from it. F3 pays
+#     the two new deciders; if the result changed in the requester's favour, F3 goes back to it out of the first
+#     decider's pay (the rest of its penalty is under its contract with the bank).
 #  9. The decision is executed 10 business days later unless a side confirms a court claim (UDRP 4(k)); then D stays
 #     in escrow until the court or an agreement.
 # 10. Review limits, not filing limits: at most 2 C claims of one buyer against one seller with a decider at once,
@@ -26,7 +30,7 @@ from bank import config, db, deals, deciders, escrow, evsm, journal, money, snap
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
 PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
-OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided")
+OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided", "rereview")
 
 
 class ClaimError(Exception):
@@ -275,12 +279,75 @@ def _claim(deal_id: str) -> dict:
 def decide(deal_id: str, decider_id: str, verdicts: dict, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     c = _claim(deal_id)
+    if c["state"] == "rereview":
+        return decide_rereview(deal_id, decider_id, verdicts, now)
     if c["state"] != "decider":
         raise ClaimError(409, "no decision is due")
     case = deciders.decide(c["id"], decider_id, verdicts, now)
     pct = case["upheld"] * 100 // case["of"]
     _set(c, "decided", f"decider:{decider_id}", "decided", buyer_share_pct=pct, upheld=case["upheld"],
          of=case["of"], decided_at=now, execute_after=now + bd(EXECUTE_BD), rereview_until=now + bd(REREVIEW_BD))
+    return get(deal_id)
+
+
+# ---- 6. re-review paid by the loser ----
+
+def rereview_fee(asset: str) -> int:
+    return money.from_eur_cents(asset, 2 * _cents(50))
+
+
+def loser(c: dict) -> str | None:
+    pct = c["data"].get("buyer_share_pct")
+    return None if pct is None or pct == 50 else ("buyer" if pct < 50 else "seller")
+
+
+def rereview_terms(deal_id: str, role: str) -> dict:
+    """The F3 PaymentInfo the loser authorizes (the seller signs it itself), stored before anything is signed."""
+    from bank import core
+    c, deal = _claim(deal_id), deals.get(deal_id)
+    if role != loser(c):
+        raise ClaimError(403, "only the side that lost may request a re-review")
+    pi = c["data"].get("fee_pi_rereview")
+    if pi is None:
+        payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
+            core.seller(deal["seller_id"])["wallet_address"]
+        pi = escrow.fee_payment_info(deal_id, f"rereview_{role}", rereview_fee(deal["asset"]), payer)
+        c["data"]["fee_pi_rereview"] = pi
+        db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
+    return pi
+
+
+def request_rereview(deal_id: str, role: str, by: str, signature: str | None = None,
+                     now: float | None = None) -> dict:
+    """The loser pays F3 within 5 business days of the decision; the case goes to two new deciders."""
+    from bank import core
+    now = time.time() if now is None else now
+    c, deal = _claim(deal_id), deals.get(deal_id)
+    d = c["data"]
+    if c["state"] != "decided" or d.get("court") or d.get("rereview") or now > d["rereview_until"]:
+        raise ClaimError(409, "a re-review is requested once, within 5 business days of the decision")
+    if role != loser(c):
+        raise ClaimError(403, "only the side that lost may request a re-review")
+    pi = rereview_terms(deal_id, role)
+    if role == "buyer":
+        signature = escrow.buyer_signature(pi, deal["asset"], core.wallet_key(deal["buyer_id"]))
+    elif escrow.receive_signer(pi, deal["asset"], signature or "") != pi["payer"]:
+        raise ClaimError(400, "the re-review fee authorization is not signed by the seller's wallet")
+    tx = escrow.pay_fee(deal_id, pi, signature)
+    _set(c, "rereview", by, "rereview_requested", rereview=role, f3=int(pi["maxAmount"]), f3_tx=tx["tx_hash"],
+         fee_pi_rereview=pi, first_pct=d["buyer_share_pct"])
+    deciders.open_rereview(c["id"], now)
+    return get(deal_id)
+
+
+def decide_rereview(deal_id: str, decider_id: str, verdicts: dict, now: float) -> dict:
+    c = _claim(deal_id)
+    final = deciders.decide_rereview(c["id"], decider_id, verdicts, now)
+    if final:
+        pct, first = final["upheld"] * 100 // final["of"], c["data"]["first_pct"]
+        won = pct > first if c["data"]["rereview"] == "buyer" else pct < first  # changed in the requester's favour
+        _set(c, "decided", f"decider:{decider_id}", "rereview_decided", buyer_share_pct=pct, upheld=final["upheld"],
+             of=final["of"], changed=won, decided_at=now, execute_after=now + bd(EXECUTE_BD), rereview_until=now)
     return get(deal_id)
 
 
@@ -309,6 +376,12 @@ def tick(deal_id: str, now: float | None = None) -> None:
         except deciders.DeciderError as e:
             if e.status != 425:  # 425: the round is not out yet — wait
                 raise
+    elif c["state"] == "rereview":
+        try:
+            deciders.select_rereview(c["id"], now)
+        except deciders.DeciderError as e:
+            if e.status != 425:
+                raise
     elif c["state"] == "decided" and now >= d["execute_after"] and not d.get("court"):
         _execute(deals.get(deal_id), c, now)
 
@@ -317,19 +390,32 @@ def _execute(deal: dict, c: dict, now: float):
     d, pct = c["data"], c["data"]["buyer_share_pct"]
     buyer_back = d["fee"] * pct // 100
     seller_back = d["fee"] * (100 - pct) // 100
+    decider_gets, extra = 2 * d["fee"] - buyer_back - seller_back, []
+    if d.get("rereview"):  # F3 pays the two new deciders; a changed result refunds F3 out of the first decider's pay
+        from bank import core
+        rr = (deciders.get(c["id"]) or {}).get("rereview") or {}
+        new = [x for x in deciders.pool() + [deciders.RESERVE_PROVIDER] if x["id"] in (rr.get("deciders") or [])]
+        for i, x in enumerate(new):
+            extra.append((x["address"], d["f3"] // len(new) + (d["f3"] % len(new) if i == 0 else 0),
+                          f"rereview_fee_{i + 1}"))
+        if d.get("changed"):
+            refund = min(d["f3"], decider_gets)
+            decider_gets -= refund
+            to = core.company(deal["buyer_id"]) if d["rereview"] == "buyer" else core.seller(deal["seller_id"])
+            extra.append((to["wallet_address"], refund, "rereview_fee_back"))
     _set(c, "executed", "timer", "executed", buyer_refund=c["amount"] * pct // 100)
     _fees_back(deal, get(deal["deal_id"]), buyer_back=buyer_back, seller_back=seller_back,
-               decider_gets=2 * d["fee"] - buyer_back - seller_back)
+               decider_gets=decider_gets, extra=extra)
 
 
-def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int):
+def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int, extra: list = ()):
     """Transfers from the clearing address: the winning shares of the fees back, the rest to the decider."""
     from bank import core
     case = deciders.get(c["id"]) or {}
     decider = next((x for x in deciders.pool() + [deciders.RESERVE_PROVIDER] if x["id"] == case.get("decider")), None)
     for to, amount, what in ((core.company(deal["buyer_id"])["wallet_address"], buyer_back, "fee_back_buyer"),
                              (core.seller(deal["seller_id"])["wallet_address"], seller_back, "fee_back_seller"),
-                             (decider and decider["address"], decider_gets, "decider_fee")):
+                             (decider and decider["address"], decider_gets, "decider_fee"), *extra):
         if to and amount > 0:
             try:
                 escrow.transfer_from_clearing(deal["deal_id"], deal["asset"], to, amount, what)

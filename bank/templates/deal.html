@@ -85,6 +85,7 @@
   {% if c.data.excluded %}<div class="muted">{{ c.data.excluded|length }} item(s) not admissible before any fee: {% for x in c.data.excluded %}{{ x.version }}/{{ x.index }} {{ x.field }} — {{ x.why }}{% if not loop.last %}; {% endif %}{% endfor %}</div>{% endif %}
   {% if c.state == 'negotiation' %}<div>Negotiation until {{ c.data.negotiation_until|ts }}: the seller may agree, then D comes back without fees.</div>{% endif %}
   {% if c.state == 'buyer_fee' %}<div>The buyer pays its fee by {{ c.data.buyer_fee_until|ts }}, or the claim is withdrawn and D goes to the seller.</div>{% endif %}
+  {% if c.state == 'rereview' %}<div>Re-review paid by the {{ c.data.rereview }}: two new deciders check the same sampled items; the majority of three decides. D stays held.</div>{% endif %}
   {% if c.state == 'queued' %}<div>Both fees are in; the decider stage waits for a review slot ({{ c.data.queue_reason or 'review limit' }}). D stays held.</div>{% endif %}
   {% if c.state == 'seller_fee' %}<div>The seller pays its fee by {{ c.data.seller_fee_until|ts }}, or the decision is for the buyer without a decider.</div>{% endif %}
   {% if c.case %}{% set k = c.case %}<div>Decider stage: challenge hashes until {{ k.t1|ts }}, reveals until {{ k.t2|ts }}, drawn by drand round {{ k.selection_round }}, sample by round {{ k.sample_round }} · bank salt committed <code>{{ k.salt_hash[:18] }}…</code>
