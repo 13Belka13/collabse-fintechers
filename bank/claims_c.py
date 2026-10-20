@@ -15,13 +15,18 @@
 #     back D × upheld / sampled. Fees: each side gets back its fee times its winning share, the decider the rest.
 #  9. The decision is executed 10 business days later unless a side confirms a court claim (UDRP 4(k)); then D stays
 #     in escrow until the court or an agreement.
+# 10. Review limits, not filing limits: at most 2 C claims of one buyer against one seller with a decider at once,
+#     and at most max(3, 5 % of the seller's open rule-C deals) from buyers independent of the seller (no common
+#     beneficial owner, EvSM). Negotiation and fees run from filing; only the decider stage waits ("queued", FIFO
+#     by the time both fees came in). A queued claim is an open C claim: D stays held.
 # Money: D stays in escrow (split off at window end, §8.2); the schedule in bank/disputes.py reads held().
 import time
 
-from bank import config, db, deals, deciders, escrow, journal, money, snapshots, verifier
+from bank import config, db, deals, deciders, escrow, evsm, journal, money, snapshots, verifier
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
-OPEN = ("negotiation", "buyer_fee", "seller_fee", "decider", "decided")
+PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
+OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided")
 
 
 class ClaimError(Exception):
@@ -188,11 +193,65 @@ def pay_fee(deal_id: str, role: str, by: str, signature: str | None = None, now:
     if role == "buyer":
         _set(c, "seller_fee", by, "buyer_fee_paid", buyer_fee_tx=tx["tx_hash"], seller_fee_until=now + bd(FEE_BD))
     else:
-        _set(c, "decider", by, "seller_fee_paid", seller_fee_tx=tx["tx_hash"])
-        c = _claim(deal_id)
-        sides = {"buyer": core.company(deal["buyer_id"])["ico"], "seller": core.seller(deal["seller_id"])["ico"]}
-        deciders.open_stage(c, sides, now)
+        _set(c, "queued", by, "seller_fee_paid", seller_fee_tx=tx["tx_hash"], fees_in_at=now)
+        start_review(_claim(deal_id), now)
     return get(deal_id)
+
+
+# ---- 10. review limits ----
+
+def _ico(company_id: str) -> str | None:
+    from bank import core
+    return (core.company(company_id) or {}).get("ico")
+
+
+def seller_limit(seller_id: str) -> int:
+    """max(3, 5 % of the seller's open rule-C deals) claims of independent buyers under review at once."""
+    n = db.one("SELECT COUNT(*) n FROM settlements s JOIN deals d ON d.deal_id=s.deal_id WHERE d.seller_id=?"
+               " AND s.rule='C' AND s.closed_at IS NULL", (seller_id,))["n"]
+    return max(SELLER_MIN, n * SELLER_PCT // 100)
+
+
+def review_block(c: dict) -> str | None:
+    """Why this claim cannot go to a decider now (§7C.10), or None. Claims of buyers related to the seller neither
+    count in nor wait for the seller's limit: the seller cannot fill its own queue with stand-in buyers."""
+    from bank import core
+    under = db.rows("SELECT buyer_id FROM claims WHERE rule='C' AND state='decider' AND seller_id=? AND id<>?",
+                    (c["seller_id"], c["id"]))
+    if sum(r["buyer_id"] == c["buyer_id"] for r in under) >= PAIR_LIMIT:
+        return f"at most {PAIR_LIMIT} C claims of one buyer against one seller are under review at once"
+    seller_ico = (core.seller(c["seller_id"]) or {}).get("ico")
+    if evsm.related(_ico(c["buyer_id"]), seller_ico):
+        return None
+    independent = sum(not evsm.related(_ico(r["buyer_id"]), seller_ico) for r in under)
+    if independent >= seller_limit(c["seller_id"]):
+        return "the seller's review limit for claims of independent buyers is reached"
+    return None
+
+
+def start_review(c: dict, now: float) -> bool:
+    """A queued claim goes to the decider stage when the limits allow and no earlier queued claim against the same
+    seller could start first (FIFO by the time both fees came in)."""
+    from bank import core, disputes
+    if c["state"] != "queued":
+        return False
+    queue = sorted(disputes.claims_of_seller(c["seller_id"], "C", "queued"),
+                   key=lambda q: (q["data"].get("fees_in_at", 0), q["id"]))
+    for q in queue:
+        if q["id"] == c["id"]:
+            break
+        if review_block(q) is None:
+            return False
+    why = review_block(c)
+    if why:
+        if c["data"].get("queue_reason") != why:
+            _set(c, "queued", "bank", "review_queued", queue_reason=why)
+        return False
+    _set(c, "decider", "bank", "review_started")
+    deal = deals.get(c["deal_id"])
+    sides = {"buyer": core.company(deal["buyer_id"])["ico"], "seller": core.seller(deal["seller_id"])["ico"]}
+    deciders.open_stage(_claim(c["deal_id"]), sides, now)
+    return True
 
 
 def court(deal_id: str, by: str) -> dict:
@@ -240,6 +299,8 @@ def tick(deal_id: str, now: float | None = None) -> None:
     elif c["state"] == "seller_fee" and now >= d["seller_fee_until"]:
         _set(c, "refund", "timer", "seller_fee_not_paid", outcome="for_buyer_without_decider", buyer_share_pct=100)
         _fees_back(deals.get(deal_id), get(deal_id), buyer_back=d["fee"], seller_back=0, decider_gets=0)
+    elif c["state"] == "queued":
+        start_review(c, now)
     elif c["state"] == "decider":
         try:
             deciders.select(c["id"], now)

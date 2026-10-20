@@ -215,3 +215,62 @@ def test_deal_page_and_the_pseudonymised_decider_page(w):
     assert "C dispute" in page and "D = 8,00" in page and "Negotiation until" in page
     dec = client.get(f"/deciders/{deal_id}").text
     assert "Buyer A" in dec and "Beta" not in dec and "Alfa" not in dec  # pseudonyms only
+
+
+def _to_seller_fee(w, deal_id):
+    bd = config.BUSINESS_DAY_S
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    sig = escrow.buyer_signature(claims_c.fee_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    return claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=T0 + 5 + 2 * bd + 3)
+
+
+def _under_review(n, buyer="alfa", seller="s-beta"):
+    """n other C claims already with a decider (rows only: the limits read the claims table)."""
+    return [db.run("INSERT INTO claims (deal_id, rule, buyer_id, seller_id, items_json, amount, state, filed_at,"
+                   " data_json) VALUES (?,?,?,?,?,?,?,?,?)", (f"d-other-{buyer}-{i}", "C", buyer, seller, "[]", 1,
+                                                              "decider", T0, "{}")).lastrowid for i in range(n)]
+
+
+def test_two_claims_of_one_buyer_under_review_queue_the_third_and_d_stays_held(w):
+    others = _under_review(2)
+    deal_id, _ = c_deal(w)
+    c = _to_seller_fee(w, deal_id)
+    assert c["state"] == "queued" and "one buyer against one seller" in c["data"]["queue_reason"]
+    assert deciders.get(c["id"]) is None  # no decider stage, no draw while queued
+    assert claims_c.held(deals.get(deal_id), disputes.get(deal_id)) == (PRICE_C, True)  # an open C claim
+    deadlines.tick(now=T0 + 5 + 2 * config.BUSINESS_DAY_S + 10)
+    assert claims_c.get(deal_id)["state"] == "queued"
+    db.run("UPDATE claims SET state='executed' WHERE id=?", (others[0],))  # a slot frees up
+    deadlines.tick(now=T0 + 5 + 2 * config.BUSINESS_DAY_S + 11)
+    c = claims_c.get(deal_id)
+    assert c["state"] == "decider" and deciders.get(c["id"])["step"] == "first"
+    events = [e["event"] for e in journal.entries(deal_id, limit=500)]
+    assert "claim_c.review_queued" in events and "claim_c.review_started" in events
+
+
+def test_seller_limit_counts_independent_buyers_only(w, monkeypatch):
+    assert claims_c.seller_limit("s-beta") == 3  # max(3, 5 % of open rule-C deals)
+    db.run("INSERT INTO companies (id, ico, name, role) VALUES ('omega','14645441','Omega s.r.o.','buyer')")
+    _under_review(3, buyer="omega")  # three independent buyers' claims would fill the seller's limit...
+    deal_id, _ = c_deal(w)
+    c = _to_seller_fee(w, deal_id)
+    assert c["state"] == "queued" and "seller's review limit" in c["data"]["queue_reason"]
+    # ...but claims of buyers related to the seller (common owner with Beta, EvSM) do not count
+    monkeypatch.setitem(claims_c.evsm._extract()["owners"], "14645441", ["bo-21c9"])
+    deadlines.tick(now=T0 + 5 + 2 * config.BUSINESS_DAY_S + 10)
+    assert claims_c.get(deal_id)["state"] == "decider"
+
+
+def test_queue_is_fifo_by_the_time_both_fees_came_in(w):
+    others = _under_review(2)
+    first, _ = c_deal(w, deal_id="d-c1")
+    second, _ = c_deal(w, deal_id="d-c2")
+    assert _to_seller_fee(w, first)["state"] == "queued"
+    assert _to_seller_fee(w, second)["state"] == "queued"
+    db.run("UPDATE claims SET state='executed' WHERE id=?", (others[0],))
+    c2 = claims_c.get(second)
+    assert claims_c.start_review(c2, T0 + 10 * config.BUSINESS_DAY_S) is False  # the earlier claim goes first
+    assert claims_c.start_review(claims_c.get(first), T0 + 10 * config.BUSINESS_DAY_S) is True
+    assert claims_c.get(second)["state"] == "queued"  # the pair limit is full again

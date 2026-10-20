@@ -65,6 +65,14 @@ def get(deal_id: str) -> dict | None:
     return s
 
 
+def claims_of_seller(seller_id: str, rule: str, state: str) -> list[dict]:
+    rows = db.rows("SELECT * FROM claims WHERE seller_id=? AND rule=? AND state=? ORDER BY id", (seller_id, rule, state))
+    for r in rows:
+        r["items"] = db.loads(r.pop("items_json"))
+        r["data"] = db.loads(r.pop("data_json")) or {}
+    return rows
+
+
 def claims(deal_id: str, rule: str | None = None) -> list[dict]:
     rows = db.rows("SELECT * FROM claims WHERE deal_id=?" + (" AND rule=?" if rule else "") + " ORDER BY id",
                    (deal_id, rule) if rule else (deal_id,))
