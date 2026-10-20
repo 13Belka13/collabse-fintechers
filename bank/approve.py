@@ -4,8 +4,9 @@
 # memory so the QR on /story stays the same between refreshes. Approve calls deals.confirm(deal_id, "human:jury"),
 # the same function as the confirm button on /mandate (the fallback). Each token is bound to the payment it was
 # made for (deals.payment_binding: offer, amount, asset, payee — PSD2 dynamic linking): if the agent renegotiates
-# while the bank waits, the old link is refused ("changed") and /story shows a new QR for the new price. Caddy lets /approve/* through without the UI
-# password (deploy/Caddyfile): a valid token is the only key, and without one the page shows nothing about the deal.
+# while the bank waits, the old link is refused ("changed") and /story shows a new QR for the new price. Caddy lets
+# /approve/* through without the UI password (deploy/Caddyfile): a valid token is the only key, and without one the
+# page shows nothing about the deal.
 import hashlib
 import secrets
 import threading
