@@ -249,6 +249,14 @@ def settle(body: dict = Body(...)):
                 result = facilitator().settle(payload, requirements)
             except PaymentAbortedError as e:
                 return _settle_refused(e.reason, body)
+            except Exception as e:  # noqa: BLE001 — RPC / signer error: a clean failure, never a 500 (the resource
+                # server then answers no delivery); a retry is safe — one idempotency key per EIP-3009 authorization
+                log.exception("x402 settle failed")
+                journal.append("bank", "x402_settle_failed", {"payer": _payer(body), "pay_to": requirements.pay_to,
+                                                              "asset": requirements.asset, "amount": requirements.amount,
+                                                              "reason": "facilitator_error",
+                                                              "error": f"{type(e).__name__}: {str(e)[:200]}"})
+                return _settle_refused("facilitator_error", body, "the bank could not settle now; retry later")
             if result.success or not _retryable(result):
                 break
             journal.append("bank", "x402_settle_retry", {"attempt": attempt + 1, "reason": result.error_reason,

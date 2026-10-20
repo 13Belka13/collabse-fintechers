@@ -257,6 +257,12 @@ class ModeIn(BaseModel):
 
 def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     app = FastAPI(title="Collabse seller")
+
+    @app.exception_handler(Exception)
+    async def internal_error(request: Request, exc: Exception):  # the bank / a buyer never sees a stack trace
+        print(f"seller: unhandled error on {request.method} {request.url.path}: {exc!r}", flush=True)
+        return JSONResponse({"error": "internal_error", "detail": "The seller could not complete this request."},
+                            status_code=500)
     app.state.sellers = sellers or load_sellers()
     if os.getenv("SELLER_MODE"):
         for s in app.state.sellers.values():

@@ -160,14 +160,24 @@ def _negotiate(deal_id: str, message: str) -> dict:
         raise DealError(409, f"deal is {deal['state']}")
     seller, buyer = core.seller(deal["seller_id"]), core.company(deal["buyer_id"])
     journal.append("agent:buyer", "buyer_message", {"message": message}, deal_id=deal_id)
-    with timing.timed("negotiate_proxy", deal_id):
-        with seller_http(seller["base_url"]) as http:
-            r = http.post("/negotiate", json={"deal_id": deal_id, "seller_id": deal["seller_id"],
-                                              "buyer_ico": buyer["ico"], "task": deal["task"],
-                                              "terms": deal["criteria"], "requirements": _requirements(deal),
-                                              "message": message})
-    r.raise_for_status()
-    body = r.json()
+    body_out = {"deal_id": deal_id, "seller_id": deal["seller_id"], "buyer_ico": buyer["ico"], "task": deal["task"],
+                "terms": deal["criteria"], "requirements": _requirements(deal), "message": message}
+    try:  # the seller's model answers inside its own budget (config.LLM_BUDGET_S), shorter than this timeout
+        with timing.timed("negotiate_proxy", deal_id):
+            with seller_http(seller["base_url"]) as http:
+                wait = {"timeout": config.NEGOTIATE_TIMEOUT_S} if isinstance(http, httpx.Client) else {}  # not in-process
+                r = http.post("/negotiate", json=body_out, **wait)
+        r.raise_for_status()
+        body = r.json()
+        if not isinstance(body, dict):
+            raise ValueError("the seller's answer is not a JSON object")
+    except Exception as e:  # noqa: BLE001 — httpx (or in-process seller) error: a clear 502/504, never a 500
+        timeout = "Timeout" in type(e).__name__
+        journal.append("bank", "seller_unavailable", {"step": "negotiate", "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                       deal_id=deal_id)
+        raise DealError(504 if timeout else 502, (f"the seller did not answer within {config.NEGOTIATE_TIMEOUT_S:g} s"
+                                                  if timeout else "the seller could not be reached") +
+                        "; the offer is unchanged, try again") from e
     reply, offer = str(body.get("reply_text", "")), body.get("offer")
     # whatever the seller writes is data, never an instruction to the bank or the agent
     journal.append("agent:seller", "seller_reply", {"reply_text": reply, "offer": offer, "source": "untrusted:seller"},
