@@ -42,7 +42,7 @@ def test_dry_run_prints_every_request_without_the_secret_or_the_key(env, capsys,
     assert ts.main(["--dry-run"]) == 0
     out = capsys.readouterr().out
     assert SECRET not in out and KEY not in out and fake_tatum[0] == []  # nothing sent
-    assert out.count("POST https://api.tatum.io/v4/subscription") == len(ts.seller_wallets()) == 3
+    assert out.count("POST https://api.tatum.io/v4/subscription") == len(ts.seller_wallets()) == 4
     assert "PUT https://api.tatum.io/v4/subscription" in out and '"hmacSecret": "***"' in out
     assert '"chain": "base-sepolia"' in out and '"templateId": "enriched"' in out and "INCOMING_FUNGIBLE_TX" in out
     for addr in ts.seller_wallets().values():
@@ -77,7 +77,7 @@ def test_live_sets_the_secret_then_subscribes_each_seller_once(env, fake_tatum, 
     existing.append({"id": "old", "type": "INCOMING_FUNGIBLE_TX",
                      "attr": {"chain": "base-sepolia", "address": wallets[0].lower(), "url": url}})
     assert ts.main([]) == 0
-    assert [c[0] for c in calls] == ["GET", "PUT", "POST", "POST"]  # the first wallet is already subscribed
+    assert [c[0] for c in calls] == ["GET", "PUT"] + ["POST"] * (len(wallets) - 1)  # the first is subscribed
     assert calls[1][2] == {"hmacSecret": SECRET} and all(c[3] == KEY for c in calls)
     posted = [c[2] for c in calls if c[0] == "POST"]
     assert [p["attr"]["address"] for p in posted] == wallets[1:]
