@@ -492,3 +492,57 @@ def test_lost_c_claims_count_back_over_the_demo_scaled_30_days():
                " data_json) VALUES ('d', 'C', 'alfa', 's-beta', '[]', 1, 'executed', ?, ?)",
                (filed, db.dumps({"buyer_share_pct": 40})))
     assert claims_c.lost_c("alfa", T0) == 1
+
+
+def _both_fees_paid(w, deal_id, t):
+    BD = config.BUSINESS_DAY_S
+    deadlines.tick(now=t + 2 * BD + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=t + 2 * BD + 2)
+    sig = escrow.buyer_signature(claims_c.fee_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=t + 2 * BD + 3)
+
+
+def test_no_split_off_while_items_are_pending_and_nothing_leaves_the_split_lock_before_the_decision(w, monkeypatch):
+    items = company_items(10, "misdated")
+    down, real = {str(items[8]["ico"]).strip(), str(items[9]["ico"]).strip()}, snapshots._mock_body
+    ares = {"down": True}
+
+    def body(template, key):  # ARES is out for two items: their snapshot (and so the item) waits
+        if ares["down"] and key in down:
+            raise snapshots.Wait("ARES 503")
+        return real(template, key)
+    monkeypatch.setattr(snapshots, "_mock_body", body)
+    deal_id = k.make_deal(w, rule="C", deal_id="d-c", count=10, predicates=C_PREDICATES, amount=PRICE_C,
+                          window_s=config.WINDOW_S["T2"][0], deadline_s=300, now=T0, task_hash="d-c")
+    assert k.deliver(w, deal_id, mode="misdated", count=10, now=T0 + 1, items=items)["pending_items"] == 2
+    out = claims_c.file(deal_id, [[1, i] for i in range(5)], {f"1/{i}": "founded" for i in range(5)}, "agent:buyer",
+                        now=T0 + 5)
+    assert out["D"] == 4_000_000
+    _both_fees_paid(w, deal_id, T0 + 5)
+    deal_txs = lambda: [(fn, a) for fn, a, key, _ in w.sender.sent if ":fee-" not in key]  # noqa: E731
+
+    end = disputes.get(deal_id)["window_end_at"]
+    deadlines.tick(now=end + 1)  # items still pending: the window is not over, so no split-off yet
+    assert deal_txs() == [] and disputes.get(deal_id)["split_n"] is None
+
+    ares["down"] = False
+    deadlines.tick(now=end + 200)  # the two items are accepted now: their window starts now
+    end2 = disputes.get(deal_id)["window_end_at"]
+    deadlines.tick(now=end2 + 1)  # the undisputed half is captured first, then D is split off
+    assert deal_txs() == [("capture", 4_000_000), ("void", None), ("authorize", 4_000_000)]
+    s = disputes.get(deal_id)
+    assert s["split_n"] == 1 and s["captured"] == 4_000_000 and escrow.locked_amount(deal_id) == 8_000_000
+    disputes.delivered(deal_id, now=end2 + 50)  # never reopens the window after the split-off
+    assert disputes.get(deal_id)["window_end_at"] == end2
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import api
+    app = FastAPI()
+    app.include_router(api.router)
+    r = TestClient(app, headers={"x-human-token": config.HUMAN_TOKEN}).post(
+        f"/api/deals/{deal_id}/accept-items", json={"items": [[1, 0]], "by": "anna"})
+    assert r.status_code == 409 and "split off" in r.json()["detail"]  # no "accept anyway" after the split-off
+    monkeypatch.setattr(disputes, "payable", lambda deal: PRICE_C * 2)  # even if P grew, D stays held
+    deadlines.tick(now=end2 + 100)
+    assert deal_txs()[3:] == [] and claims_c.get(deal_id)["state"] in claims_c.OPEN

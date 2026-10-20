@@ -87,7 +87,7 @@ def delivered(deal_id: str, now: float | None = None):
     now = _now(now)
     with db.immediate():
         s = get(deal_id)
-        if s and s["window_s"] and not s["voided"]:
+        if s and s["window_s"] and not s["voided"] and s["split_n"] is None:  # D split off: the window is over
             db.run("UPDATE settlements SET window_end_at=?, step='window' WHERE deal_id=?",
                    (now + s["window_s"], deal_id))
 
@@ -138,7 +138,10 @@ def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
         return P * (100 - x) // 100, False, f"rule B: {100 - x} % at acceptance"
     d, open_c = held_c(deal, s)
     if window_over:  # C: nothing before the window ends, then everything not refunded and not in dispute
-        return max(0, P - refunded_b(deal["deal_id"]) - d), not open_c, "rule C: window over"
+        target = max(0, P - refunded_b(deal["deal_id"]) - d)
+        if open_c and s["split_n"] is not None:  # D is split off: nothing leaves the split lock before the decision
+            target = min(target, s["captured"])
+        return target, not open_c, "rule C: window over"
     from bank import claims_c
     c = claims_c.get(deal["deal_id"])
     if c and c["state"] == "withdrawn":  # the buyer did not pay its fee: D goes to the seller at once (§7C.3)
@@ -149,6 +152,8 @@ def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
 def needs_split(deal: dict, s: dict, now: float) -> bool:
     """§8.2: at window end with an open C claim, D is split off once (the undisputed part is captured first)."""
     if s["rule"] != "C" or s["split_n"] is not None or s["window_end_at"] is None or now < s["window_end_at"]:
+        return False
+    if receipts.counts(deal["deal_id"])["pending_items"]:  # the window is not over while items wait (as in due())
         return False
     d, open_c = held_c(deal, s)
     return open_c and d > 0
