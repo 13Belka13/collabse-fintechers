@@ -15,7 +15,7 @@
   <td><label><input type="radio" name="item-{{ it.n }}" value="buyer" required> Buyer A</label>
       <label><input type="radio" name="item-{{ it.n }}" value="seller"> Seller B</label></td></tr>{% endfor %}
 </table>
-<div class="flex" style="margin-top:8px"><input name="decider" placeholder="decider id (demo: dec-1..3)" required>
+<div class="flex" style="margin-top:8px"><input name="token" type="password" autocomplete="off" placeholder="your decider token" required>
   <button type="submit">Sign the decision</button>
   {% if deadline %}<span class="small muted">due by {{ deadline|ts }}</span>{% endif %}</div>
 </form>{% endif %}

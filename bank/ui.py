@@ -9,12 +9,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, receipts, timing
 from bank.screening import website
+from bank.ui_auth import same_origin
 
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
@@ -41,7 +42,8 @@ async def lifespan(app):
     deadlines.stop()
 
 
-router = APIRouter(lifespan=lifespan, include_in_schema=False)
+# every POST here is a person's action: same-origin or the human token (bank/ui_auth.py); pages stay open
+router = APIRouter(lifespan=lifespan, include_in_schema=False, dependencies=[Depends(same_origin)])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
@@ -183,6 +185,17 @@ def _deal_or_404(deal_id: str) -> dict:
     if deal is None:
         raise HTTPException(404, "unknown deal")
     return deal
+
+
+def human_of(company_id: str) -> str:
+    """The actor of a person's action in the UI: the logged-in demo person stands in for the company's authorised
+    person. Set by the server from the deal or mandate, never taken from the form."""
+    return f"human:{company_id}"
+
+
+def _owner(mandate_id: str) -> str | None:
+    row = db.one("SELECT company_id FROM mandates WHERE mandate_id=?", (mandate_id,))
+    return row["company_id"] if row else None
 
 
 def _seller(seller_id: str) -> dict:
@@ -448,7 +461,7 @@ def mandate_page(request: Request, mandate_id: str = DEMO_MANDATE, error: str = 
     return page(request, "mandate.html", mandate_id=mandate_id, current=current,
                 versions=list(reversed(mandate.versions(mandate_id))) if current else [],
                 summary=mandate.summary(mandate_id) if current else None, pending=pending, error=error, ok=ok,
-                has_confirm=hasattr(deals, "confirm"))
+                has_confirm=hasattr(deals, "confirm"), owner=_owner(mandate_id))
 
 
 LIMIT_FIELDS = {"per_deal_max": "The per-deal limit", "confirm_above": "The confirmation threshold",
@@ -494,16 +507,14 @@ def limits_from_form(form: dict, current: dict) -> dict:
 @router.post("/mandate/edit")
 async def mandate_edit(request: Request):
     """A person sets new limits: a new mandate version (policy_hash) that the next pay() enforces. The agent has
-    no tool for this; like the other human actions here it needs a human: actor."""
+    no tool for this. The actor is the mandate owner's person, set here: a "who" in the form is ignored."""
     from bank import mandate
     form = dict(await request.form())
-    mandate_id, who = str(form.get("mandate_id") or DEMO_MANDATE), str(form.get("who") or "")
-    if not who.startswith("human:"):
-        return RedirectResponse(f"/mandate?mandate_id={mandate_id}&error=Only a person can change the mandate.",
-                                status_code=303)
+    mandate_id = str(form.get("mandate_id") or DEMO_MANDATE)
     current = mandate.current(mandate_id)
     if current is None:
         raise HTTPException(404, "unknown mandate")
+    who = human_of(_owner(mandate_id))
     try:
         changes = limits_from_form(form, current)
         if not changes:
@@ -517,13 +528,14 @@ async def mandate_edit(request: Request):
 
 
 @router.post("/mandate/deals/{deal_id}/{action}")
-def mandate_action(deal_id: str, action: str, who: str = Form(...)):
+def mandate_action(deal_id: str, action: str):
     """The human in the bank UI confirms a payment above the threshold or acknowledges the §109 VAT risk
     (once per seller and asset). Same functions as POST /api/deals/{id}/confirm|ack-vat, called in-process:
-    the browser never holds the API's human token."""
+    the browser never holds the API's human token. The actor is the buyer's person, set here."""
     deal = _deal_or_404(deal_id)
-    if action not in ("confirm", "ack-vat") or not who.startswith("human:"):
+    if action not in ("confirm", "ack-vat"):
         raise HTTPException(400, "unknown action")
+    who = human_of(deal["buyer_id"])
     try:
         if action == "confirm":
             if not hasattr(deals, "confirm"):
@@ -592,11 +604,16 @@ def decider_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
 
 @router.post("/deciders/{deal_id}")
 async def decider_decide(request: Request, deal_id: str):
+    """The decider signs with its own token (bank/deciders.py tokens): the decider id comes from the token."""
     from bank import claims_c, deciders
     form = await request.form()
+    decider = deciders.by_token(str(form.get("token", "")).strip())
+    if decider is None:
+        return RedirectResponse(f"/deciders/{deal_id}?error=Unknown decider token: nothing was decided.",
+                                status_code=303)
     verdicts = {k.removeprefix("item-"): v for k, v in form.items() if k.startswith("item-")}
     try:
-        claims_c.decide(deal_id, str(form.get("decider", "")), verdicts)
+        claims_c.decide(deal_id, decider, verdicts)
     except (claims_c.ClaimError, deciders.DeciderError) as e:
         return RedirectResponse(f"/deciders/{deal_id}?error={e}", status_code=303)
     return RedirectResponse(f"/deciders/{deal_id}?ok=decided", status_code=303)
@@ -611,20 +628,21 @@ def _business_days(s: dict | None) -> int | None:
 
 
 @router.post("/deals/{deal_id}/accept")
-def accept_deal(deal_id: str, who: str = Form(...)):
+def accept_deal(deal_id: str):
     """Rule A: a person of the buyer confirms acceptance before the delivery deadline."""
-    _deal_or_404(deal_id)
+    deal = _deal_or_404(deal_id)
     try:
-        disputes.accept(deal_id, who)
+        disputes.accept(deal_id, human_of(deal["buyer_id"]))
     except disputes.DisputeError as e:
         return RedirectResponse(f"/deals/{deal_id}?error={e}", status_code=303)
     return RedirectResponse(f"/deals/{deal_id}?ok=accepted", status_code=303)
 
 
 @router.post("/deals/{deal_id}/accept-item/{version}/{idx}")
-def accept_item(deal_id: str, version: int, idx: int, who: str = Form(...)):
+def accept_item(deal_id: str, version: int, idx: int):
     """'Accept anyway' for one rejected item: only a person, within the lock, before the final void."""
     deal = _deal_or_404(deal_id)
+    who = human_of(deal["buyer_id"])
     s = disputes.get(deal_id)
     try:
         if s is None or s["voided"] or s["closed_at"]:

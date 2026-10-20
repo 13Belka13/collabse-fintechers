@@ -83,7 +83,7 @@ class RevealIn(BaseModel):
 
 
 class DecisionIn(BaseModel):
-    decider: str
+    decider: str = ""  # ignored: the x-decider-token names the decider
     verdicts: dict[str, str]
 
 
@@ -105,9 +105,13 @@ def _call(fn, *args):
         raise HTTPException(e.status, str(e)) from e
 
 
-def decider_caller(x_decider_token: str | None = Header(None)) -> None:
-    if not _same(x_decider_token, config.DECIDER_TOKEN):
+def decider_caller(x_decider_token: str | None = Header(None)) -> str:
+    """The decider its own token names (bank/deciders.py tokens): the decider id never comes from the body."""
+    from bank import deciders
+    decider = deciders.by_token(x_decider_token or "")
+    if decider is None:
         raise HTTPException(401, "decider token required")
+    return decider
 
 
 def _own_deal(deal_id: str, company_id: str) -> dict:
@@ -333,13 +337,13 @@ def c_seller_rereview(deal_id: str, body: SignatureIn):
     return _call(claims_c.request_rereview, deal_id, "seller", "seller", body.signature)
 
 
-@router.post("/deals/{deal_id}/claims/c/audit", dependencies=[Depends(decider_caller)])
-def c_audit(deal_id: str, body: DecisionIn):
+@router.post("/deals/{deal_id}/claims/c/audit")
+def c_audit(deal_id: str, body: DecisionIn, decider: str = Depends(decider_caller)):
     from bank import claims_c, deciders
-    return _call(deciders.audit, _call(claims_c._claim, deal_id)["id"], body.decider, body.verdicts)
+    return _call(deciders.audit, _call(claims_c._claim, deal_id)["id"], decider, body.verdicts)
 
 
-@router.post("/deals/{deal_id}/claims/c/decision", dependencies=[Depends(decider_caller)])
-def c_decision(deal_id: str, body: DecisionIn):
+@router.post("/deals/{deal_id}/claims/c/decision")
+def c_decision(deal_id: str, body: DecisionIn, decider: str = Depends(decider_caller)):
     from bank import claims_c
-    return _call(claims_c.decide, deal_id, body.decider, body.verdicts)
+    return _call(claims_c.decide, deal_id, decider, body.verdicts)

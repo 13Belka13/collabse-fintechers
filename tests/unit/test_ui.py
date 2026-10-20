@@ -12,6 +12,8 @@ from bank import codes, db, deadlines, disputes, escrow, journal, timing, ui
 from bank.codes import Code
 from tests.unit import dealkit as k
 
+HUMAN = {"x-human-token": "dev-human"}
+
 
 @pytest.fixture
 def world(monkeypatch, seeded):
@@ -22,7 +24,7 @@ def world(monkeypatch, seeded):
 def client(world):
     app = FastAPI()
     app.include_router(ui.router)
-    return TestClient(app)
+    return TestClient(app, headers=HUMAN)  # no Origin header: a UI POST needs the human token (bank/ui_auth.py)
 
 
 def make_deal(world, mode="honest", deal_id="d-test", deliver=True, **kw):
@@ -70,14 +72,14 @@ def test_deal_page_shows_conditions_codes_masked_values_and_lets_a_person_accept
     assert "REGISTRY_CONTRADICTION" in page and "CRITERIA_FAIL" in page and "violated:" in page
     assert "Accept anyway" in page and explain_free(page)
     rejected = next(r for r in disputes.receipts.items_of(deal_id, "rejected") if r["code"] == "CRITERIA_FAIL")
-    r = client.post(f"/deals/{deal_id}/accept-item/{rejected['version']}/{rejected['idx']}", data={"who": "agent:x"})
-    assert "only a person" in r.text
-    r = client.post(f"/deals/{deal_id}/accept-item/{rejected['version']}/{rejected['idx']}", data={"who": "human:alfa"})
-    assert "item accepted" in r.text and "accepted anyway by human:alfa" in r.text
+    assert 'name="who"' not in page  # the actor is set by the server, never by the form
+    r = client.post(f"/deals/{deal_id}/accept-item/{rejected['version']}/{rejected['idx']}", data={"who": "human:mallory"})
+    assert "item accepted" in r.text and "accepted anyway by human:alfa" in r.text and "mallory" not in r.text
     a = make_deal(world, deal_id="d-rule-a", rule="A")
     assert "Confirm acceptance now" in client.get(f"/deals/{a}").text
-    r = client.post(f"/deals/{a}/accept", data={"who": "human:alfa"})
+    r = client.post(f"/deals/{a}/accept", data={"who": "agent:buyer"})
     assert "accepted" in r.text and disputes.get(a)["closed_at"]
+    assert [e["actor"] for e in journal.entries(a) if e["event"] == "settlement.accepted"] == ["human:alfa"]
 
 
 def explain_free(page: str) -> bool:
@@ -121,9 +123,10 @@ def test_mandate_lists_vat_acknowledgement_and_acts_in_process(client, world, mo
     paid = []
     monkeypatch.setattr(ui.deals, "ack_vat", lambda d, by: paid.append((d, by)) or codes.ok(explanation="Locked."),
                         raising=False)
-    r = client.post(f"/mandate/deals/{deal_id}/ack-vat", data={"who": "human:alfa"})
-    assert paid == [(deal_id, "human:alfa")] and "ok: Locked." in r.text
-    assert client.post(f"/mandate/deals/{deal_id}/ack-vat", data={"who": "agent:buyer"}).status_code == 400
+    assert 'name="who"' not in page
+    r = client.post(f"/mandate/deals/{deal_id}/ack-vat", data={"who": "human:mallory"})
+    assert paid == [(deal_id, "human:alfa")] and "ok: Locked." in r.text  # the buyer's person, whatever the form says
+    assert client.post(f"/mandate/deals/{deal_id}/pay-twice").status_code == 400
 
 
 def test_alarm_banner_for_an_open_deal_near_expiry(client, world):

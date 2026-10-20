@@ -19,7 +19,7 @@
   <div class="small muted">delivery by {{ s.deadline_at|ts }}{% if s.window_end_at %} · claim window until <span class="countdown" data-deadline="{{ s.window_end_at }}"></span>{% endif %}{% if terms.fee_bps %} · bank fee {{ terms.fee_bps / 100 }} % taken at capture{% endif %}</div>
   {% if scale %}<div class="small muted">{{ scale }}</div>{% endif %}
   {% if s.rule == 'A' and not s.closed_at and not s.accepted_at %}<form method="post" action="/deals/{{ deal.deal_id }}/accept" class="flex" style="margin-top:6px">
-    <input type="hidden" name="who" value="human:{{ deal.buyer_id }}"><button type="submit" class="ghost">Confirm acceptance now (a person of the buyer)</button></form>{% endif %}
+    <button type="submit" class="ghost">Confirm acceptance now (a person of the buyer)</button></form>{% endif %}
 </div>
 {% endif %}
 
@@ -70,7 +70,7 @@
     <td>{% if it.rule_text %}violated: {{ it.rule_text }}{% endif %}{% if it.detail and it.status != 'accepted' %}<div class="muted">{{ it.detail }}</div>{% endif %}</td>
     <td class="mono">{{ it.masked }}</td>
     <td>{% if it.status == 'rejected' and s and not s.voided and not s.closed_at %}<form method="post" action="/deals/{{ deal.deal_id }}/accept-item/{{ it.version }}/{{ it.idx }}">
-      <input type="hidden" name="who" value="human:{{ deal.buyer_id }}"><button type="submit" class="ghost">Accept anyway</button></form>{% endif %}</td></tr>
+      <button type="submit" class="ghost">Accept anyway</button></form>{% endif %}</td></tr>
   {% endfor %}
 </table>
 <div class="small muted">The buyer receives only accepted items; each comes with a proof against the root the seller signed.</div>

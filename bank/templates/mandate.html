@@ -39,8 +39,7 @@
     <fieldset class="full"><legend>Assets the agent may pay in</legend>
       {% for a in ['EURC', 'tCZK'] %}<label class="inline"><input type="checkbox" name="asset_{{ a }}" value="1" {{ 'checked' if a in pol.assets_allowed }}> {{ a }}</label>{% endfor %}
     </fieldset>
-    <label class="full">Who approves <input name="who" value="human:alfa" pattern="human:.+" required>
-      <span class="hint">a person (human:…); the agent has no tool to change its own mandate</span></label>
+    <div class="full hint">Saved as a person of the company (human:{{ owner }}); the agent has no tool to change its own mandate.</div>
     <div class="full"><button type="submit">Save as a new version</button></div>
   </form>
 </details>
@@ -53,7 +52,6 @@
   <ul class="reasons">{% for x in p.decision.reasons %}<li><code>{{ x.code }}</code> {{ x.text }}{% if x.source_url %} · <a href="{{ x.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}</ul>
   <div class="flex" style="margin-top:8px">
     <form method="post" action="/mandate/deals/{{ p.deal.deal_id }}/{{ 'ack-vat' if p.decision.code == 'VAT_LIABILITY_RISK' else 'confirm' }}">
-      <input type="hidden" name="who" value="human:{{ p.deal.buyer_id }}">
       {% if p.decision.code == 'VAT_LIABILITY_RISK' %}<button type="submit">Acknowledge the VAT risk for {{ p.seller.name }} in {{ p.deal.asset }} and pay</button>
       <span class="small muted">once per seller and asset → new mandate version</span>
       {% else %}<button type="submit" {{ '' if has_confirm else 'disabled' }}>Confirm this payment</button>

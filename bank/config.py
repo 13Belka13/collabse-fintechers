@@ -94,6 +94,10 @@ def reload():
     g["BANK_TO_SELLER_TOKEN"] = _env("BANK_TO_SELLER_TOKEN", "dev-bank")  # bank -> seller (escrow notices)
     g["HUMAN_TOKEN"] = _env("HUMAN_TOKEN", "dev-human")        # bank UI: confirmations, VAT acknowledgements
     g["DECIDER_TOKEN"] = _env("DECIDER_TOKEN", "dev-decider")  # rule C deciders submit decisions (demo: on stage)
+    # the decider page takes a per-decider token: DECIDER_TOKENS "dec-1:tokA,dec-2:tokB", or, unset, tokens derived
+    # from DECIDER_TOKEN (else HUMAN_TOKEN) per decider id (bank/deciders.py tokens; print: python -m bank.deciders tokens)
+    g["DECIDER_TOKENS"] = _env("DECIDER_TOKENS")
+    g["DECIDER_SECRET"] = _env("DECIDER_TOKEN") or g["HUMAN_TOKEN"]
     # the escrow operator the seller accepts; derived from the bank's key when this process holds it
     derived = Account.from_key(g["BANK_OPERATOR_PK"]).address if g["BANK_OPERATOR_PK"] else ""
     g["BANK_OPERATOR_ADDR"] = _env("BANK_OPERATOR_ADDR", derived or "0x0469ceC178789072bc61435835D0BB38214D4e53")
