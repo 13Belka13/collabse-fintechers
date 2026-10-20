@@ -391,3 +391,26 @@ def test_task_id_is_part_of_the_hashed_terms():
     a, b = deals.task_terms({**task, "task_id": "t-1"}), deals.task_terms({**task, "task_id": "t-2"})
     assert a["hash"] != b["hash"] and a["task_id"] == "t-1"  # two tasks never share `unique` or tier sums
     assert deals.task_terms({**task, "task_id": "t-1"})["hash"] == a["hash"]
+
+
+def test_deal_page_shows_a_queued_claim_and_a_rereview(w):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import ui
+    app = FastAPI()
+    app.include_router(ui.router)
+    client = TestClient(app)
+    others = _under_review(2)
+    deal_id, _ = c_deal(w)
+    _to_seller_fee(w, deal_id)
+    assert "waits for a review slot (at most 2 C claims" in client.get(f"/deals/{deal_id}").text
+    db.run("DELETE FROM claims WHERE id IN (?,?)", tuple(others))
+    deadlines.tick(now=T0 + 5 + 2 * config.BUSINESS_DAY_S + 10)
+    c = claims_c.get(deal_id)
+    after = deciders.round_time(deciders.get(c["id"])["sample_round"]) + 1
+    deadlines.tick(now=after)
+    case = deciders.get(c["id"])
+    claims_c.decide(deal_id, case["decider"], {str(i): "seller" for i in case["sample"]}, now=after + 1)
+    claims_c.request_rereview(deal_id, "buyer", "agent:buyer", now=after + 2)
+    assert "Re-review paid by the buyer" in client.get(f"/deals/{deal_id}").text
