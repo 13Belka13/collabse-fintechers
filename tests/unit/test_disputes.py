@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from bank import db, deadlines, deals, disputes, journal, receipts
+from bank import config, db, deadlines, deals, disputes, journal, receipts
 from tests.unit import dealkit as k
 
 T0 = float(int(time.time()))
@@ -93,6 +93,17 @@ def test_b_slots_are_reserved_at_pay_new_buyer_gets_two(w):
     a = disputes.b_availability("alfa", "s-gama", now=T0)
     assert not a["available"] and a["reason"] == "b_pair_limit" or a["reason"] == "b_new_buyer_limit"
     assert not disputes.b_availability("alfa", "s-beta", now=T0)["available"]
+
+
+def test_b_limits_count_back_over_the_demo_scaled_30_days(w):
+    for n in (1, 2):  # two B claims against Beta, filed at T0
+        db.run("INSERT INTO claims (deal_id, rule, buyer_id, seller_id, items_json, amount, state, filed_at)"
+               " VALUES (?, 'B', 'alfa', 's-beta', '[]', 1, 'paid', ?)", (f"d-b{n}", T0))
+    assert disputes.b_availability("alfa", "s-beta", now=T0 + 3)["reason"] == "b_pair_limit"
+    month = config.span(disputes.DAYS_30)
+    assert month == pytest.approx(30 * 86400 / 90)  # 8 h on the stand
+    assert not disputes.b_availability("alfa", "s-beta", now=T0 + month - 10)["available"]
+    assert disputes.b_availability("alfa", "s-beta", now=T0 + month + 10)["available"]
 
 
 def test_rule_a_pays_at_the_deadline_or_when_a_person_accepts(w):

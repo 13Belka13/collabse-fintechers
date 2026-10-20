@@ -60,7 +60,7 @@ def fee_max_eur_cents(count: int, amount_eur_cents: int, buyer_lost_c: int = 0) 
 def lost_c(buyer_id: str, now: float) -> int:
     return db.one("SELECT COUNT(*) n FROM claims WHERE buyer_id=? AND rule='C' AND state='executed'"
                   " AND json_extract(data_json,'$.buyer_share_pct') < 50 AND filed_at>=?",
-                  (buyer_id, now - 30 * 86400))["n"]
+                  (buyer_id, now - config.span(30 * 86400)))["n"]
 
 
 def get(deal_id: str) -> dict | None:

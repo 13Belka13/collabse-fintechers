@@ -434,3 +434,11 @@ def test_a_late_rereview_decider_is_replaced_by_the_reserve_provider(w, monkeypa
         claims_c.decide(deal_id, late, {str(i): "seller" for i in case["sample"]}, now=t2 + 1)
     c = claims_c.decide(deal_id, "reserve", {str(i): "seller" for i in case["sample"]}, now=t2 + 2)
     assert c["state"] == "decided" and c["data"]["buyer_share_pct"] == 0  # majority of three: first + two "seller"
+
+
+def test_lost_c_claims_count_back_over_the_demo_scaled_30_days():
+    for filed in (T0 - 10, T0 - config.span(30 * 86400) - 10):
+        db.run("INSERT INTO claims (deal_id, rule, buyer_id, seller_id, items_json, amount, state, filed_at,"
+               " data_json) VALUES ('d', 'C', 'alfa', 's-beta', '[]', 1, 'executed', ?, ?)",
+               (filed, db.dumps({"buyer_share_pct": 40})))
+    assert claims_c.lost_c("alfa", T0) == 1

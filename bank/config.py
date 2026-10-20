@@ -16,6 +16,12 @@ def _env(name, default=""):
     return os.getenv(name, "").strip().strip('"') or default
 
 
+def span(seconds: float) -> float:
+    """A production window or look-back period at the demo scale (÷ DEMO_TIME_DIVISOR; 1 = production): claim
+    windows, business days, and every "in 24 h / 30 days" a rule counts back over."""
+    return seconds / TIME_DIVISOR
+
+
 def reload():
     """Re-read the environment into module globals (used by tests)."""
     g = globals()
@@ -110,9 +116,8 @@ def reload():
     g["TARIFF_BPS"] = {("T0", "A"): 0, ("T1", "A"): 80, ("T1", "B"): 120,
                        ("T2", "A"): 150, ("T2", "B"): 150, ("T2", "C"): 150}
     # claim windows per tier in seconds (production: T1 30 min – 24 h, T2 72 h – 14 days), scaled
-    g["WINDOW_S"] = {"T1": (1800 / g["TIME_DIVISOR"], 86400 / g["TIME_DIVISOR"]),
-                     "T2": (72 * 3600 / g["TIME_DIVISOR"], 14 * 86400 / g["TIME_DIVISOR"])}
-    g["BUSINESS_DAY_S"] = 86400 / g["TIME_DIVISOR"]  # demo: a business day is this many seconds, no calendar
+    g["WINDOW_S"] = {"T1": (span(1800), span(86400)), "T2": (span(72 * 3600), span(14 * 86400))}
+    g["BUSINESS_DAY_S"] = span(86400)  # demo: a business day is this many seconds, no calendar
     # escrow terms §8.3 (not scaled: a long lock is safe, the bank closes the deal itself)
     g["ESCROW_EXTRA_DAYS"] = {"T0": 30, "T1": 30, "T2": 120}
     g["REFUND_EXTRA_DAYS"] = 30
