@@ -19,7 +19,9 @@ visible in the shot.
 | `screenshots/05-deal.png` | `/deals/{id}` | The honest deal: offer and predicates, accepted items, the Apify company check, escrow state read from the chain, transaction links |
 | `screenshots/06-dispute.png` | `/deals/{id}` | The "Fake data" deal: the delivery check — 17 accepted, 3 rejected with the violated predicate (one `REGISTRY_CONTRADICTION`), the claim window and the final void |
 | `screenshots/07-statement.png` | `/statement` | The statement with the reconciliation result and the row "Bank books = chain" 0,00 Kč |
-| `screenshots/08-explorer-revert.png` | [Basescan](https://sepolia.basescan.org/tx/0xbe5adf590d439625c92fafca266fbe8e94b5eeb04800d141c00ba6b0b94765fd) | The reverted direct tCZK transfer with `TransferViaBankOnly` |
+| `screenshots/09-jury-qr.png` | `/story` | The "Jury approves" scene: the one-time QR in the step "a person must confirm" |
+| `screenshots/09-jury-phone.png` | `/approve/{deal_id}?t=…` (500 px wide, 2×) | The phone card: amount, payee, the 6 € threshold, Approve / Decline |
+| `screenshots/10-no-tipping-off.png` | `/deals/{id}#decisions` | The "No tipping-off" deal: what the client sees next to what compliance sees |
 
 ## Video
 
