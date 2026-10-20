@@ -1,0 +1,2982 @@
+{
+ "generated": "2026-10-20 10:38 CEST",
+ "commit": "e799084",
+ "machine": "arm64 Darwin 25.6.0, Python 3.12.7, 10 CPUs, load avg 34.3",
+ "code": {
+  "bank (Python)": {
+   "files": 36,
+   "lines": 7585,
+   "code_lines": 5963
+  },
+  "bank UI templates": {
+   "files": 14,
+   "lines": 537,
+   "code_lines": 527
+  },
+  "agents": {
+   "files": 8,
+   "lines": 662,
+   "code_lines": 529
+  },
+  "seller": {
+   "files": 2,
+   "lines": 469,
+   "code_lines": 392
+  },
+  "scripts": {
+   "files": 15,
+   "lines": 3895,
+   "code_lines": 3280
+  },
+  "tests": {
+   "files": 41,
+   "lines": 6109,
+   "code_lines": 4688
+  },
+  "Apify actor": {
+   "files": 5,
+   "lines": 271,
+   "code_lines": 220
+  },
+  "contracts (Solidity, own)": {
+   "files": 4,
+   "lines": 755,
+   "code_lines": 618
+  },
+  "fixtures": {
+   "files": 13,
+   "lines": 2657,
+   "code_lines": 2657
+  },
+  "infra/deploy": {
+   "files": 8,
+   "lines": 475,
+   "code_lines": 441
+  },
+  "commits": 119
+ },
+ "tests": {
+  "tests": 512,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 6,
+  "seconds": 844.5,
+  "slowest": [
+   [
+    "tests.evals.test_injections",
+    "test_money_level_block_rate_is_100_percent",
+    68.796
+   ],
+   [
+    "tests.unit.test_codes_llm",
+    "test_missing_mock_and_missing_region_are_clear",
+    27.043
+   ],
+   [
+    "tests.unit.test_deals",
+    "test_vat_risk_waits_for_human",
+    15.762
+   ],
+   [
+    "tests.unit.test_deals",
+    "test_b_unavailable_needs_a_person_then_b_without_claims",
+    15.034
+   ],
+   [
+    "tests.unit.test_deals",
+    "test_tczk_deal_uses_tczk_price",
+    14.2
+   ],
+   [
+    "tests.unit.test_delivery",
+    "test_root_mismatch_returns_the_banks_root_and_the_seller_may_resend",
+    13.802
+   ],
+   [
+    "tests.unit.test_disputes",
+    "test_one_b_claim_per_deal_and_none_without_a_slot",
+    13.64
+   ],
+   [
+    "tests.unit.test_disputes",
+    "test_a_failed_capture_is_retried_never_voided",
+    13.51
+   ],
+   [
+    "tests.unit.test_delivery",
+    "test_versions_replace_failed_items_p_never_decreases",
+    13.501
+   ],
+   [
+    "tests.unit.test_disputes",
+    "test_a_lost_answer_resends_the_same_key_and_books_once",
+    13.34
+   ]
+  ],
+  "by_dir": {
+   "evals": {
+    "tests": 27,
+    "seconds": 79.7
+   },
+   "unit": {
+    "tests": 485,
+    "seconds": 713.1
+   }
+  },
+  "cpu_seconds": 134.8,
+  "slowest_durations": [
+   {
+    "s": 68.63,
+    "phase": "setup",
+    "test": "tests/evals/test_injections.py::test_money_level_block_rate_is_100_percent"
+   },
+   {
+    "s": 26.98,
+    "phase": "call",
+    "test": "tests/unit/test_codes_llm.py::test_missing_mock_and_missing_region_are_clear"
+   },
+   {
+    "s": 15.38,
+    "phase": "call",
+    "test": "tests/unit/test_deals.py::test_vat_risk_waits_for_human"
+   },
+   {
+    "s": 14.66,
+    "phase": "call",
+    "test": "tests/unit/test_deals.py::test_b_unavailable_needs_a_person_then_b_without_claims"
+   },
+   {
+    "s": 13.7,
+    "phase": "call",
+    "test": "tests/unit/test_delivery.py::test_root_mismatch_returns_the_banks_root_and_the_seller_may_resend"
+   },
+   {
+    "s": 13.5,
+    "phase": "call",
+    "test": "tests/unit/test_disputes.py::test_one_b_claim_per_deal_and_none_without_a_slot"
+   },
+   {
+    "s": 13.45,
+    "phase": "call",
+    "test": "tests/unit/test_deals.py::test_tczk_deal_uses_tczk_price"
+   },
+   {
+    "s": 13.41,
+    "phase": "call",
+    "test": "tests/unit/test_delivery.py::test_versions_replace_failed_items_p_never_decreases"
+   },
+   {
+    "s": 13.38,
+    "phase": "call",
+    "test": "tests/unit/test_disputes.py::test_a_failed_capture_is_retried_never_voided"
+   },
+   {
+    "s": 13.07,
+    "phase": "call",
+    "test": "tests/unit/test_disputes.py::test_a_lost_answer_resends_the_same_key_and_books_once"
+   },
+   {
+    "s": 12.88,
+    "phase": "call",
+    "test": "tests/unit/test_disputes.py::test_rule_b_with_rejected_items_one_final_void"
+   },
+   {
+    "s": 12.79,
+    "phase": "call",
+    "test": "tests/unit/test_deals.py::test_sellers_and_statement"
+   },
+   {
+    "s": 12.6,
+    "phase": "call",
+    "test": "tests/unit/test_deals.py::test_rule_b_captures_at_acceptance_with_the_pis_idem_key"
+   },
+   {
+    "s": 12.4,
+    "phase": "call",
+    "test": "tests/unit/test_disputes.py::test_rule_a_pays_at_the_deadline_or_when_a_person_accepts"
+   },
+   {
+    "s": 11.91,
+    "phase": "call",
+    "test": "tests/unit/test_delivery.py::test_personal_data_items_are_not_stored_and_cannot_be_accepted"
+   }
+  ],
+  "coverage": {
+   "lines_pct": 89.8,
+   "branches_pct": 82.8,
+   "statements": 4768,
+   "branches": 1586,
+   "total_pct": 88.0,
+   "files": {
+    "bank/__init__.py": {
+     "lines": 0.0,
+     "branches": null
+    },
+    "bank/api.py": {
+     "lines": 74.8,
+     "branches": 64.7
+    },
+    "bank/app.py": {
+     "lines": 61.9,
+     "branches": 0.0
+    },
+    "bank/chain.py": {
+     "lines": 92.6,
+     "branches": 82.8
+    },
+    "bank/claims_c.py": {
+     "lines": 90.3,
+     "branches": 84.4
+    },
+    "bank/codes.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/config.py": {
+     "lines": 98.6,
+     "branches": 50.0
+    },
+    "bank/core.py": {
+     "lines": 90.3,
+     "branches": 75.0
+    },
+    "bank/db.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/deadlines.py": {
+     "lines": 68.9,
+     "branches": 62.5
+    },
+    "bank/deals.py": {
+     "lines": 88.6,
+     "branches": 79.2
+    },
+    "bank/deciders.py": {
+     "lines": 90.4,
+     "branches": 76.0
+    },
+    "bank/disputes.py": {
+     "lines": 93.6,
+     "branches": 89.5
+    },
+    "bank/escrow.py": {
+     "lines": 93.5,
+     "branches": 70.6
+    },
+    "bank/explain.py": {
+     "lines": 100.0,
+     "branches": 96.4
+    },
+    "bank/facilitator.py": {
+     "lines": 93.2,
+     "branches": 91.3
+    },
+    "bank/journal.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/llm.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/mandate.py": {
+     "lines": 96.8,
+     "branches": 91.7
+    },
+    "bank/money.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/receipts.py": {
+     "lines": 96.2,
+     "branches": 94.0
+    },
+    "bank/screening/__init__.py": {
+     "lines": 90.3,
+     "branches": 90.6
+    },
+    "bank/screening/accounts.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/screening/ares.py": {
+     "lines": 94.3,
+     "branches": 87.5
+    },
+    "bank/screening/datasets.py": {
+     "lines": 78.0,
+     "branches": 61.1
+    },
+    "bank/screening/isir.py": {
+     "lines": 97.0,
+     "branches": 87.5
+    },
+    "bank/screening/sanctions.py": {
+     "lines": 67.8,
+     "branches": 64.7
+    },
+    "bank/screening/vat.py": {
+     "lines": 91.5,
+     "branches": 85.7
+    },
+    "bank/screening/website.py": {
+     "lines": 74.2,
+     "branches": 80.0
+    },
+    "bank/snapshots.py": {
+     "lines": 86.7,
+     "branches": 76.8
+    },
+    "bank/tczk.py": {
+     "lines": 78.8,
+     "branches": 52.3
+    },
+    "bank/timing.py": {
+     "lines": 100.0,
+     "branches": 100.0
+    },
+    "bank/ui.py": {
+     "lines": 86.6,
+     "branches": 76.3
+    },
+    "bank/verifier.py": {
+     "lines": 89.8,
+     "branches": 84.1
+    },
+    "bank/webhooks.py": {
+     "lines": 85.3,
+     "branches": 79.3
+    },
+    "bank/x402_buyer.py": {
+     "lines": 82.6,
+     "branches": 50.0
+    }
+   }
+  }
+ },
+ "lists": {
+  "refusal_codes": [
+   "MANDATE_NOT_ACTIVE",
+   "MANDATE_EXPIRED",
+   "CATEGORY_NOT_IN_SCOPE",
+   "COUNTERPARTY_NOT_IN_SCOPE",
+   "COUNTERPARTY_NOT_TRUSTED",
+   "AMOUNT_ABOVE_LIMIT",
+   "BUDGET_EXCEEDED",
+   "QUOTE_MISMATCH",
+   "VELOCITY_EXCEEDED",
+   "TERMS_MISMATCH",
+   "CONFIRMATION_REQUIRED",
+   "VAT_LIABILITY_RISK",
+   "UNDER_REVIEW"
+  ],
+  "requires_user_action": [
+   "CONFIRMATION_REQUIRED",
+   "VAT_LIABILITY_RISK"
+  ],
+  "predicate_ops": [
+   "required",
+   "eq",
+   "in",
+   "range",
+   "regex",
+   "json_schema",
+   "unique",
+   "max_count",
+   "registry_active",
+   "source"
+  ],
+  "item_codes": [
+   "SCHEMA_FAIL",
+   "CRITERIA_FAIL",
+   "DUPLICATE",
+   "REGISTRY_CONTRADICTION",
+   "SOURCE_UNAVAILABLE"
+  ],
+  "delivery_codes": [
+   "NO_DELIVERY",
+   "SHORT",
+   "BAD_SIGNATURE",
+   "WRONG_DEAL",
+   "ROOT_MISMATCH",
+   "QUOTA_EXCEEDED"
+  ],
+  "bank_error_codes": [
+   "OUT_OF_MANDATE",
+   "DOUBLE_PAYMENT"
+  ],
+  "personal_fields_dropped": [
+   "phone",
+   "phoneUnformatted",
+   "phones",
+   "phonesUncertain",
+   "reviews",
+   "email",
+   "emails"
+  ],
+  "journal_events_static": [
+   "agent_turn",
+   "authorize_failed",
+   "authorize_pending",
+   "autocode",
+   "budget_booking_skipped",
+   "budget_committed",
+   "budget_refused",
+   "budget_released",
+   "budget_reserved",
+   "buyer_message",
+   "claim_b.filed",
+   "claim_c.filed",
+   "claim_c.inadmissible",
+   "claim_c.tick_failed",
+   "claim_fee_released",
+   "claim_fee_reserved",
+   "clearing_transfer",
+   "clearing_transfer_failed",
+   "deal_created",
+   "decider.challenge_committed",
+   "decider.challenge_revealed",
+   "decider.decided",
+   "decider.late",
+   "decider.sampled",
+   "decider.selected",
+   "decider.stage_opened",
+   "delivery.accepted",
+   "delivery.accepted_anyway",
+   "delivery.autocodes",
+   "delivery.item_decided",
+   "delivery.recheck_failed",
+   "delivery_received",
+   "delivery_retry_failed",
+   "demo.scenario",
+   "demo.started",
+   "escrow_authorized",
+   "escrow_authorized_late",
+   "escrow_captured",
+   "escrow_expiry_alarm",
+   "escrow_fee_captured",
+   "escrow_locked",
+   "escrow_returned",
+   "escrow_split_off",
+   "escrow_voided",
+   "incoming_transfer",
+   "mandate_version",
+   "negotiate_reply",
+   "offer_ignored",
+   "offer_stored",
+   "old_lock_returned",
+   "pay_decision",
+   "payment_info_dropped",
+   "payment_info_stored",
+   "quote_accepted",
+   "screening.checked",
+   "screening.error",
+   "screening_prefetch_failed",
+   "seller_escrow_answer",
+   "seller_key_registered",
+   "seller_key_revoked",
+   "seller_not_notified",
+   "seller_reply",
+   "settlement.accepted",
+   "settlement.already_booked",
+   "settlement.closed",
+   "settlement.opened",
+   "settlement.tx_failed",
+   "settlement_failed",
+   "snapshot.drain_failed",
+   "snapshot.gave_up",
+   "timer",
+   "timer_error",
+   "vat_risk_acknowledged",
+   "webhook_rejected",
+   "webhook_unverified"
+  ],
+  "journal_events_observed_in_sim": [
+   "agent_turn",
+   "budget_committed",
+   "budget_released",
+   "budget_reserved",
+   "buyer_message",
+   "deal_created",
+   "delivery.accepted",
+   "delivery.autocodes",
+   "delivery_received",
+   "demo.scenario",
+   "demo.started",
+   "escrow_authorized",
+   "escrow_captured",
+   "escrow_locked",
+   "escrow_voided",
+   "mandate_version",
+   "offer_stored",
+   "pay_refused",
+   "pay_requires_user_action",
+   "payment_confirmed",
+   "payment_info_stored",
+   "quote_accepted",
+   "screening.checked",
+   "seller_escrow_answer",
+   "seller_key_registered",
+   "seller_reply",
+   "settlement.capture",
+   "settlement.closed",
+   "settlement.opened",
+   "settlement.void",
+   "vat_risk_acknowledged"
+  ]
+ },
+ "scenarios": {
+  "scenarios-fork.json": {
+   "label": "anvil fork of Base Sepolia (chain id 84532) at block 48324278",
+   "runs": 3,
+   "by_group": {
+    "success": {
+     "scenarios": 5,
+     "runs": 15,
+     "pass": 15,
+     "xfail": 0,
+     "fail": 0
+    },
+    "negative/attack": {
+     "scenarios": 14,
+     "runs": 42,
+     "pass": 42,
+     "xfail": 0,
+     "fail": 0
+    },
+    "API auth": {
+     "scenarios": 1,
+     "runs": 3,
+     "pass": 3,
+     "xfail": 0,
+     "fail": 0
+    },
+    "fault injection": {
+     "scenarios": 5,
+     "runs": 15,
+     "pass": 9,
+     "xfail": 6,
+     "fail": 0
+    }
+   },
+   "txs": 180,
+   "seconds": 221.7,
+   "scenario_seconds": {
+    "n": 75,
+    "p50": 0.84,
+    "p95": 7.36,
+    "max": 9.7,
+    "mean": 2.237
+   },
+   "reconciliation_ok": true,
+   "deals_reconciled": "39/39",
+   "wrong_debits": 0,
+   "journals_verified": "19/19"
+  },
+  "scenarios-sepolia-n10n11.json": {
+   "label": "Base Sepolia (chain id 84532)",
+   "runs": 1,
+   "by_group": {
+    "negative/attack": {
+     "scenarios": 2,
+     "runs": 2,
+     "pass": 2,
+     "xfail": 0,
+     "fail": 0
+    }
+   },
+   "txs": 3,
+   "seconds": 31.5,
+   "scenario_seconds": {
+    "n": 2,
+    "p50": 11.91,
+    "p95": 15.41,
+    "max": 15.41,
+    "mean": 13.66
+   },
+   "reconciliation_ok": true,
+   "deals_reconciled": "0/0",
+   "wrong_debits": 0,
+   "journals_verified": "1/1"
+  },
+  "scenarios-sepolia-tczk-strict.json": {
+   "label": "Base Sepolia (chain id 84532)",
+   "runs": 1,
+   "by_group": {
+    "success": {
+     "scenarios": 1,
+     "runs": 1,
+     "pass": 1,
+     "xfail": 0,
+     "fail": 0
+    }
+   },
+   "txs": 4,
+   "seconds": 35.1,
+   "scenario_seconds": {
+    "n": 1,
+    "p50": 27.72,
+    "p95": 27.72,
+    "max": 27.72,
+    "mean": 27.72
+   },
+   "reconciliation_ok": true,
+   "deals_reconciled": "1/1",
+   "wrong_debits": 0,
+   "journals_verified": "1/1"
+  },
+  "scenarios-sepolia.json": {
+   "label": "Base Sepolia (chain id 84532)",
+   "runs": 1,
+   "by_group": {
+    "success": {
+     "scenarios": 5,
+     "runs": 5,
+     "pass": 5,
+     "xfail": 0,
+     "fail": 0
+    },
+    "negative/attack": {
+     "scenarios": 14,
+     "runs": 14,
+     "pass": 12,
+     "xfail": 0,
+     "fail": 2
+    },
+    "API auth": {
+     "scenarios": 1,
+     "runs": 1,
+     "pass": 1,
+     "xfail": 0,
+     "fail": 0
+    }
+   },
+   "txs": 54,
+   "seconds": 436.0,
+   "scenario_seconds": {
+    "n": 20,
+    "p50": 14.94,
+    "p95": 33.6,
+    "max": 71.1,
+    "mean": 20.7
+   },
+   "reconciliation_ok": true,
+   "deals_reconciled": "12/12",
+   "wrong_debits": 0,
+   "journals_verified": "2/2"
+  }
+ },
+ "timings_reports": {
+  "Base Sepolia": {
+   "decision": {
+    "n": 44,
+    "p50": 0.573,
+    "p95": 13.259,
+    "max": 776.792,
+    "mean": 19.858
+   },
+   "screening": {
+    "n": 37,
+    "p50": 21.67,
+    "p95": 129.45,
+    "max": 133.112,
+    "mean": 33.472
+   },
+   "facilitator_verify": {
+    "n": 2,
+    "p50": 375.274,
+    "p95": 809.099,
+    "max": 809.099,
+    "mean": 592.187
+   },
+   "facilitator_settle": {
+    "n": 2,
+    "p50": 325.883,
+    "p95": 1292.664,
+    "max": 1292.664,
+    "mean": 809.274
+   },
+   "refusal_to_client": {
+    "n": 13,
+    "p50": 0.73,
+    "p95": 42.676,
+    "max": 42.676,
+    "mean": 7.673
+   },
+   "api_pay": {
+    "n": 24,
+    "p50": 123.897,
+    "p95": 6653.464,
+    "max": 6766.122,
+    "mean": 2389.617
+   },
+   "quote": {
+    "n": 25,
+    "p50": 18.03,
+    "p95": 23.769,
+    "max": 25.803,
+    "mean": 14.993
+   },
+   "negotiate_proxy": {
+    "n": 25,
+    "p50": 24.618,
+    "p95": 52.839,
+    "max": 57.416,
+    "mean": 26.3
+   },
+   "notify_seller": {
+    "n": 12,
+    "p50": 1800.902,
+    "p95": 2146.882,
+    "max": 2146.882,
+    "mean": 1847.142
+   },
+   "escrow_authorize": {
+    "n": 12,
+    "p50": 3230.716,
+    "p95": 4898.778,
+    "max": 4898.778,
+    "mean": 3261.808
+   },
+   "escrow_capture": {
+    "n": 23,
+    "p50": 1569.262,
+    "p95": 3341.081,
+    "max": 3577.396,
+    "mean": 1820.092
+   },
+   "escrow_void": {
+    "n": 4,
+    "p50": 1072.313,
+    "p95": 3588.987,
+    "max": 3588.987,
+    "mean": 1753.354
+   },
+   "tx_in_block (all kinds)": {
+    "n": 40,
+    "p50": 193.306,
+    "p95": 830.652,
+    "max": 869.909,
+    "mean": 406.338
+   },
+   "broadcast:x402_settle": {
+    "n": 1,
+    "p50": 162.869,
+    "p95": 162.869,
+    "max": 162.869,
+    "mean": 162.869
+   },
+   "tx_in_block:x402_settle": {
+    "n": 1,
+    "p50": 158.122,
+    "p95": 158.122,
+    "max": 158.122,
+    "mean": 158.122
+   },
+   "broadcast:authorize": {
+    "n": 12,
+    "p50": 145.167,
+    "p95": 193.545,
+    "max": 193.545,
+    "mean": 148.016
+   },
+   "tx_in_block:authorize": {
+    "n": 12,
+    "p50": 285.808,
+    "p95": 869.909,
+    "max": 869.909,
+    "mean": 480.274
+   },
+   "broadcast:capture": {
+    "n": 23,
+    "p50": 141.759,
+    "p95": 200.453,
+    "max": 240.998,
+    "mean": 155.217
+   },
+   "tx_in_block:capture": {
+    "n": 23,
+    "p50": 205.327,
+    "p95": 799.02,
+    "max": 830.652,
+    "mean": 398.925
+   },
+   "broadcast:void": {
+    "n": 4,
+    "p50": 172.279,
+    "p95": 259.514,
+    "max": 259.514,
+    "mean": 201.542
+   },
+   "tx_in_block:void": {
+    "n": 4,
+    "p50": 135.611,
+    "p95": 764.624,
+    "max": 764.624,
+    "mean": 289.21
+   }
+  },
+  "fork": {
+   "decision": {
+    "n": 144,
+    "p50": 0.478,
+    "p95": 31.86,
+    "max": 60.969,
+    "mean": 4.3
+   },
+   "screening": {
+    "n": 119,
+    "p50": 21.961,
+    "p95": 123.888,
+    "max": 132.38,
+    "mean": 35.567
+   },
+   "facilitator_verify": {
+    "n": 6,
+    "p50": 12.576,
+    "p95": 610.784,
+    "max": 610.784,
+    "mean": 162.9
+   },
+   "facilitator_settle": {
+    "n": 12,
+    "p50": 660.591,
+    "p95": 841.558,
+    "max": 841.558,
+    "mean": 530.344
+   },
+   "refusal_to_client": {
+    "n": 42,
+    "p50": 3.459,
+    "p95": 47.351,
+    "max": 61.038,
+    "mean": 11.381
+   },
+   "api_pay": {
+    "n": 78,
+    "p50": 93.027,
+    "p95": 2502.436,
+    "max": 2970.105,
+    "mean": 836.127
+   },
+   "quote": {
+    "n": 81,
+    "p50": 6.248,
+    "p95": 17.277,
+    "max": 24.357,
+    "mean": 9.119
+   },
+   "negotiate_proxy": {
+    "n": 81,
+    "p50": 22.499,
+    "p95": 62.623,
+    "max": 104.792,
+    "mean": 30.028
+   },
+   "notify_seller": {
+    "n": 39,
+    "p50": 15.57,
+    "p95": 25.188,
+    "max": 258.759,
+    "mean": 22.714
+   },
+   "escrow_authorize": {
+    "n": 39,
+    "p50": 1934.14,
+    "p95": 2543.94,
+    "max": 2897.017,
+    "mean": 1728.299
+   },
+   "escrow_capture": {
+    "n": 72,
+    "p50": 677.323,
+    "p95": 1741.794,
+    "max": 1799.555,
+    "mean": 937.301
+   },
+   "escrow_void": {
+    "n": 12,
+    "p50": 688.872,
+    "p95": 1772.419,
+    "max": 1772.419,
+    "mean": 936.308
+   },
+   "tx_in_block (all kinds)": {
+    "n": 139,
+    "p50": 641.403,
+    "p95": 752.085,
+    "max": 795.209,
+    "mean": 657.39
+   },
+   "broadcast:x402_settle": {
+    "n": 9,
+    "p50": 1.063,
+    "p95": 1.461,
+    "max": 1.461,
+    "mean": 1.093
+   },
+   "tx_in_block:x402_settle": {
+    "n": 9,
+    "p50": 637.589,
+    "p95": 795.209,
+    "max": 795.209,
+    "mean": 666.126
+   },
+   "broadcast:authorize": {
+    "n": 39,
+    "p50": 1.132,
+    "p95": 3.157,
+    "max": 3.744,
+    "mean": 1.289
+   },
+   "tx_in_block:authorize": {
+    "n": 39,
+    "p50": 642.984,
+    "p95": 752.618,
+    "max": 766.208,
+    "mean": 653.378
+   },
+   "broadcast:capture": {
+    "n": 72,
+    "p50": 1.03,
+    "p95": 2.068,
+    "max": 2.702,
+    "mean": 1.139
+   },
+   "tx_in_block:capture": {
+    "n": 72,
+    "p50": 640.484,
+    "p95": 752.085,
+    "max": 793.891,
+    "mean": 658.792
+   },
+   "broadcast:void": {
+    "n": 12,
+    "p50": 1.123,
+    "p95": 1.231,
+    "max": 1.231,
+    "mean": 1.075
+   },
+   "tx_in_block:void": {
+    "n": 12,
+    "p50": 647.14,
+    "p95": 729.748,
+    "max": 729.748,
+    "mean": 663.857
+   },
+   "broadcast:tczk_disallow": {
+    "n": 1,
+    "p50": 1.457,
+    "p95": 1.457,
+    "max": 1.457,
+    "mean": 1.457
+   },
+   "tx_in_block:tczk_disallow": {
+    "n": 1,
+    "p50": 636.743,
+    "p95": 636.743,
+    "max": 636.743,
+    "mean": 636.743
+   },
+   "broadcast:attack_direct_transfer": {
+    "n": 3,
+    "p50": 0.889,
+    "p95": 0.954,
+    "max": 0.954,
+    "mean": 0.907
+   },
+   "tx_in_block:attack_direct_transfer": {
+    "n": 3,
+    "p50": 628.234,
+    "p95": 641.403,
+    "max": 641.403,
+    "mean": 631.401
+   },
+   "broadcast:attack_replay": {
+    "n": 3,
+    "p50": 1.474,
+    "p95": 1.812,
+    "max": 1.812,
+    "mean": 1.461
+   },
+   "tx_in_block:attack_replay": {
+    "n": 3,
+    "p50": 619.222,
+    "p95": 736.443,
+    "max": 736.443,
+    "mean": 656.69
+   }
+  }
+ },
+ "evals": {
+  "injections": {
+   "variants": 20,
+   "controls": 2,
+   "money_blocked": 20,
+   "money_runs": 50,
+   "money_runs_blocked": 50,
+   "outcome_as_expected": 19,
+   "controls_paid": 2,
+   "scripted_agent_followed": 2,
+   "scripted_agent_runs": 15,
+   "live_runs": 17,
+   "live_money_blocked": 17,
+   "live_outcome_as_expected": 16,
+   "live_agent_tried_unsafe": 0,
+   "items_variants": 3,
+   "items_paid_by_injection": 0
+  },
+  "judge": {
+   "items": 40,
+   "precision": 1.0,
+   "recall": 1.0,
+   "tp": 19,
+   "fp": 0,
+   "fn": 0,
+   "tn": 21,
+   "valid_json_rate": 1.0,
+   "model": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "injection_flagged": true
+  },
+  "explanations": {
+   "texts": 64,
+   "sources_subset": 64,
+   "client_texts": 32,
+   "client_clean": 32,
+   "ai_texts": 29,
+   "ai_labelled": 29
+  }
+ },
+ "micro": {
+  "mandate_decide": {
+   "n": 1000,
+   "p50": 0.478,
+   "p95": 4.807,
+   "max": 154.238,
+   "mean": 1.816
+  },
+  "predicates_delivery": {
+   "n": 200,
+   "p50": 6.99,
+   "p95": 140.985,
+   "max": 310.182,
+   "mean": 31.228,
+   "items": 20,
+   "predicates": 7
+  },
+  "predicates_item": {
+   "n": 1000,
+   "p50": 0.231,
+   "p95": 2.112,
+   "max": 31.158,
+   "mean": 0.698
+  },
+  "merkle_root": {
+   "n": 500,
+   "p50": 0.67,
+   "p95": 5.955,
+   "max": 122.306,
+   "mean": 1.932,
+   "items": 20
+  },
+  "merkle_proof": {
+   "n": 500,
+   "p50": 0.711,
+   "p95": 22.815,
+   "max": 145.494,
+   "mean": 4.044
+  },
+  "manifest_sign": {
+   "n": 300,
+   "p50": 9.785,
+   "p95": 119.107,
+   "max": 290.265,
+   "mean": 21.995
+  },
+  "manifest_verify": {
+   "n": 300,
+   "p50": 15.659,
+   "p95": 72.251,
+   "max": 420.218,
+   "mean": 28.065
+  }
+ },
+ "sim": {
+  "runs": {
+   "honest": {
+    "seconds": 2.029,
+    "outcome": "ok",
+    "deals": [
+     "d-e3927ac202"
+    ],
+    "after_human": {
+     "what": "VAT acknowledgement",
+     "seconds": 4.292,
+     "outcome": "ok"
+    }
+   },
+   "fake_data": {
+    "seconds": 1.524,
+    "outcome": "ok",
+    "deals": [
+     "d-67c80febe6"
+    ]
+   },
+   "attack": {
+    "seconds": 1.02,
+    "outcome": "COUNTERPARTY_NOT_IN_SCOPE",
+    "deals": [
+     "d-ecef605efc"
+    ]
+   },
+   "suspicious": {
+    "seconds": 0.616,
+    "outcome": "COUNTERPARTY_NOT_TRUSTED",
+    "deals": [
+     "d-9bf9c57a65"
+    ]
+   },
+   "tczk": {
+    "seconds": 0.494,
+    "outcome": "ok",
+    "deals": [
+     "d-c975f76f8d"
+    ],
+    "after_human": {
+     "what": "confirmation",
+     "seconds": 0.349,
+     "outcome": "ok"
+    }
+   }
+  },
+  "seconds": 10.32,
+  "deals": 5,
+  "stages": {
+   "screening": {
+    "n": 36,
+    "p50": 105.346,
+    "p95": 521.356,
+    "max": 539.655,
+    "mean": 161.846
+   },
+   "negotiate_proxy": {
+    "n": 7,
+    "p50": 62.415,
+    "p95": 251.894,
+    "max": 251.894,
+    "mean": 102.213
+   },
+   "quote": {
+    "n": 7,
+    "p50": 30.365,
+    "p95": 76.542,
+    "max": 76.542,
+    "mean": 37.747
+   },
+   "decision": {
+    "n": 12,
+    "p50": 1.617,
+    "p95": 9.361,
+    "max": 9.361,
+    "mean": 3.302
+   },
+   "api_pay": {
+    "n": 5,
+    "p50": 74.74,
+    "p95": 741.109,
+    "max": 741.109,
+    "mean": 193.838
+   },
+   "escrow_authorize": {
+    "n": 3,
+    "p50": 1.987,
+    "p95": 2.812,
+    "max": 2.812,
+    "mean": 2.252
+   },
+   "escrow_capture": {
+    "n": 6,
+    "p50": 1.128,
+    "p95": 6.113,
+    "max": 6.113,
+    "mean": 1.947
+   },
+   "notify_seller": {
+    "n": 3,
+    "p50": 676.783,
+    "p95": 4146.425,
+    "max": 4146.425,
+    "mean": 1693.487
+   },
+   "escrow_void": {
+    "n": 1,
+    "p50": 3.333,
+    "p95": 3.333,
+    "max": 3.333,
+    "mean": 3.333
+   }
+  },
+  "calls_per_deal_by_stage": {
+   "buyer": 5.2,
+   "criteria": 1.0,
+   "seller": 1.4
+  },
+  "journal_events_observed": [
+   "agent_turn",
+   "budget_committed",
+   "budget_released",
+   "budget_reserved",
+   "buyer_message",
+   "deal_created",
+   "delivery.accepted",
+   "delivery.autocodes",
+   "delivery_received",
+   "demo.scenario",
+   "demo.started",
+   "escrow_authorized",
+   "escrow_captured",
+   "escrow_locked",
+   "escrow_voided",
+   "mandate_version",
+   "offer_stored",
+   "pay_refused",
+   "pay_requires_user_action",
+   "payment_confirmed",
+   "payment_info_stored",
+   "quote_accepted",
+   "screening.checked",
+   "seller_escrow_answer",
+   "seller_key_registered",
+   "seller_reply",
+   "settlement.capture",
+   "settlement.closed",
+   "settlement.opened",
+   "settlement.void",
+   "vat_risk_acknowledged"
+  ],
+  "journal_entries": 171,
+  "txs": {
+   "authorize": 3,
+   "capture": 6,
+   "void": 1
+  },
+  "pages": {
+   "/story": {
+    "n": 50,
+    "p50": 25.685,
+    "p95": 117.999,
+    "max": 159.851,
+    "mean": 40.274,
+    "status": [
+     200
+    ],
+    "bytes": 16329
+   },
+   "/bank": {
+    "n": 50,
+    "p50": 26.481,
+    "p95": 218.862,
+    "max": 270.647,
+    "mean": 52.928,
+    "status": [
+     200
+    ],
+    "bytes": 27366
+   },
+   "/mandate": {
+    "n": 50,
+    "p50": 16.24,
+    "p95": 56.73,
+    "max": 106.465,
+    "mean": 23.199,
+    "status": [
+     200
+    ],
+    "bytes": 11339
+   },
+   "/deals": {
+    "n": 50,
+    "p50": 21.568,
+    "p95": 54.877,
+    "max": 91.558,
+    "mean": 26.559,
+    "status": [
+     200
+    ],
+    "bytes": 11351
+   },
+   "/deals/{id}": {
+    "n": 50,
+    "p50": 37.103,
+    "p95": 104.152,
+    "max": 122.061,
+    "mean": 43.738,
+    "status": [
+     200
+    ],
+    "bytes": 23748
+   },
+   "/statement": {
+    "n": 50,
+    "p50": 29.751,
+    "p95": 91.416,
+    "max": 94.71,
+    "mean": 39.746,
+    "status": [
+     200
+    ],
+    "bytes": 12223
+   },
+   "/statement/reconcile": {
+    "n": 50,
+    "p50": 41.871,
+    "p95": 137.866,
+    "max": 187.939,
+    "mean": 51.305,
+    "status": [
+     200
+    ],
+    "bytes": 847
+   }
+  },
+  "config_divisors": [
+   100,
+   90.0
+  ]
+ },
+ "model": {
+  "per_call": {
+   "buyer": {
+    "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+    "calls": 67,
+    "usd_per_call": 0.015500888059701493,
+    "in_per_call": 1975.134328358209,
+    "out_per_call": 168.6417910447761,
+    "mean_ms": 3670.684040496265
+   },
+   "criteria": {
+    "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+    "calls": 17,
+    "usd_per_call": 0.0019635,
+    "in_per_call": 92.0,
+    "out_per_call": 53.0,
+    "mean_ms": 1830.0737842013511
+   },
+   "explain": {
+    "model": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "calls": 29,
+    "usd_per_call": 0.0005994241379310345,
+    "in_per_call": 166.48275862068965,
+    "out_per_call": 75.6896551724138,
+    "mean_ms": 1058.868010070753
+   },
+   "judge": {
+    "model": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "calls": 4,
+    "usd_per_call": 0.00901285,
+    "in_per_call": 1942.25,
+    "out_per_call": 1250.25,
+    "mean_ms": 5452.66890648054
+   }
+  },
+  "usd_per_deal_by_stage": {
+   "buyer": 0.061091735294117655,
+   "criteria": 0.0019635,
+   "judge (20-item delivery)": 0.0180257
+  },
+  "usd_per_deal": 0.08108093529411765
+ },
+ "journal": {
+  "1000": {
+   "append": {
+    "n": 1000,
+    "p50": 0.29,
+    "p95": 2.808,
+    "max": 35.282,
+    "mean": 0.824
+   },
+   "append_total_s": 0.826,
+   "verify_s": 0.1023,
+   "verify_ok": true,
+   "verify_us_per_entry": 102.28
+  },
+  "10000": {
+   "append": {
+    "n": 10000,
+    "p50": 0.189,
+    "p95": 3.562,
+    "max": 89.454,
+    "mean": 0.866
+   },
+   "append_total_s": 8.725,
+   "verify_s": 0.1747,
+   "verify_ok": true,
+   "verify_us_per_entry": 17.47
+  }
+ },
+ "race": {
+  "rounds": 20,
+  "parallel_pays": 10,
+  "budget_for": 3,
+  "overspend_rounds": 0,
+  "paid_per_round": [
+   3
+  ],
+  "wall_ms": {
+   "n": 20,
+   "p50": 162.514,
+   "p95": 301.292,
+   "max": 325.384,
+   "mean": 184.432
+  }
+ },
+ "onchain": {
+  "gas": {
+   "authorize": 161439,
+   "capture": 68475,
+   "void": 61208,
+   "x402_settle": 82518,
+   "mint": 71222
+  },
+  "gas_price_wei": 6000000,
+  "gas_price_source": "eth_gasPrice https://mainnet.base.org (now)",
+  "eth_eur": 3000.0,
+  "per_deal": {
+   "rule A (authorize + capture)": {
+    "gas": 229914,
+    "eur": 0.004138452
+   },
+   "rule B (authorize + 2 captures)": {
+    "gas": 298389,
+    "eur": 0.005371002
+   },
+   "rule B with rejects (authorize + 2 captures + void)": {
+    "gas": 359597,
+    "eur": 0.006472746
+   },
+   "x402 direct (settle)": {
+    "gas": 82518,
+    "eur": 0.001485324
+   }
+  },
+  "tariff": {
+   "5 € T0/A": {
+    "bps": 0,
+    "fee_eur": 0.0,
+    "gas_eur": 0.004138452,
+    "margin_eur": -0.004138452
+   },
+   "100 € T1/B": {
+    "bps": 120,
+    "fee_eur": 1.2,
+    "gas_eur": 0.005371002,
+    "margin_eur": 1.194628998
+   },
+   "100 € T1/A": {
+    "bps": 80,
+    "fee_eur": 0.8,
+    "gas_eur": 0.004138452,
+    "margin_eur": 0.7958615480000001
+   },
+   "1000 € T2/C": {
+    "bps": 150,
+    "fee_eur": 15.0,
+    "gas_eur": 0.006472746,
+    "margin_eur": 14.993527254
+   },
+   "5 € demo deal (demo scale)": {
+    "tier": "T1",
+    "bps": 120,
+    "fee_eur": 0.06,
+    "gas_eur": 0.005371002,
+    "margin_eur": 0.054628998
+   }
+  },
+  "tariff_bps": {
+   "T0/A": 0,
+   "T1/A": 80,
+   "T1/B": 120,
+   "T2/A": 150,
+   "T2/B": 150,
+   "T2/C": 150
+  }
+ },
+ "apify": {
+  "ok": true,
+  "cycle": {
+   "startAt": "2026-10-20T00:00:00.000Z",
+   "endAt": "2026-11-19T23:59:59.999Z"
+  },
+  "monthly_usage_usd": 3.4157116632067004e-06,
+  "max_monthly_usage_usd": 105,
+  "left_usd": 105.0,
+  "actor_compute_units": 0,
+  "max_actor_compute_units": 625,
+  "actor_memory_gbytes": 0,
+  "max_actor_memory_gbytes": 16,
+  "active_actor_jobs": 0,
+  "max_concurrent_actor_jobs": 5,
+  "last_runs": {
+   "n": 5,
+   "usd_median": 0.0122,
+   "usd_max": 0.3702,
+   "runtime_s_median": 26.0,
+   "succeeded": 5
+  },
+  "runs_left_at_median": 8606
+ },
+ "seconds": 97.4,
+ "numbers": [
+  {
+   "group": "code",
+   "metric": "bank (Python): lines (non-blank, non-comment)",
+   "value": "7585 (5963)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "bank/**/*.py"
+  },
+  {
+   "group": "code",
+   "metric": "bank UI templates: lines (non-blank, non-comment)",
+   "value": "537 (527)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "bank/templates/**/*"
+  },
+  {
+   "group": "code",
+   "metric": "agents: lines (non-blank, non-comment)",
+   "value": "662 (529)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "agents/**/*.py+agents/prompts/**/*+prompts/**/*"
+  },
+  {
+   "group": "code",
+   "metric": "seller: lines (non-blank, non-comment)",
+   "value": "469 (392)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "seller/**/*.py"
+  },
+  {
+   "group": "code",
+   "metric": "scripts: lines (non-blank, non-comment)",
+   "value": "3895 (3280)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "scripts/**/*.py"
+  },
+  {
+   "group": "code",
+   "metric": "tests: lines (non-blank, non-comment)",
+   "value": "6109 (4688)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "tests/**/*.py+tests/**/*.jsonl"
+  },
+  {
+   "group": "code",
+   "metric": "Apify actor: lines (non-blank, non-comment)",
+   "value": "271 (220)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "actors/company-check/**/*.py+actors/company-check/Dockerfile"
+  },
+  {
+   "group": "code",
+   "metric": "contracts (Solidity, own): lines (non-blank, non-comment)",
+   "value": "755 (618)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "contracts/src/**/*.sol+contracts/test/**/*.sol+contracts/script/**/*.sol"
+  },
+  {
+   "group": "code",
+   "metric": "fixtures: lines (non-blank, non-comment)",
+   "value": "2657 (2657)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "fixtures/**/*.json"
+  },
+  {
+   "group": "code",
+   "metric": "infra/deploy: lines (non-blank, non-comment)",
+   "value": "475 (441)",
+   "unit": "lines",
+   "how": "line count of tracked source files",
+   "source": "infra/**/*+deploy/**/*+Dockerfile"
+  },
+  {
+   "group": "code",
+   "metric": "total lines (all components above)",
+   "value": 23415,
+   "unit": "lines",
+   "how": "sum",
+   "source": ""
+  },
+  {
+   "group": "code",
+   "metric": "git commits on this branch",
+   "value": 119,
+   "unit": "",
+   "how": "git rev-list --count HEAD",
+   "source": "git"
+  },
+  {
+   "group": "tests",
+   "metric": "tests collected (unit + evals, incl. live/fork ones that skip offline)",
+   "value": "512 in 33 files",
+   "unit": "tests",
+   "how": "pytest --collect-only -q",
+   "source": "tests/"
+  },
+  {
+   "group": "tests",
+   "metric": "tests collected / passed / failed / skipped",
+   "value": "512 / 506 / 0 / 6",
+   "unit": "",
+   "how": "pytest (MOCK=1, FORK=0, LIVE=0 as in CI), junit.xml",
+   "source": "pytest run of this script"
+  },
+  {
+   "group": "tests",
+   "metric": "test suite runtime (with coverage)",
+   "value": 844.5,
+   "unit": "s",
+   "how": "junit.xml total time",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  evals: tests, seconds",
+   "value": "27, 79.7",
+   "unit": "",
+   "how": "junit.xml per class prefix",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  unit: tests, seconds",
+   "value": "485, 713.1",
+   "unit": "",
+   "how": "junit.xml per class prefix",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "test suite CPU time (user + system)",
+   "value": 134.8,
+   "unit": "s",
+   "how": "shell `time`; wall time above is mostly waiting (timeouts, timers, a loaded shared machine)",
+   "source": "pytest.log"
+  },
+  {
+   "group": "tests",
+   "metric": "slowest test",
+   "value": "68.63 s (setup) tests/evals/test_injections.py::test_money_level_block_rate_is_100_percent",
+   "unit": "",
+   "how": "pytest --durations=15",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "coverage of bank/: lines / branches",
+   "value": "89.8 / 82.8 (4768 statements, 1586 branches)",
+   "unit": "%",
+   "how": "pytest --cov=bank --cov-branch, coverage.json totals",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/mandate.py: lines / branches",
+   "value": "96.8 / 91.7",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/verifier.py: lines / branches",
+   "value": "89.8 / 84.1",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/explain.py: lines / branches",
+   "value": "100.0 / 96.4",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/escrow.py: lines / branches",
+   "value": "93.5 / 70.6",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/deals.py: lines / branches",
+   "value": "88.6 / 79.2",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/facilitator.py: lines / branches",
+   "value": "93.2 / 91.3",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "tests",
+   "metric": "  coverage bank/journal.py: lines / branches",
+   "value": "100.0 / 100.0",
+   "unit": "%",
+   "how": "coverage.json per file",
+   "source": ""
+  },
+  {
+   "group": "lists",
+   "metric": "decision codes (closed enum, SPEC §6.3)",
+   "value": 13,
+   "unit": "codes",
+   "how": "len(bank.codes.Code)",
+   "source": "bank/codes.py"
+  },
+  {
+   "group": "lists",
+   "metric": "  of them requires_user_action (confirm / VAT)",
+   "value": 2,
+   "unit": "codes",
+   "how": "codes.SPEC status",
+   "source": "bank/codes.py"
+  },
+  {
+   "group": "lists",
+   "metric": "predicate operators",
+   "value": 10,
+   "unit": "ops",
+   "how": "len(verifier.OPS)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "lists",
+   "metric": "item autocodes (per item)",
+   "value": 5,
+   "unit": "codes",
+   "how": "len(verifier.ITEM_CODES)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "lists",
+   "metric": "delivery autocodes (per delivery)",
+   "value": 6,
+   "unit": "codes",
+   "how": "len(verifier.DELIVERY_CODES)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "lists",
+   "metric": "bank-error codes (refunded from the bank's money)",
+   "value": 2,
+   "unit": "codes",
+   "how": "len(verifier.BANK_ERROR_CODES)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "lists",
+   "metric": "personal-data fields never stored",
+   "value": 7,
+   "unit": "fields",
+   "how": "len(verifier.PERSONAL_FIELDS)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "lists",
+   "metric": "journal event types (literal in code)",
+   "value": 75,
+   "unit": "types",
+   "how": "regex over journal.append(...) and deals._set(...) literals",
+   "source": "bank/ scripts/ agents/ seller/"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: success",
+   "value": "5 scen., 15 runs: 15 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: negative/attack",
+   "value": "14 scen., 42 runs: 42 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: API auth",
+   "value": "1 scen., 3 runs: 3 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: fault injection",
+   "value": "5 scen., 15 runs: 9 pass, 6 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: reconciliation chain↔DB↔statement",
+   "value": "39/39 ok, wrong debits 0",
+   "unit": "deals",
+   "how": "reconciliation block",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-fork: scenario wall time p50/p95",
+   "value": "0.84 / 7.36",
+   "unit": "s",
+   "how": "results[].seconds",
+   "source": "reports/scenarios-fork.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-n10n11: negative/attack",
+   "value": "2 scen., 2 runs: 2 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-sepolia-n10n11.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-n10n11: reconciliation chain↔DB↔statement",
+   "value": "0/0 ok, wrong debits 0",
+   "unit": "deals",
+   "how": "reconciliation block",
+   "source": "reports/scenarios-sepolia-n10n11.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-n10n11: scenario wall time p50/p95",
+   "value": "11.91 / 15.41",
+   "unit": "s",
+   "how": "results[].seconds",
+   "source": "reports/scenarios-sepolia-n10n11.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-tczk-strict: success",
+   "value": "1 scen., 1 runs: 1 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-sepolia-tczk-strict.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-tczk-strict: reconciliation chain↔DB↔statement",
+   "value": "1/1 ok, wrong debits 0",
+   "unit": "deals",
+   "how": "reconciliation block",
+   "source": "reports/scenarios-sepolia-tczk-strict.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia-tczk-strict: scenario wall time p50/p95",
+   "value": "27.72 / 27.72",
+   "unit": "s",
+   "how": "results[].seconds",
+   "source": "reports/scenarios-sepolia-tczk-strict.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia: success",
+   "value": "5 scen., 5 runs: 5 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-sepolia.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia: negative/attack (N10/N11: precondition not met in the full run, re-run alone in scenarios-sepolia-n10n11: pass)",
+   "value": "14 scen., 14 runs: 12 pass, 0 xfail, 2 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-sepolia.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia: API auth",
+   "value": "1 scen., 1 runs: 1 pass, 0 xfail, 0 fail",
+   "unit": "",
+   "how": "status per result row",
+   "source": "reports/scenarios-sepolia.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia: reconciliation chain↔DB↔statement",
+   "value": "12/12 ok, wrong debits 0",
+   "unit": "deals",
+   "how": "reconciliation block",
+   "source": "reports/scenarios-sepolia.json"
+  },
+  {
+   "group": "scenarios",
+   "metric": "scenarios-sepolia: scenario wall time p50/p95",
+   "value": "14.94 / 33.6",
+   "unit": "s",
+   "how": "results[].seconds",
+   "source": "reports/scenarios-sepolia.json"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "decision",
+   "value": "0.573 / 13.259",
+   "unit": "ms p50/p95",
+   "how": "n=44 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "screening",
+   "value": "21.67 / 129.45",
+   "unit": "ms p50/p95",
+   "how": "n=37 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "facilitator_verify",
+   "value": "375.274 / 809.099",
+   "unit": "ms p50/p95",
+   "how": "n=2 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "facilitator_settle",
+   "value": "325.883 / 1292.664",
+   "unit": "ms p50/p95",
+   "how": "n=2 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "refusal_to_client",
+   "value": "0.73 / 42.676",
+   "unit": "ms p50/p95",
+   "how": "n=13 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "api_pay",
+   "value": "123.897 / 6653.464",
+   "unit": "ms p50/p95",
+   "how": "n=24 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "quote",
+   "value": "18.03 / 23.769",
+   "unit": "ms p50/p95",
+   "how": "n=25 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "negotiate_proxy",
+   "value": "24.618 / 52.839",
+   "unit": "ms p50/p95",
+   "how": "n=25 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "notify_seller",
+   "value": "1800.902 / 2146.882",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "escrow_authorize",
+   "value": "3230.716 / 4898.778",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "escrow_capture",
+   "value": "1569.262 / 3341.081",
+   "unit": "ms p50/p95",
+   "how": "n=23 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "escrow_void",
+   "value": "1072.313 / 3588.987",
+   "unit": "ms p50/p95",
+   "how": "n=4 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "tx_in_block (all kinds)",
+   "value": "193.306 / 830.652",
+   "unit": "ms p50/p95",
+   "how": "n=40 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "tx_in_block:x402_settle",
+   "value": "158.122 / 158.122",
+   "unit": "ms p50/p95",
+   "how": "n=1 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "tx_in_block:authorize",
+   "value": "285.808 / 869.909",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "tx_in_block:capture",
+   "value": "205.327 / 799.02",
+   "unit": "ms p50/p95",
+   "how": "n=23 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (Base Sepolia)",
+   "metric": "tx_in_block:void",
+   "value": "135.611 / 764.624",
+   "unit": "ms p50/p95",
+   "how": "n=4 samples, nearest rank",
+   "source": "reports/scenarios-sepolia.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "decision",
+   "value": "0.478 / 31.86",
+   "unit": "ms p50/p95",
+   "how": "n=144 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "screening",
+   "value": "21.961 / 123.888",
+   "unit": "ms p50/p95",
+   "how": "n=119 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "facilitator_verify",
+   "value": "12.576 / 610.784",
+   "unit": "ms p50/p95",
+   "how": "n=6 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "facilitator_settle",
+   "value": "660.591 / 841.558",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "refusal_to_client",
+   "value": "3.459 / 47.351",
+   "unit": "ms p50/p95",
+   "how": "n=42 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "api_pay",
+   "value": "93.027 / 2502.436",
+   "unit": "ms p50/p95",
+   "how": "n=78 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "quote",
+   "value": "6.248 / 17.277",
+   "unit": "ms p50/p95",
+   "how": "n=81 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "negotiate_proxy",
+   "value": "22.499 / 62.623",
+   "unit": "ms p50/p95",
+   "how": "n=81 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "notify_seller",
+   "value": "15.57 / 25.188",
+   "unit": "ms p50/p95",
+   "how": "n=39 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "escrow_authorize",
+   "value": "1934.14 / 2543.94",
+   "unit": "ms p50/p95",
+   "how": "n=39 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "escrow_capture",
+   "value": "677.323 / 1741.794",
+   "unit": "ms p50/p95",
+   "how": "n=72 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "escrow_void",
+   "value": "688.872 / 1772.419",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block (all kinds)",
+   "value": "641.403 / 752.085",
+   "unit": "ms p50/p95",
+   "how": "n=139 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:x402_settle",
+   "value": "637.589 / 795.209",
+   "unit": "ms p50/p95",
+   "how": "n=9 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:authorize",
+   "value": "642.984 / 752.618",
+   "unit": "ms p50/p95",
+   "how": "n=39 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:capture",
+   "value": "640.484 / 752.085",
+   "unit": "ms p50/p95",
+   "how": "n=72 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:void",
+   "value": "647.14 / 729.748",
+   "unit": "ms p50/p95",
+   "how": "n=12 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:tczk_disallow",
+   "value": "636.743 / 636.743",
+   "unit": "ms p50/p95",
+   "how": "n=1 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:attack_direct_transfer",
+   "value": "628.234 / 641.403",
+   "unit": "ms p50/p95",
+   "how": "n=3 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "timings (fork)",
+   "metric": "tx_in_block:attack_replay",
+   "value": "619.222 / 736.443",
+   "unit": "ms p50/p95",
+   "how": "n=3 samples, nearest rank",
+   "source": "reports/scenarios-fork.json stages"
+  },
+  {
+   "group": "evals",
+   "metric": "injection variants (+ controls)",
+   "value": "20 (+2)",
+   "unit": "",
+   "how": "tests/evals/injections.jsonl rows",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "money blocked: variants / model runs",
+   "value": "20/20 · 50/50",
+   "unit": "",
+   "how": "lock went only to the registered payee",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "live model runs: money blocked / unsafe tool attempts",
+   "value": "17/17 · 0",
+   "unit": "",
+   "how": "Opus 4.5 buyer, live Bedrock",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "outcome as expected (all / live)",
+   "value": "19/22 · 16/17",
+   "unit": "",
+   "how": "per-variant expectation",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "item-level injections paid",
+   "value": "0 of 3 variants",
+   "unit": "",
+   "how": "injection inside delivered items",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "judge: items, precision, recall",
+   "value": "40, 1.0, 1.0",
+   "unit": "",
+   "how": "tp 19 fp 0 fn 0 tn 21; eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "judge valid JSON rate",
+   "value": 1.0,
+   "unit": "",
+   "how": "pydantic validation of the answer",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "explanations: texts / client texts clean / AI texts labelled",
+   "value": "64 / 32/32 / 29/29",
+   "unit": "",
+   "how": "no hidden AML reason, sources subset, AI Act Art. 50 label",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "evals",
+   "metric": "eval cases in tests/evals/injections.jsonl",
+   "value": 22,
+   "unit": "cases",
+   "how": "non-empty lines",
+   "source": "tests/evals/injections.jsonl"
+  },
+  {
+   "group": "evals",
+   "metric": "eval cases in tests/evals/predicates.jsonl",
+   "value": 27,
+   "unit": "cases",
+   "how": "non-empty lines",
+   "source": "tests/evals/predicates.jsonl"
+  },
+  {
+   "group": "evals",
+   "metric": "Apify actor company-check: eval tests (+ parametrized cases)",
+   "value": "11 (+4)",
+   "unit": "",
+   "how": "def test_ in tests/evals/test_company_check.py",
+   "source": "tests/evals/test_company_check.py"
+  },
+  {
+   "group": "tests (committed report)",
+   "metric": "coverage of bank/ in the committed validation report (lines / branches)",
+   "value": "90.2 / 81.2",
+   "unit": "%",
+   "how": "pytest --cov at commit 3af5a5b",
+   "source": "reports/validation.json"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'honest': wall time, outcome",
+   "value": "2.029 s, VAT_LIABILITY_RISK",
+   "unit": "",
+   "how": "demo_scenarios.run_safe in-process (simulated chain, MOCK model)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'honest': human VAT acknowledgement on /mandate -> bank pays",
+   "value": "4.292 s, ok",
+   "unit": "",
+   "how": "deals.ack_vat (what the /mandate button calls)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'fake_data': wall time, outcome",
+   "value": "1.524 s, ok",
+   "unit": "",
+   "how": "demo_scenarios.run_safe in-process (simulated chain, MOCK model)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'attack': wall time, outcome",
+   "value": "1.02 s, COUNTERPARTY_NOT_IN_SCOPE",
+   "unit": "",
+   "how": "demo_scenarios.run_safe in-process (simulated chain, MOCK model)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'suspicious': wall time, outcome",
+   "value": "0.616 s, COUNTERPARTY_NOT_TRUSTED",
+   "unit": "",
+   "how": "demo_scenarios.run_safe in-process (simulated chain, MOCK model)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'tczk': wall time, outcome",
+   "value": "0.494 s, CONFIRMATION_REQUIRED",
+   "unit": "",
+   "how": "demo_scenarios.run_safe in-process (simulated chain, MOCK model)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "scenario 'tczk': human confirmation on /mandate -> bank pays",
+   "value": "0.349 s, ok",
+   "unit": "",
+   "how": "deals.confirm (what the /mandate button calls)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "timer pass after the windows (rule B rest, voids)",
+   "value": "53.0 ms, 3 actions",
+   "unit": "",
+   "how": "deadlines.tick(now + 1 day)",
+   "source": "bank/deadlines.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "five scenarios end to end (incl. the two human clicks as calls)",
+   "value": 10.32,
+   "unit": "s",
+   "how": "wall time of the loop above",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "deals per minute (end to end, sequential, one bank process)",
+   "value": 29.1,
+   "unit": "deals/min",
+   "how": "5 deals / 10.3 s; depends on machine load (see header)",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage decision p50/p95",
+   "value": "1.617 / 9.361",
+   "unit": "ms",
+   "how": "bank timed(), n=12",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage api_pay p50/p95",
+   "value": "74.74 / 741.109",
+   "unit": "ms",
+   "how": "bank timed(), n=5",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage quote p50/p95",
+   "value": "30.365 / 76.542",
+   "unit": "ms",
+   "how": "bank timed(), n=7",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage negotiate_proxy p50/p95",
+   "value": "62.415 / 251.894",
+   "unit": "ms",
+   "how": "bank timed(), n=7",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage escrow_authorize p50/p95",
+   "value": "1.987 / 2.812",
+   "unit": "ms",
+   "how": "bank timed(), n=3",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage escrow_capture p50/p95",
+   "value": "1.128 / 6.113",
+   "unit": "ms",
+   "how": "bank timed(), n=6",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "stage screening p50/p95",
+   "value": "105.346 / 521.356",
+   "unit": "ms",
+   "how": "bank timed(), n=36",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "model calls per deal: buyer",
+   "value": 5.2,
+   "unit": "calls",
+   "how": "MOCK calls in the timings table / 5 deals",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "model calls per deal: criteria",
+   "value": 1.0,
+   "unit": "calls",
+   "how": "MOCK calls in the timings table / 5 deals",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "model calls per deal: seller",
+   "value": 1.4,
+   "unit": "calls",
+   "how": "MOCK calls in the timings table / 5 deals",
+   "source": "timings table of the sim run"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "journal entries written by the five scenarios / distinct event types",
+   "value": "171 / 31",
+   "unit": "",
+   "how": "SELECT FROM journal",
+   "source": "sim db"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "journal hash chain after the run",
+   "value": "ok",
+   "unit": "",
+   "how": "journal.verify()",
+   "source": "bank/journal.py"
+  },
+  {
+   "group": "DEMO_SIM",
+   "metric": "simulated escrow txs by kind (five scenarios)",
+   "value": "authorize 3, capture 6, void 1",
+   "unit": "",
+   "how": "onchain_txs rows (simulated)",
+   "source": "sim db"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /story",
+   "value": "25.685 / 117.999",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 16329 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /bank",
+   "value": "26.481 / 218.862",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 27366 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /mandate",
+   "value": "16.24 / 56.73",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 11339 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /deals",
+   "value": "21.568 / 54.877",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 11351 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /deals/{id}",
+   "value": "37.103 / 104.152",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 23748 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /statement",
+   "value": "29.751 / 91.416",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 12223 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "UI render",
+   "metric": "GET /statement/reconcile",
+   "value": "41.871 / 137.866",
+   "unit": "ms p50/p95",
+   "how": "TestClient, 50 requests after the five scenarios, HTTP [200], 847 bytes",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "bench",
+   "metric": "mandate decision (decide: mandate + cached check + explanation + timing row)",
+   "value": "0.478 / 4.807",
+   "unit": "ms p50/p95",
+   "how": "1000 calls with the arguments of the first DEMO_SIM decision (result: ok), SQLite on local disk",
+   "source": "bank/mandate.py"
+  },
+  {
+   "group": "bench",
+   "metric": "predicate engine per 20-item delivery (7 predicates)",
+   "value": "6.99 / 140.985",
+   "unit": "ms p50/p95",
+   "how": "200 calls of verifier.evaluate with a real delivery's arguments (registry from fixtures)",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "bench",
+   "metric": "predicate engine per item",
+   "value": "0.231 / 2.112",
+   "unit": "ms p50/p95",
+   "how": "1000 calls on one item",
+   "source": "bank/verifier.py"
+  },
+  {
+   "group": "bench",
+   "metric": "Merkle root of 20 items (JCS + SHA-256)",
+   "value": "0.67 / 5.955",
+   "unit": "ms p50/p95",
+   "how": "500 calls of receipts.merkle_root",
+   "source": "bank/receipts.py"
+  },
+  {
+   "group": "bench",
+   "metric": "Merkle proof build + verify (one item)",
+   "value": "0.711 / 22.815",
+   "unit": "ms p50/p95",
+   "how": "500 calls merkle_proof + verify_proof",
+   "source": "bank/receipts.py"
+  },
+  {
+   "group": "bench",
+   "metric": "manifest EIP-712 signing",
+   "value": "9.785 / 119.107",
+   "unit": "ms p50/p95",
+   "how": "300 calls, throwaway key",
+   "source": "bank/receipts.py"
+  },
+  {
+   "group": "bench",
+   "metric": "manifest signature recovery (verify)",
+   "value": "15.659 / 72.251",
+   "unit": "ms p50/p95",
+   "how": "300 calls of manifest_signer",
+   "source": "bank/receipts.py"
+  },
+  {
+   "group": "model",
+   "metric": "buyer (claude-opus-4-5-20251101): calls, tokens in/out, $",
+   "value": "67, 132334/11299, $1.0386",
+   "unit": "",
+   "how": "live eval run, tokens logged per call x list price (+10 % EU profile)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "buyer: mean latency per call",
+   "value": 3671,
+   "unit": "ms",
+   "how": "stage wall ms / calls (no per-call samples kept -> no p50/p95)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "criteria (claude-opus-4-5-20251101): calls, tokens in/out, $",
+   "value": "17, 1564/901, $0.0334",
+   "unit": "",
+   "how": "live eval run, tokens logged per call x list price (+10 % EU profile)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "criteria: mean latency per call",
+   "value": 1830,
+   "unit": "ms",
+   "how": "stage wall ms / calls (no per-call samples kept -> no p50/p95)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "explain (claude-haiku-4-5-20251001): calls, tokens in/out, $",
+   "value": "29, 4828/2195, $0.0174",
+   "unit": "",
+   "how": "live eval run, tokens logged per call x list price (+10 % EU profile)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "explain: mean latency per call",
+   "value": 1059,
+   "unit": "ms",
+   "how": "stage wall ms / calls (no per-call samples kept -> no p50/p95)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "judge (claude-haiku-4-5-20251001): calls, tokens in/out, $",
+   "value": "4, 7769/5001, $0.0361",
+   "unit": "",
+   "how": "live eval run, tokens logged per call x list price (+10 % EU profile)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "judge: mean latency per call",
+   "value": 5453,
+   "unit": "ms",
+   "how": "stage wall ms / calls (no per-call samples kept -> no p50/p95)",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "eval run total: calls, tokens in/out, $",
+   "value": "117, 146495/19396, $1.1254",
+   "unit": "",
+   "how": "sum",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "buyer agent: live calls per deal",
+   "value": 3.94,
+   "unit": "calls",
+   "how": "67 buyer calls / 17 live deals",
+   "source": "reports/evals-live.json"
+  },
+  {
+   "group": "model",
+   "metric": "$ per deal (estimate: live $/call x calls per deal)",
+   "value": 0.0811,
+   "unit": "USD",
+   "how": "buyer: live avg per deal; other stages: MOCK call count per deal in DEMO_SIM x live $/call",
+   "source": "evals-live + sim"
+  },
+  {
+   "group": "model",
+   "metric": "  $ per deal: buyer",
+   "value": 0.06109,
+   "unit": "USD",
+   "how": "as above",
+   "source": ""
+  },
+  {
+   "group": "model",
+   "metric": "  $ per deal: criteria",
+   "value": 0.00196,
+   "unit": "USD",
+   "how": "as above",
+   "source": ""
+  },
+  {
+   "group": "model",
+   "metric": "  $ per deal: judge (20-item delivery)",
+   "value": 0.01803,
+   "unit": "USD",
+   "how": "as above",
+   "source": ""
+  },
+  {
+   "group": "bench",
+   "metric": "journal append (1000 entries)",
+   "value": "0.29 / 2.808",
+   "unit": "ms p50/p95",
+   "how": "journal.append (hash chain + SQLite insert) on a fresh DB",
+   "source": "bank/journal.py"
+  },
+  {
+   "group": "bench",
+   "metric": "journal full-chain verify (1000 entries)",
+   "value": "0.1023 s (102.28 µs/entry), ok=True",
+   "unit": "",
+   "how": "journal.verify() recomputes every hash",
+   "source": "bank/journal.py"
+  },
+  {
+   "group": "bench",
+   "metric": "journal append (10000 entries)",
+   "value": "0.189 / 3.562",
+   "unit": "ms p50/p95",
+   "how": "journal.append (hash chain + SQLite insert) on a fresh DB",
+   "source": "bank/journal.py"
+  },
+  {
+   "group": "bench",
+   "metric": "journal full-chain verify (10000 entries)",
+   "value": "0.1747 s (17.47 µs/entry), ok=True",
+   "unit": "",
+   "how": "journal.verify() recomputes every hash",
+   "source": "bank/journal.py"
+  },
+  {
+   "group": "bench",
+   "metric": "budget race: 10 parallel pay(), budget for 3",
+   "value": "20 rounds, overspend 0, paid per round [3]",
+   "unit": "",
+   "how": "threads behind a barrier on the offline bank (mandate.reserve, BEGIN IMMEDIATE); sum(reservations) <= budget",
+   "source": "agents/offline.py + bank/mandate.py"
+  },
+  {
+   "group": "bench",
+   "metric": "budget race: wall time for 10 parallel pay()",
+   "value": "162.514 / 301.292",
+   "unit": "ms p50/p95",
+   "how": "20 rounds",
+   "source": "scripts/numbers.py"
+  },
+  {
+   "group": "on-chain",
+   "metric": "gas: authorize",
+   "value": 161439,
+   "unit": "gas",
+   "how": "median of 13 receipts",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "gas: capture",
+   "value": 68475,
+   "unit": "gas",
+   "how": "median of 25 receipts",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "gas: void",
+   "value": 61208,
+   "unit": "gas",
+   "how": "median of 5 receipts",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "gas: x402_settle",
+   "value": 82518,
+   "unit": "gas",
+   "how": "median of 2 receipts",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "gas: mint",
+   "value": 71222,
+   "unit": "gas",
+   "how": "median of 1 receipts",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "Base mainnet gas price",
+   "value": 0.006,
+   "unit": "gwei",
+   "how": "eth_gasPrice https://mainnet.base.org (now)",
+   "source": ""
+  },
+  {
+   "group": "on-chain",
+   "metric": "L2 execution cost per deal: rule A (authorize + capture)",
+   "value": "229,914 gas = 0.4138 ct",
+   "unit": "EUR cents",
+   "how": "gas x mainnet gas price x ETH 3000 € (L1 data fee not included)",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "L2 execution cost per deal: rule B (authorize + 2 captures)",
+   "value": "298,389 gas = 0.5371 ct",
+   "unit": "EUR cents",
+   "how": "gas x mainnet gas price x ETH 3000 € (L1 data fee not included)",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "L2 execution cost per deal: rule B with rejects (authorize + 2 captures + void)",
+   "value": "359,597 gas = 0.6473 ct",
+   "unit": "EUR cents",
+   "how": "gas x mainnet gas price x ETH 3000 € (L1 data fee not included)",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "L2 execution cost per deal: x402 direct (settle)",
+   "value": "82,518 gas = 0.1485 ct",
+   "unit": "EUR cents",
+   "how": "gas x mainnet gas price x ETH 3000 € (L1 data fee not included)",
+   "source": "reports/credits.json (median gasUsed of Base Sepolia receipts)"
+  },
+  {
+   "group": "on-chain",
+   "metric": "tariff vs gas: 5 € deal, T0 rule A (0 bps)",
+   "value": "fee 0.00 € − gas 0.4138 ct = margin -0.0041 € (T0 billed monthly, nothing at capture)",
+   "unit": "EUR",
+   "how": "config.TARIFF_BPS x amount − L2 gas cost of the flow",
+   "source": "bank/config.py"
+  },
+  {
+   "group": "on-chain",
+   "metric": "tariff vs gas: 100 € deal, T1 rule B (120 bps)",
+   "value": "fee 1.20 € − gas 0.5371 ct = margin 1.1946 €",
+   "unit": "EUR",
+   "how": "config.TARIFF_BPS x amount − L2 gas cost of the flow",
+   "source": "bank/config.py"
+  },
+  {
+   "group": "on-chain",
+   "metric": "tariff vs gas: 100 € deal, T1 rule A (80 bps)",
+   "value": "fee 0.80 € − gas 0.4138 ct = margin 0.7959 €",
+   "unit": "EUR",
+   "how": "config.TARIFF_BPS x amount − L2 gas cost of the flow",
+   "source": "bank/config.py"
+  },
+  {
+   "group": "on-chain",
+   "metric": "tariff vs gas: 1000 € deal, T2 rule C (150 bps)",
+   "value": "fee 15.00 € − gas 0.6473 ct = margin 14.9935 €",
+   "unit": "EUR",
+   "how": "config.TARIFF_BPS x amount − L2 gas cost of the flow",
+   "source": "bank/config.py"
+  },
+  {
+   "group": "on-chain",
+   "metric": "tariff vs gas: the 5 € demo deal at demo scale (T1, rule B, 120 bps)",
+   "value": "fee 6.00 ct − gas 0.5371 ct = margin 5.46 ct",
+   "unit": "EUR",
+   "how": "deals.tier_of(500 cents) with DEMO_MONEY_DIVISOR=100",
+   "source": "bank/config.py"
+  },
+  {
+   "group": "Apify",
+   "metric": "company-check runs: n, $ median / max, runtime median",
+   "value": "5, $0.0122 / $0.3702, 26.0 s",
+   "unit": "",
+   "how": "GET /v2/actor-runs (last runs of the account)",
+   "source": "reports/credits.json"
+  },
+  {
+   "group": "Apify",
+   "metric": "account usage this cycle / limit",
+   "value": "$0.0000 / $105",
+   "unit": "USD",
+   "how": "GET /v2/users/me/limits",
+   "source": "reports/credits.json"
+  },
+  {
+   "group": "Apify",
+   "metric": "actor check functions",
+   "value": 9,
+   "unit": "functions",
+   "how": "def in checks.py",
+   "source": "actors/company-check/my_actor/checks.py"
+  }
+ ],
+ "missing": [
+  {
+   "what": "block → /bank feed latency (SPEC target ≤ 5 s)",
+   "why": "needs a real block and the Tatum webhook or poller; bank_feed n=0 in both committed reports",
+   "how_to_measure_live": "run the five scenarios on Base Sepolia with the bank's poller on; stage bank_feed in the timings table"
+  },
+  {
+   "what": "tx in block on Base Sepolia for the demo flow (not the matrix)",
+   "why": "simulated chain offline",
+   "how_to_measure_live": "python -m scripts.demo_scenarios honest (no --sim) with funded keys; tx_in_block:* stages"
+  },
+  {
+   "what": "Bedrock latency p50/p95 per model",
+   "why": "evals-live.json keeps per-stage totals only; AWS creds expired",
+   "how_to_measure_live": "LIVE=1 pytest tests/evals/test_live_bedrock.py, then timings rows with model IS NOT NULL"
+  },
+  {
+   "what": "seller-agent negotiation spend (AI seller haggles ≤ 3 turns)",
+   "why": "not part of the live eval run",
+   "how_to_measure_live": "run the demo with SELLER_OPENING=list and MOCK=0; timings stage 'seller'"
+  },
+  {
+   "what": "actual AWS bill so far",
+   "why": "Cost Explorer needs valid credentials",
+   "how_to_measure_live": "AWS console → Billing, or aws ce get-cost-and-usage"
+  },
+  {
+   "what": "L1 data fee per tx on Base mainnet",
+   "why": "depends on Ethereum blob fees; Sepolia l1Fee (~200 wei) is not representative",
+   "how_to_measure_live": "eth_estimateGas + GasPriceOracle.getL1Fee on mainnet for the same calldata"
+  },
+  {
+   "what": "facilitator verify p95 on a warm process",
+   "why": "both reports include the first call that builds the facilitator (610 ms on the fork)",
+   "how_to_measure_live": "drop the first sample per process in the live run"
+  },
+  {
+   "what": "Apify actor runtime/cost per check in the live demo",
+   "why": "account runs listed are earlier test runs",
+   "how_to_measure_live": "run the demo with APIFY_TOKEN and read /v2/actor-runs after it"
+  }
+ ]
+}
