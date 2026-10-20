@@ -386,6 +386,17 @@ def test_items_refunded_under_b_cannot_go_into_a_c_claim(w):
         {"version": 1, "index": 0, "field": "founded", "why": "not an accepted item without a claim"}]
 
 
+def test_items_of_a_c_claim_cannot_be_refunded_under_b(w):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, [[1, i] for i in range(5)], {f"1/{i}": "founded" for i in range(5)}, "agent:buyer",
+                  now=T0 + 3)
+    with pytest.raises(disputes.DisputeError, match="C claim") as e:
+        disputes.file_b(deal_id, [[1, 0]], "wrong_data", "agent:buyer", now=T0 + 5)
+    assert e.value.status == 409 and disputes.claims(deal_id, "B") == []
+    out = disputes.file_b(deal_id, [[1, 7]], "wrong_data", "agent:buyer", now=T0 + 6)  # an undisputed item is fine
+    assert out["amount"] == 800_000
+
+
 def test_task_id_is_part_of_the_hashed_terms():
     task = {"terms": {"count": 5, "predicates": [{"op": "required", "field": "ico"}]}}
     a, b = deals.task_terms({**task, "task_id": "t-1"}), deals.task_terms({**task, "task_id": "t-2"})

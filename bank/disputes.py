@@ -370,6 +370,10 @@ def file_b(deal_id: str, items: list, reason: str, by: str, now: float | None = 
         if claims(deal_id, "B"):
             raise DisputeError(409, "one B claim per deal")
         keys = _accepted_keys(deal_id, items)
+        in_c = {(int(it["version"]), int(it["index"])) for c in claims(deal_id, "C") for it in c["items"]}
+        for v, i in keys:  # items of a C claim (any state) are not part of a B refund (§7C.0)
+            if (v, i) in in_c:
+                raise DisputeError(409, f"item {v}/{i} is in the C claim")
         cap = payable(deal) * s["b_pct"] // 100
         amount = min(item_value(deal, len(keys)), cap)
         with db.immediate():
