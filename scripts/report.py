@@ -21,7 +21,7 @@ TARGETS = [
     ("facilitator_verify", "Bank facilitator verify (with screening)", 500),
     ("screening", "New counterparty: ARES + VAT + ISIR + sanctions", 2500),
     ("tx_in_block:*", "Signature → tx in block (settle, authorize, capture, void)", 6000),
-    ("bank_feed", "Tx in block → row in the /bank feed", 5000),
+    ("block_to_feed*", "Tx in block → row in the /bank feed (RPC poll or Tatum)", 5000),
     ("refusal_to_client", "Refusal → message to the client", 100),
 ]
 # SPEC §19.5 coverage targets: bank/ ≥ 80 % lines; these ≥ 90 % branches.

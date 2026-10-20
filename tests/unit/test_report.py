@@ -47,11 +47,13 @@ def test_money_reaching_the_attacker_zeroes_the_blocked_count():
 
 
 def test_stage_table_uses_p95_against_the_spec_targets():
-    stages = {"decision": [1.0] * 19 + [60.0], "tx_in_block:authorize": [100.0], "tx_in_block:capture": [7000.0]}
+    stages = {"decision": [1.0] * 19 + [60.0], "tx_in_block:authorize": [100.0], "tx_in_block:capture": [7000.0],
+              "block_to_feed": [900.0], "block_to_feed:tatum": [1200.0]}
     rows = {r["stage"]: r for r in report.stage_table(stages)}
     assert rows["decision"]["p95"] == 1.0 and rows["decision"]["met"] is True  # 19 of 20 under 50 ms
     assert rows["tx_in_block:*"]["n"] == 2 and rows["tx_in_block:*"]["met"] is False
-    assert rows["bank_feed"]["n"] == 0 and rows["bank_feed"]["met"] is None
+    assert rows["block_to_feed*"]["n"] == 2 and rows["block_to_feed*"]["met"] is True  # the stage webhooks.py times
+    assert rows["facilitator_verify"]["n"] == 0 and rows["facilitator_verify"]["met"] is None
 
 
 def test_fork_matrix_has_hashes_without_links_and_sepolia_has_links():
