@@ -6,3 +6,4 @@ data/
 private/
 .coverage
 .pytest_cache/
+reports/credits.json
