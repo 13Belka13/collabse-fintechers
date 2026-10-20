@@ -1,8 +1,12 @@
 # Deploy to AWS (the hackathon team account)
 
+> **Internal runbook**: how the team deploys the demo to AWS. The project is described in the [README](../README.md).
+
 One small EC2 host in **eu-central-1** runs the whole demo in Docker: the bank (API, x402 facilitator, UI on
 `/story`, `/bank`, …), the demo seller, and Caddy in front with HTTPS on `https://<ip-with-dashes>.sslip.io`
 and a password. Testnet only (Base Sepolia).
+
+**Current host:** https://63-182-160-195.sslip.io — login `demo`, password = `UI_PASSWORD` in the local `.env`, also published in the root README for the demo (rotate it after the event: new bcrypt hash in `/collabse/ui`, then deploy). Without it only `/health` answers; everything else is 401. As of 20.10 03:40 the scenario buttons have not been run live on the host: each honest deal spends 5 test EURC and the Alfa wallet holds about 18.
 
 ```
 GitHub main ──CI green──> deploy.yml ──OIDC──> SSM Run Command ──> host: deploy/deploy.sh

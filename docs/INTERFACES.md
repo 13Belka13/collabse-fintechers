@@ -1,5 +1,7 @@
 # INTERFACES — contracts between streams (stage 0, 19.10)
 
+> **Internal working document**: module contracts between the build streams, for the team and its coding agent. The project is described in the [README](../README.md).
+
 SPEC.md stays the master for *what*; this file fixes *how modules talk*, so streams can build in
 parallel. Change a signature here only together with its callers, in one commit.
 

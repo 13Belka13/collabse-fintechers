@@ -1,5 +1,7 @@
 # REFERENCE — verified facts and snippets (checked 2026-10-18)
 
+> **Internal working document**: research notes verified on testnet before and during the build, for the team and its coding agent. The project is described in the [README](../README.md).
+
 [V] = verified live or in code; [S] = from docs; [U] = unverified.
 
 > **`docs/SPEC.md` is the master document.** This file only holds what we verified ourselves

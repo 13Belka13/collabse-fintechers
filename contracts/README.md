@@ -1,5 +1,7 @@
 # tCZK — the bank's tokenized deposit (SPEC §3)
 
+> **Internal developer reference** for the tCZK contract. The project, including tCZK, is described in the [README](../README.md).
+
 `src/TCZK.sol`: `TCZK is ERC3009, AccessControl` on OpenZeppelin v5.7.0 (`draft-ERC3009.sol`), solc 0.8.31,
 EVM `cancun`. ERC-20/EIP-712 name `"tCZK Deposit Token"`, version `"1"`, 2 decimals (haléře).
 

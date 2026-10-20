@@ -1,5 +1,7 @@
 # prep/ — pre-hackathon work (disclosed)
 
+> **Internal — pre-hackathon spikes**, disclosed to the organisers and not part of the submission. The project is described in the [README](../README.md).
+
 Written on 2026-10-18, before the `hackathon-start` tag, as learning spikes to de-risk the build.
 Disclosed to the organisers in advance. It is reference material, not the product; judged work
 is everything after `hackathon-start`.

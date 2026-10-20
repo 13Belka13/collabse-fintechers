@@ -1,5 +1,7 @@
 # Czech company web footprint check (company-check)
 
+> **Developer reference** for the Apify Actor. The project it belongs to is described in its [README](../../README.md).
+
 **company-check** answers one question a bank or a buyer asks before paying a new Czech supplier:
 *does the company's public web footprint match the company in the business register?* Give it an IČO
 (Czech company ID) and the company's website. It reads three pages of the site, looks for the IČO the law

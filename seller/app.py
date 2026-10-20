@@ -13,7 +13,9 @@ import time
 import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 from web3 import Web3
 from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
@@ -87,12 +89,14 @@ def recorded_items(count: int) -> list[dict]:
     return [dict(it) for it in (good + borderline + rest)[:count]]
 
 
-def make_items(count: int, mode: str) -> list[dict]:
+def make_items(count: int, mode: str, data: str | None = None) -> list[dict]:
     """Delivery: warehouses in Brno in the Google Maps dataset shape (SPEC §10.2), no phone fields.
     SELLER_DATA=maps: real places recorded via Apify (fixtures/maps/brno_warehouses_recorded.json);
     default: synthetic places (deterministic for tests and the money scenes).
-    fake_data: 2 of the items break the agreed criteria (no website, wrong city) -> rules reject them."""
-    if os.getenv("SELLER_DATA", "").strip() == "maps" and RECORDED_MAPS.exists():
+    fake_data: 2 of the items break the agreed criteria (no website, wrong city) -> rules reject them.
+    data: "maps" | "synthetic" per seller from the demo console; None = the SELLER_DATA setting."""
+    data = data or os.getenv("SELLER_DATA", "").strip() or "synthetic"
+    if data == "maps" and RECORDED_MAPS.exists():
         items = recorded_items(count)
         if mode == "fake_data" and len(items) >= 2:
             items[-1].update(website=None)
@@ -167,8 +171,13 @@ class EscrowIn(BaseModel):
 
 
 class ModeIn(BaseModel):
+    """Demo console: how this seller behaves. say = extra text the seller appends to every reply (untrusted
+    data for the buyer's agent: try your own injection); opening = list | min; data = synthetic | maps."""
     seller_id: str
     mode: str
+    say: str | None = Field(None, max_length=500)
+    opening: Literal["list", "min"] | None = None
+    data: Literal["synthetic", "maps"] | None = None
 
 
 def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
@@ -234,8 +243,9 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     def set_mode(body: ModeIn):  # demo buttons and scenario scripts
         if body.seller_id not in app.state.sellers:
             raise HTTPException(404, "unknown seller")
-        app.state.sellers[body.seller_id]["mode"] = body.mode
-        return {"seller_id": body.seller_id, "mode": body.mode}
+        s = app.state.sellers[body.seller_id]
+        s.update(mode=body.mode, say=(body.say or "").strip() or None, opening=body.opening, data=body.data)
+        return {k: s.get(k) for k in ("seller_id", "mode", "say", "opening", "data")}
 
     @app.post("/negotiate")
     def negotiate(body: NegotiateIn):
@@ -250,7 +260,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         fixed = os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "").strip()
         list_c, min_c = ((count * int(fixed),) * 2 if fixed
                          else (count * LIST_PER_ITEM_EUR_CENTS, count * MIN_PER_ITEM_EUR_CENTS))
-        opening = list_c if os.getenv("SELLER_OPENING", "min").strip() == "list" else min_c
+        opening = list_c if (seller.get("opening") or os.getenv("SELLER_OPENING", "min").strip()) == "list" else min_c
         state = app.state.negotiations.setdefault(body.deal_id, {"turns": 0, "last": None})
         state["turns"] += 1
         text, cents = seller_agent.price_turn(body.message, list_cents=list_c, min_cents=min_c, turn=state["turns"],
@@ -269,12 +279,15 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                  + " or ".join(money.fmt(a, int(offer["prices"][a])) for a in quoted) + ", delivery within 5 minutes.")
         if seller["mode"] == "injection":
             reply += " " + INJECTION
+        if seller.get("say"):  # the demo console's own seller text: goes out as written, the bank treats it as data
+            reply += " " + seller["say"]
         return {"reply_text": reply, "offer": offer, "turn": state["turns"], "final": state["turns"] >= seller_agent.MAX_TURNS,
                 "ai_generated": not config.MOCK}  # AI Act Art. 50: the reply text is model-written when live
 
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]
-        return {"offer_id": offer_id, "deal_id": offer["deal_id"], "items": make_items(offer["count"], mode)}
+        data = app.state.sellers[offer["seller_id"]].get("data")
+        return {"offer_id": offer_id, "deal_id": offer["deal_id"], "items": make_items(offer["count"], mode, data)}
 
     @app.get("/data/{offer_id}")
     def data(offer_id: str):  # L1: paid directly through x402
