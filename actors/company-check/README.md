@@ -94,9 +94,8 @@ Live runs (2026-10-19, 512 MB):
 | ČEZ, IČO 45274649, `https://www.cez.cz`, Maps in Praha, 3 places | [BZXkhNLHWn1GdqFbE](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/BZXkhNLHWn1GdqFbE) | `medium` (30): site reachable, IČO not on the home page, `/kontakt` (404) or `/obchodni-podminky`; Maps place found, open, 3.9 | $0.0002 + $0.0122 (child crawler-google-places run Vp1xOhdg7vnhD0NXp, 3 places) |
 | Synthetic Gama s.r.o., IČO 59093994, `https://gama-sklad.invalid`, no Maps | [VMWtKXHYycP9leChx](https://console.apify.com/actors/LBLUo7ixHlcyIjNSU/runs/VMWtKXHYycP9leChx) | run SUCCEEDED, `medium` (50): `website_reachable=false` (ConnectError) | $0.0002 |
 
-The ČEZ result is the honest one for the three pages we read: cez.cz keeps its IČO elsewhere, and the first
-Maps hit for "ČEZ" in Praha is a ČEZ charging station, not the head office. Pass `companyName` and `city`
-for a sharper Maps match.
+cez.cz shows its IČO on a page other than the three the Actor reads, and the first Maps hit for "ČEZ" in Praha
+is a ČEZ charging station. Pass `companyName` and `city` for a sharper Maps match.
 
 The Brno warehouse dataset the seller delivers was recorded with the same account
 (`fixtures/maps/record_maps.py`, compass/crawler-google-places run w9XlXOBtETIUObLGm, $0.37, 74 places);

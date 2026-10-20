@@ -1,9 +1,9 @@
-# INTERFACES — contracts between streams (stage 0, 19.10)
+# INTERFACES — contracts between streams (19.10; deal model v2.6 since 20.10)
 
 > **Internal working document**: module contracts between the build streams, for the team and its coding agent. The project is described in the [README](../README.md).
 
-SPEC.md stays the master for *what*; this file fixes *how modules talk*, so streams can build in
-parallel. Change a signature here only together with its callers, in one commit.
+SPEC.md and, for the deal model, MODEL_V2.md say *what*; this file fixes *how modules talk*, so streams can
+build in parallel. Change a signature here only together with its callers, in one commit.
 
 ## Shared foundation (done, owned by the integrator — extend, don't fork)
 
@@ -32,8 +32,8 @@ Stored in `decisions` (`codes_json`, `evidence_json`, `explanation_client` = `cl
 
 ## Deal lifecycle (`deals.state`)
 
-`negotiating → offered → quoted → (refused | awaiting_human) → authorized → delivered → verified →
-(disputed) → settled → closed`. One writer per transition, inside `db.immediate()`; journal every change.
+`negotiating → offered → quoted → (refused | awaiting_human) → authorized → delivered → (dispute_c) →
+settled → closed`. One writer per transition, inside `db.immediate()`; journal every change.
 
 ## Stream contracts
 
@@ -46,7 +46,8 @@ mandate.acknowledge_vat(mandate_id, seller_ico, asset, by) -> int               
 mandate.decide(mandate_id, deal: dict, quote: dict, screening: dict, now=None) -> Decision   # pure code, no I/O beyond SQLite
 mandate.reserve(mandate_id, deal_id, eur_cents) -> Decision                     # BEGIN IMMEDIATE; BUDGET_EXCEEDED on overflow
 mandate.commit(deal_id, eur_cents) / mandate.release(deal_id)
-explain.render(decision, audience="client"|"compliance", deal_id=None) -> {"text", "cited_sources", "ai_generated"}
+mandate.requirements(mandate_id, deal) -> dict · mandate.tier_sum(deal, eur_cents, now) -> dict   # v2.6 tiers and rules (MODEL_V2 §2)
+explain.render(decision, audience="client"|"compliance", deal_id=None, ai=False) -> {"text", "cited_sources", "ai_generated"}
 ```
 `mandate.decide` applies the VAT rule §6.5 using `screening["vat"]` and the acknowledged pairs.
 Agent tools call the **bank HTTP API** (below), never bank modules and never the chain.
@@ -60,19 +61,27 @@ screening.check(ico: str, wallet: str | None = None, website_url: str | None = N
 screening.prefetch(ico, wallet=None, website_url=None) -> None                  # background thread, fills cache
 screening.cached(ico) -> dict | None                                            # money path: cache only, never network
 screening.normalize_account(s) -> "pre-num/bank"                                # IBAN or internal -> internal format
-verifier.check_items(items: list[dict], criteria: dict) -> list[dict]           # per item {placeId, ok, failed:[criterion], ...}
-verifier.judge(items, criteria, deal_id) -> list[dict]                          # LLM flags only; invalid JSON -> flag all
-verifier.settlement(deal_id) -> {"capture_now": int, "held": int, "void": int, "items": [...]}  # atomic units
+verifier.criteria_predicates(criteria: dict) -> list[dict]                     # buyer-confirmed task criteria -> predicates
+verifier.validate(predicates: list) -> list[dict]                               # problems: RE2 only, json_schema limits, no external $ref
+verifier.evaluate(items, predicates, *, ordered, accepted_keys=frozenset(), blocked_keys=frozenset(),
+                  already_accepted=0, registry=None, snapshot=None) -> list[dict]
+#   per item {index, status: "accepted"|"rejected"|"pending", code, predicate, detail, unique_key}; pure code, no LLM
 ```
 Registries: parallel, 2 s timeout, fail-closed → `level="review"` with a non-public `registry_timeout` reason.
 Synthetic companies → recorded fixtures in `fixtures/registries/`. Live mode only for forms 112/121.
 
 **P — payments & escrow** (`bank/escrow.py`, `bank/deals.py`, `seller/app.py`)
 ```python
-escrow.payment_info(deal) -> dict                 # §5.1 fields; persisted to deals.payment_info_json BEFORE authorize
-escrow.authorize(deal_id) -> tx                   # signs ReceiveWithAuthorization for the buyer, idem_key f"{deal_id}:authorize"
-escrow.capture(deal_id, amount, n) -> tx          # idem_key f"{deal_id}:capture:{n}"
-escrow.void(deal_id) -> tx                        # idem_key f"{deal_id}:void"
+escrow.payment_info(deal, now=None) -> dict      # SPEC §5.1 fields with MODEL_V2 §8 terms: feeReceiver = clearing address,
+                                                  # minFeeBps = maxFeeBps = tariff, salt = keccak(deal_id ‖ n), long expiries;
+                                                  # persisted BEFORE authorize
+escrow.authorize(deal_id) -> tx                   # signs ReceiveWithAuthorization for the buyer
+escrow.capture(deal_id, amount, n) -> tx          # seller gets amount − fee, the clearing address the fee
+escrow.void(deal_id) -> tx                        # final: returns the whole remaining capturable amount
+escrow.finish(deal_id, to_seller) -> dict         # capture first, then the one final void
+escrow.split_off(deal_id, amount) -> dict         # rule C: a new PaymentInfo on the disputed part D
+escrow.fee_payment_info(deal_id, role, amount, payer) / escrow.pay_fee(deal_id, pi, signature)   # C claim fees
+escrow.paid(deal_id) -> int                       # gross captures to the seller over all deal PaymentInfos
 escrow.state(deal_id) -> {"collected": bool, "capturable": int, "refundable": int}   # from chain
 deals.pay(deal_id) -> Decision                    # fetch 402 quote -> compare with offer (payTo, asset, amount) ->
                                                   # screening.cached -> mandate.decide -> reserve -> authorize -> notify seller
@@ -80,7 +89,24 @@ deals.pay(deal_id) -> Decision                    # fetch 402 quote -> compare w
 Seller HTTP (`:8001`): `POST /negotiate {deal_id, buyer_ico, task, message}` → `{reply_text, offer?}`;
 `GET /order/{offer_id}` behind x402 (route key `GET /order/:offer_id`, DynamicPrice from the offer);
 `POST /order/{offer_id}/escrow {payment_info, payment_hash, tx_hash}` → seller verifies on chain, then delivers;
-delivery goes to the bank: `POST /api/deals/{deal_id}/delivery {items}`. L1 direct pay: `GET /data/{offer_id}` (key `GET /data/:offer_id`).
+before delivering the seller runs `verify_escrow` (operator = the bank, feeReceiver = clearing address, fee = tariff);
+delivery goes to the bank: `POST /api/deals/{deal_id}/delivery {manifest, signature, items}`. C claim fees:
+`POST /claims/{deal_id}/fee`, `POST /claims/{deal_id}/agree`. L1 direct pay: `GET /data/{offer_id}` (key `GET /data/:offer_id`).
+
+**V2.6 — delivery, rules A/B/C** (`bank/receipts.py`, `bank/disputes.py`, `bank/claims_c.py`, `bank/deciders.py`, `bank/snapshots.py`)
+```python
+receipts.merkle_root(items) -> str; receipts.merkle_proof(items, i); receipts.verify_proof(item, i, proof, root) -> bool
+receipts.sign_manifest(m, pk) -> sig; receipts.manifest_signer(m, sig) -> addr; receipts.register_key(seller_id, address, by)
+receipts.receive(deal, payload, now=None) -> dict      # seller -> bank {manifest, signature, items}: accepted or a delivery code
+receipts.fetch(deal_id) -> dict                         # accepted items with Merkle proofs, for the buyer
+receipts.waive(deal_id, keys, by, ordered) -> int       # "accept anyway" by a person
+disputes.open_(deal_id, terms) · advance(deal_id, actor="bank") · accept(deal_id, by) · file_b(deal_id, items, reason, by) · tick(deal_id)
+claims_c.file(deal_id, items, fields, by) · agree(deal_id, by) · pay_fee(deal_id, role, by, signature) · court(deal_id, by)
+claims_c.decide(deal_id, decider_id, verdicts) · tick(deal_id) · view(deal_id)
+deciders.commit(claim_id, party, h) · reveal(claim_id, party, ids, nonce) · select(claim_id) · sample(claim_id, n_items)
+deciders.decide(claim_id, decider_id, verdicts)         # pool ≥ 3, commit-reveal, drand beacon + committed salt
+snapshots.for_item(deal, version, idx, item, pred) · take(row, now) · drain(now)   # dated source snapshots (rule C evidence)
+```
 
 **T — tCZK & facilitator** (`contracts/`, `bank/facilitator.py`)
 FastAPI `APIRouter(prefix="/x402")`: `POST /verify`, `POST /settle`, `GET /supported` (EURC + tCZK). Bank
@@ -104,7 +130,11 @@ asserts against the chain (`chain.balance`, `escrow.state`, `chain.transfers`), 
 | POST | `/api/deals/{deal_id}/negotiate` | `{message}` → `{reply_text, offer?}` (bank proxies the seller, stores offers, marks source untrusted) |
 | POST | `/api/deals/{deal_id}/pay` | `{}` → client-view Decision |
 | GET | `/api/statement?mandate_id=` | → mandate summary |
-| POST | `/api/deals/{deal_id}/delivery` | seller → bank, `{items}` |
+| POST | `/api/deals/{deal_id}/delivery` | seller → bank, `{manifest, signature, items}` (`x-seller-token`) |
+| GET | `/api/deals/{deal_id}/delivery` | → accepted items with proofs (buyer agent tool `fetch_delivery`) |
+| POST | `/api/deals/{deal_id}/claims` | buyer agent tool `file_claim` (rule B or C) |
+| POST | `/api/sellers/{seller_id}/keys` | seller registers its manifest key (`x-seller-token`) |
+| POST | `/api/deals/{deal_id}/claims/c/…` | rule C steps: `fee`, `challenge`, `reveal`, `agree`, `seller-fee`, `court`, `decision` |
 
 ## Integration rules added after the stream review (19.10, integrator)
 
@@ -112,7 +142,8 @@ asserts against the chain (`chain.balance`, `escrow.state`, `chain.transfers`), 
   company, never the body's. A mandate spends only its own company's money (`deals.create` checks
   `mandates.company_id`). Seller → bank deliveries need `x-seller-token`; bank → seller escrow notices need
   `x-bank-token`; human actions need `x-human-token`: `POST /api/deals/{id}/confirm {by}`,
-  `POST /api/deals/{id}/ack-vat {by}`, `POST /api/mandates/{id}/ack-vat {seller_ico, asset, by}`.
+  `POST /api/deals/{id}/ack-vat {by}`, `POST /api/mandates/{id}/ack-vat {seller_ico, asset, by}`,
+  `POST /api/deals/{id}/accept`, `POST /api/deals/{id}/accept-items`; deciders: `x-decider-token`.
 - **Criteria** come from the buyer's task (`deals.buyer_criteria`, pydantic-validated), never from the seller's
   offer; an offer whose `count` differs from the task is ignored.
 - **Deliveries** are cleaned before storage: `core.clean_delivery_items` (no phones, no reviews).
@@ -120,15 +151,19 @@ asserts against the chain (`chain.balance`, `escrow.state`, `chain.transfers`), 
   `f"{deal_id}:{payment_hash[2:10]}:{kind}"`. A PaymentInfo that no longer matches the quote or has expired is
   dropped (after the chain shows no lock, or after the old lock is voided) and rebuilt with a new salt.
 - **Budget follows the chain:** after each capture `mandate.commit(captured)`; after the final void
-  `mandate.release` (amount := committed). A failed capture voids the whole lock and releases the budget.
+  `mandate.release` (amount := committed). A failed capture is retried (the lock is long, MODEL_V2 §8.3); it
+  never turns into a void (§8.4).
 - **Before reserving:** bank-side freeze for payer and payee; for tCZK the token's allowlist/freeze too.
-- **Judge only flags:** an item without the category keyword is always held for a human, whatever the judge says.
+- **No LLM on the money path:** acceptance is decided by `verifier.evaluate`; a person may only "accept anyway"
+  (`receipts.waive`, human token).
 - **AI explanations** may contain only URLs from the decision's own sources.
-- **Seller** pins the escrow operator (`config.BANK_OPERATOR_ADDR`) and zero fees before delivering; injection mode
+- **Seller** pins the escrow operator (`config.BANK_OPERATOR_ADDR`), the clearing address and the tariff before
+  delivering; injection mode
   also points its 402 at 0xEvil for 50 EURC, so the refusal is visible on the money path.
-- **Disputes (stream U):** when `settle` leaves `held > 0`, the deal is `verified`, the captured part is already
-  committed, the held part stays in escrow. Resolve with `escrow.capture(deal_id, amount, n)` (n ≥ 2) for what the
-  seller gets, then `escrow.void(deal_id)` once at the end, then `mandate.commit(captured)` + `mandate.release`.
+- **Rules A < B < C (MODEL_V2 §7, §8.2):** `disputes.advance` follows the schedule; what the seller gets is
+  captured first, `escrow.void(deal_id)` runs once at the end, then `mandate.commit(captured)` + `mandate.release`.
+  An open C claim keeps its part D in escrow (`escrow.split_off`); the deciders' decision executes after
+  10 business days.
 
 ## Ownership (to avoid merge conflicts)
 

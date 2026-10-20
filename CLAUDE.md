@@ -5,7 +5,8 @@
 You are the coding agent for a 24-hour hackathon build. Before writing code read, in this order:
 
 1. `docs/SPEC.md` — **the master document** (Russian): the implementation spec (addresses,
-   interfaces, API formats, order, done-criteria, pitfalls). If anything else disagrees with it, it wins.
+   interfaces, API formats, order, done-criteria, pitfalls). If anything else disagrees with it, it wins —
+   except the deal model (delivery, acceptance, quality rules, disputes), where `docs/MODEL_V2.md` (v2.6) wins.
 2. `docs/REFERENCE.md` — facts verified live on 2026-10-18 (tx links) and the **lessons** in §8a.
 3. `docs/TASKS.md` — the tick-list; one line per task, details live in SPEC.
 
@@ -16,8 +17,10 @@ sets a **mandate**; the agent holds **no keys** — the **bank service** (one Fa
 accounts, mandate, screening, x402 facilitator, escrow operator, verifier, disputes, journal) checks
 everything and signs. The seller is checked against public registries (ARES, VAT payers, ISIR, EU
 sanctions, hackathon datasets) and an **Apify actor**. Money is locked in **Coinbase
-AuthCaptureEscrow**, paid per accepted item after code rules (the LLM judge only flags), the rest
-returned; disagreement → **dispute page** decided by a human. Paying a Czech VAT payer in EURC
+AuthCaptureEscrow**; the seller delivers **through the bank** with a manifest signed by its own key (Merkle
+root), code predicates accept or reject each item (no LLM judge), the bank pays per accepted item by the
+deal's quality rule **A < B < C** (fee to the bank's clearing address at capture) and returns the rest in
+**one final void**; a rule-C dispute goes to an external decider drawn by drand. Paying a Czech VAT payer in EURC
 raises `VAT_LIABILITY_RISK` (Czech VAT Act §109); the human acknowledges it once per (seller, asset) in
 the first scene. Final scene: the same deal in EURC carries the "VAT risk acknowledged" mark, in the
 bank's **tokenized deposit tCZK** (125,00 Kč = 5 € at the demo rate) it passes with no risk.
@@ -27,7 +30,8 @@ bank's **tokenized deposit tCZK** (125,00 Kč = 5 € at the demo rate) it passe
 - **Testnet only** (Base Sepolia, `eip155:84532`). Never mainnet, never real funds.
 - **No secrets in code or git.** Keys only in `.env` (gitignored). Never print keys.
 - **The LLM never moves money and never chooses a payee.** Agent tools take ids only
-  (`pay(deal_id)`); money moves by code rules and by a human in disputes. The judge only flags.
+  (`pay(deal_id)`); money moves by code rules, human confirmations and executed rule-C decisions.
+  No LLM judges deliveries.
 - **Refusals are results, not exceptions:** closed enum (SPEC §6.3), each with a
   public/non-public flag; AML-suspicion reasons are never shown to the client (two-level explanations, §6.7).
 - **AI-generated text shown to people is labelled** (AI Act Art. 50).
@@ -41,7 +45,7 @@ bank's **tokenized deposit tCZK** (125,00 Kč = 5 € at the demo rate) it passe
 - **Lean code.** Plain functions, one SQLite, no abstractions "for later". Only what the demo
   shows or what protects money.
 - **Every layer ends runnable**: check its done-line in SPEC §15, then commit (small,
-  imperative messages — the technical judge reads the history). **No `Co-Authored-By` or other
+  imperative messages). **No `Co-Authored-By` or other
   AI attribution trailers in commit messages or PR descriptions** — the team's decision; AI use
   is disclosed in the README instead.
 - **`prep/` is pre-hackathon, disclosed** work: reuse proven techniques, never present it as new;

@@ -12,7 +12,7 @@ EVM `cancun`. ERC-20/EIP-712 name `"tCZK Deposit Token"`, version `"1"`, 2 decim
 | Freeze | `freeze` / `unfreeze`; no reason on chain (§6.7) |
 | Money | `mint(to, amt, bankTxRef)`, `burn(from, amt, bankTxRef)` (burn is never checked: works for delisted clients), `forcedTransfer(from, to, amt, caseRef)` |
 | EIP-3009 | OZ `(v,r,s)` functions + `bytes signature` overloads; `receiveWithAuthorization(..., bytes)` = `0x88b7ab63` (the escrow collector calls only this one) |
-| `_update` | sender and receiver allowlisted and not frozen; **strict mode**: an ordinary transfer needs `ROUTER_ROLE` on `msg.sender`, else `TransferViaBankOnly(caller)`. Admin can switch it off with `setStrictMode(false)` (§3.4 fallback) |
+| `_update` | sender and receiver allowlisted and not frozen; **strict mode**: an ordinary transfer needs `ROUTER_ROLE` on `msg.sender`, else `TransferViaBankOnly(caller)`. Admin switch: `setStrictMode(bool)` |
 
 ROUTER holders: the bank's x402 relayer (it also needs the role for verify's `eth_call` simulation), the
 ERC3009PaymentCollector, `escrow.getTokenStore(operator)` and the OperatorRefundCollector.
@@ -47,8 +47,8 @@ deployed by the bank wallet `0xD23D…de48` with `python -m bank.tczk deploy` (b
 `python -m bank.tczk setup <address>`: 7 roles (ISSUER/COMPLIANCE/ENFORCER for the bank, ROUTER for the relayer,
 collector, operator token store and refund collector), 7 allowlisted wallets (treasury, Alfa, Beta, Gama, Delta,
 collector, token store), 1000.00 Kč minted to Alfa; `strictMode = true`. About 3.0 M gas in 16 txs.
-The first setup tx reverted out of gas: its gas was estimated by a node that had not seen the new contract yet
-(~23 k), so setup now waits for the code and uses explicit gas, and is idempotent (re-run to resume).
+Setup waits until the node serves the new contract code and sends with explicit gas (an estimate from a node
+that has not seen the contract yet comes out far too low); it is idempotent (re-run to resume).
 Live proof: N10 direct transfer reverted `TransferViaBankOnly`, N11 replayed signature reverted
 `ERC3009UsedAuthorization` (`reports/scenarios-sepolia-n10n11.json`).
 
@@ -73,17 +73,17 @@ token store. It grants the ROUTER roles and mints to Alfa. Then:
 
 1. Put the printed address into `.env`: `TCZK=0x…` and `TCZK_NAME="tCZK Deposit Token"` (wrong name = every signature fails).
 2. `python -m bank.tczk info` → `strict: true`, collector and token store `allowed` and `router` all `true`.
-3. Keep the record for the judges: `git add -f contracts/broadcast/Deploy.s.sol/84532/run-latest.json`.
+3. Keep the deployment record: `git add -f contracts/broadcast/Deploy.s.sol/84532/run-latest.json`.
 
-**Fallback without Foundry:** `python -m bank.tczk deploy`. It does the same steps from the committed artifact,
+**Without Foundry:** `python -m bank.tczk deploy`. It does the same steps from the committed artifact,
 using `BANK_ADMIN_PK` and `RPC_URL` from `.env`, and prints `TCZK=…`.
 
 Both paths were run on an anvil fork of Base Sepolia (`anvil --fork-url https://sepolia.base.org`). A direct
 `transfer` by a client was a real reverted tx with `TransferViaBankOnly`.
 
-## Stage fallback: the prep token
+## The pre-hackathon prep token
 
 `TCZK=0x6a99C9e95DD220172d07D5f730f2e82B466D4B67`, `TCZK_NAME="Demo Bank tCZK"` (pre-hackathon `prep/` token,
-disclosed; already allowlists the buyer, the seller, the collector and the operator's token store; the buyer holds 845.00).
-`bank.tczk` and the facilitator detect it by the name. The prep token has no roles, no on-chain freeze and no
-strict mode, so only the bank-side freeze (`frozen_wallets`) applies.
+disclosed; allowlists the buyer, the seller, the collector and the operator's token store). `bank.tczk` and the
+facilitator still support it and detect it by the name. It is the simpler `DepositToken` (no roles, on-chain freeze
+or strict mode), so with it the bank-side freeze (`frozen_wallets`) applies.
