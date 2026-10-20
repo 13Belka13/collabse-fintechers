@@ -463,9 +463,13 @@ def _p(policy: dict, key: str):
 
 
 def related_sellers(seller_id: str) -> list[str]:
-    """Sellers linked to this one by a common beneficiary (EvSM). TODO(data): no EvSM extract is wired yet, so a
-    seller is related only to itself; the sums below already take the list."""
-    return [seller_id]
+    """Sellers linked to this one by a common beneficiary (EvSM, bank/evsm.py), this one included."""
+    from bank import core, evsm
+    me = core.seller(seller_id)
+    if me is None:
+        return [seller_id]
+    icos = evsm.related_icos(me["ico"])
+    return sorted({seller_id} | {s["seller_id"] for s in core.sellers() if s["ico"] in icos})
 
 
 def tier_sum(deal: dict, eur_cents: int, now: float) -> dict:

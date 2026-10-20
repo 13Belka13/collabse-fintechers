@@ -1,0 +1,18 @@
+{
+ "_note": "SYNTHETIC extract of the Czech register of beneficial owners (evidence skutečných majitelů, EvSM, zákon 37/2021 Sb.) for the demo companies (SPEC §14). Owners are pseudonymous ids, never names: no personal data. Gama and Delta share an owner, so they are related sellers (MODEL_V2 §2 tier_sum, §7C.10 independent buyers). Access to the real register needs an authorised user: TODO(data).",
+ "demo_fixture": true,
+ "recorded_at": "2026-10-20",
+ "owners": {
+  "64146103": ["bo-7f3a"],
+  "30181020": ["bo-21c9"],
+  "59093994": ["bo-9e44"],
+  "54763363": ["bo-9e44", "bo-0b17"],
+  "14645441": ["bo-5d02"],
+  "33116172": ["bo-c3e8"]
+ },
+ "deciders": {
+  "dec-1": [],
+  "dec-2": [],
+  "dec-3": []
+ }
+}

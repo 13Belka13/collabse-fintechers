@@ -40,8 +40,9 @@ class DeciderError(Exception):
 
 def pool() -> list[dict]:
     """Accredited deciders. Demo: 3 demo deciders whose keys a person on stage controls (§14) — said aloud."""
+    from bank import evsm
     return [{"id": f"dec-{i}", "name": f"Demo decider {i}", "address": f"0x{'dec0':0>36}{i:04x}",
-             "related_icos": []} for i in (1, 2, 3)]
+             "related_icos": sorted(evsm.decider_icos(f"dec-{i}"))} for i in (1, 2, 3)]
 
 
 # ---- drand ----
@@ -168,7 +169,8 @@ def _case(claim_id: int) -> dict:
 def eligible(case: dict, recent: list[tuple[str, float]] | None = None) -> tuple[list[dict], bool]:
     """(the pool after challenges, whether the reserve provider takes the case). recent: [(decider_id, case time)]
     of cases with the same side in 90 days — off in the demo (a second run would challenge the first decider)."""
-    sides = set(case["sides"].values())
+    from bank import evsm
+    sides = set().union(*(evsm.related_icos(i) for i in case["sides"].values()))  # a side and its owners' firms
     left = [d for d in pool() if d["id"] not in case["exclude"] and not sides & set(d["related_icos"])]
     if len(left) < MIN_POOL:
         return [RESERVE_PROVIDER], True
