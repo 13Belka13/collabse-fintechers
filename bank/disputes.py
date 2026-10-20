@@ -333,6 +333,9 @@ def b_availability(buyer_id: str, seller_id: str, now: float | None = None, exce
     pair = sum(1 for r in used + open_slots if r["seller_id"] == seller_id)
     deals_n = db.one("SELECT COUNT(*) n FROM deals WHERE buyer_id=? AND state IN ('settled','dispute_c')",
                      (buyer_id,))["n"]
+    # the client's history with the bank before these agent deals (synthetic, scripts/seed.py): an established
+    # client is not a new buyer
+    deals_n += (db.one("SELECT prior_deals FROM companies WHERE id=?", (buyer_id,)) or {"prior_deals": 0})["prior_deals"]
     b_deals = db.one("SELECT COUNT(*) n FROM deals d JOIN settlements s ON s.deal_id=d.deal_id WHERE d.buyer_id=?"
                      " AND s.rule IN ('B','C') AND s.deadline_at>=?", (buyer_id, since))["n"]
     ratio = (len(used) + 1) / (b_deals + 20)

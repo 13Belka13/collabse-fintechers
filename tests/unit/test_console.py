@@ -312,6 +312,30 @@ def test_five_scenarios_twice_in_a_row_keep_their_outcomes(client, sim, monkeypa
     assert ("tczk", "ok", "B") in runs[:half] and runs[1] == ("fake_data", "ok", "B"), runs
 
 
+def test_every_button_twice_back_to_back_asks_a_person_only_where_intended(client, sim):
+    """Alfa is an established client (prior_deals, scripts/seed.py): the new-buyer B limit does not stop the
+    scripted demo, with no clock shift between the rounds. Only the jury scene asks for a confirmation (Beta in
+    EURC asks about the VAT risk instead, until it is acknowledged)."""
+    runs = [(name, (ds.run_safe(name) or {}).get("outcome")) for _ in (1, 2) for name in ds.SCENARIOS]
+    for name, outcome in runs:
+        assert (outcome == Code.CONFIRMATION_REQUIRED) == (name == "jury") and outcome, runs
+    assert runs.count(("fake_data", "ok")) == runs.count(("tczk", "ok")) == 2, runs
+    assert runs.count(("honest", Code.VAT_LIABILITY_RISK)) == 2, runs
+
+
+def test_after_demo_seed_no_window_stays_open_and_the_scenes_run(client, sim):
+    """The keyless fallback (scripts/demo_seed) files a B claim and leaves a T2 deal with Beta: the presenter's
+    first scenes still go through, not CONFIRMATION_REQUIRED b_new_buyer_limit."""
+    from bank import disputes
+    from scripts import demo_seed
+    demo_seed.main()
+    assert db.rows("SELECT deal_id FROM settlements WHERE closed_at IS NULL AND window_end_at IS NOT NULL") == []
+    assert db.rows("SELECT deal_id FROM claims WHERE buyer_id='alfa' AND rule='B'")  # the seeded claim counts
+    assert disputes.b_availability("alfa", "s-beta")["available"]
+    runs = [(name, (ds.run_safe(name) or {}).get("outcome")) for name in ("honest", "fake_data", "tczk")]
+    assert runs == [("honest", "ok"), ("fake_data", "ok"), ("tczk", "ok")], runs
+
+
 # ---- the buyer's wallet: tCZK by default, balances next to the form, no run the wallet cannot pay ----
 
 def wallet(monkeypatch, **values):

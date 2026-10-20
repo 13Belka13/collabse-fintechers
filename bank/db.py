@@ -12,7 +12,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, ico TEXT UNIQUE NOT NULL, dic TEXT,
   account_number TEXT, iban TEXT, wallet_address TEXT, wallet_key_ref TEXT, role TEXT NOT NULL,
-  synthetic INTEGER NOT NULL DEFAULT 1);
+  synthetic INTEGER NOT NULL DEFAULT 1, prior_deals INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS mandates (
   mandate_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, current_version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS mandate_versions (
