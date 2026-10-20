@@ -267,6 +267,7 @@ class ModeIn(BaseModel):
     say: str | None = Field(None, max_length=500)
     opening: Literal["list", "min"] | None = None
     data: Literal["companies", "places", "maps", "apify"] | None = None
+    floor_eur_cents: int | None = Field(None, ge=0, le=100_000)  # never below this price (the "Jury approves" demo)
 
 
 def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
@@ -343,7 +344,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         if body.seller_id not in app.state.sellers:
             raise HTTPException(404, "unknown seller")
         s = app.state.sellers[body.seller_id]
-        s.update(mode=body.mode, say=(body.say or "").strip() or None, opening=body.opening, data=body.data)
+        s.update(mode=body.mode, say=(body.say or "").strip() or None, opening=body.opening, data=body.data,
+                 floor=body.floor_eur_cents)
         if body.rule is not None:
             s["rule"] = body.rule.strip().upper() or None
         return {k: s.get(k) for k in ("seller_id", "mode", "rule", "say", "opening", "data")}
@@ -361,6 +363,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         fixed = os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "").strip()
         list_c, min_c = ((count * int(fixed),) * 2 if fixed
                          else (count * LIST_PER_ITEM_EUR_CENTS, count * MIN_PER_ITEM_EUR_CENTS))
+        floor = int(seller.get("floor") or 0)  # a seller that will not go below this (set per run through /mode)
+        list_c, min_c = max(list_c, floor), max(min_c, floor)
         opening = list_c if (seller.get("opening") or os.getenv("SELLER_OPENING", "min").strip()) == "list" else min_c
         if seller.get("data") == "apify":  # start the live Google Maps run while the agents haggle
             maps_live.prefetch(maps_live.query_of(count, terms.get("predicates")))

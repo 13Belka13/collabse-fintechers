@@ -37,6 +37,21 @@
         <span class="right small muted">{{ st.ts|ts }}</span></div>
       {% if st.text %}<div>{{ st.text }}</div>{% endif %}
       {% if st.apify %}{% with w = st.apify %}{% include "_apify_check.html" %}{% endwith %}{% endif %}
+      {% if st.approve %}{% set q = approve_qr(st.approve, request) %}{% if q %}
+        <style>.qr-approve { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding: 12px;
+          border: 2px dashed var(--warn); border-radius: 12px; background: var(--warn-bg); }
+          .qr-approve .qr { background: #fff; padding: 6px; border-radius: 8px; line-height: 0; }
+          .qr-approve .qr svg { width: 230px; height: 230px; } .qr-approve > div:last-child { flex: 1 1 240px; }</style>
+        <div class="qr-approve">
+          <div class="qr">{{ q.svg|safe }}</div>
+          <div>
+            <div class="title">Scan to approve from your phone</div>
+            <div>A jury member sees the payment in plain words and taps <strong>Approve</strong>; this page updates by itself.</div>
+            <div class="small muted">One-time link for this payment, valid until {{ q.expires_at|ts }} ·
+              <a href="{{ q.url }}" target="_blank" rel="noopener">{{ q.path }}</a> · fallback: the confirm button on <a href="/mandate">Mandate</a></div>
+          </div>
+        </div>
+      {% endif %}{% endif %}
       {% if st.talk %}
         <div class="chat">
         {% for t in st.talk %}

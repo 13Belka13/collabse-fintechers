@@ -14,6 +14,8 @@ rapidfuzz
 rfc8785
 google-re2
 jsonschema
+# QR code on /story to approve a payment from a phone (SVG, no PIL)
+qrcode
 # tests and coverage (SPEC §19)
 pytest
 pytest-cov
