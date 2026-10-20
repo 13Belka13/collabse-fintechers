@@ -18,7 +18,8 @@ from bank import codes, config, db, deadlines, deals, disputes, escrow, explain,
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
 TRANSFER_EVENTS = {"escrow_authorized": "Locked in escrow", "escrow_captured": "Paid to the seller",
-                   "escrow_voided": "Returned to the buyer", "x402_settled": "x402 payment settled"}
+                   "escrow_voided": "Returned to the buyer", "x402_settled": "x402 payment settled",
+                   "payout_to_account": "Paid out to the seller's bank account"}
 INFO_EVENTS = {"settlement.opened", "delivery.autocodes", "delivery.refused", "delivery.accepted_anyway",
                "claim_b.filed", "settlement.accepted", "settlement.closed", "settlement.tx_failed",
                "escrow_expiry_alarm", "timer_error", "x402_refused", "demo.scenario"}

@@ -269,6 +269,8 @@ def test_story_and_deal_page_show_the_payout(world):
     assert "On the seller's bank account" in page
     page = client.get(f"/deals/{deal_id}").text
     assert "Payout to the seller's bank account" in page and "on the account" in page
+    page = client.get("/bank").text
+    assert "Paid out to the seller&#39;s bank account" in page and "112,50 Kč" in page
 
 
 # ---- DEMO_SIM: simulated mint/burn, never an explorer link ----
