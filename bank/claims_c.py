@@ -24,6 +24,7 @@
 #     beneficial owner, EvSM). Negotiation and fees run from filing; only the decider stage waits ("queued", FIFO
 #     by the time both fees came in). A queued claim is an open C claim: D stays held.
 # Money: D stays in escrow (split off at window end, §8.2); the schedule in bank/disputes.py reads held().
+import functools
 import time
 
 from bank import config, db, deals, deciders, escrow, evsm, journal, money, snapshots, verifier
@@ -68,12 +69,25 @@ def get(deal_id: str) -> dict | None:
     return next(iter(disputes.claims(deal_id, "C")), None)
 
 
+def _deal_locked(fn):
+    """The claim's API actions and the timer run under the deal's lock (disputes._locks) and read the claim inside
+    it: a fee in flight and a deadline never act on the same claim at once."""
+    @functools.wraps(fn)
+    def run(deal_id, *a, **kw):
+        from bank import disputes
+        with disputes._locks[deal_id]:
+            return fn(deal_id, *a, **kw)
+    return run
+
+
 def _set(claim: dict, state: str, actor: str, event: str, **data):
+    """Compare-and-set: the claim moves only from the state it was read in (never over a newer state)."""
     merged = {**claim["data"], **data}
     with db.immediate():
-        db.run("UPDATE claims SET state=?, data_json=?, closed_at=? WHERE id=?",
-               (state, db.dumps(merged), time.time() if state in ("executed", "refund", "withdrawn") else None,
-                claim["id"]))
+        if db.run("UPDATE claims SET state=?, data_json=?, closed_at=? WHERE id=? AND state=?",
+                  (state, db.dumps(merged), time.time() if state in ("executed", "refund", "withdrawn") else None,
+                   claim["id"], claim["state"])).rowcount != 1:
+            raise ClaimError(409, f"the claim is no longer {claim['state']}")
         journal.append(actor, f"claim_c.{event}", {"state": state, **data}, deal_id=claim["deal_id"])
 
 
@@ -158,6 +172,7 @@ def _fee_budget(deal: dict, f: int):
 
 # ---- 3–4. negotiation and fees ----
 
+@_deal_locked
 def agree(deal_id: str, by: str, now: float | None = None) -> dict:
     """The seller agrees in negotiation: D back to the buyer, no fees (by the §8.2 schedule)."""
     c = _claim(deal_id)
@@ -167,6 +182,7 @@ def agree(deal_id: str, by: str, now: float | None = None) -> dict:
     return get(deal_id)
 
 
+@_deal_locked
 def fee_terms(deal_id: str, role: str) -> dict:
     """The fee PaymentInfo a party authorizes (the seller signs its ERC-3009 authorization itself)."""
     from bank import core
@@ -181,6 +197,7 @@ def fee_terms(deal_id: str, role: str) -> dict:
     return pi
 
 
+@_deal_locked
 def pay_fee(deal_id: str, role: str, by: str, signature: str | None = None, now: float | None = None) -> dict:
     from bank import core
     now = time.time() if now is None else now
@@ -261,6 +278,7 @@ def start_review(c: dict, now: float) -> bool:
     return True
 
 
+@_deal_locked
 def court(deal_id: str, by: str) -> dict:
     """A side confirms it filed a court claim: D stays in escrow until the court or an agreement (§7C.9)."""
     c = _claim(deal_id)
@@ -279,6 +297,7 @@ def _claim(deal_id: str) -> dict:
 
 # ---- 5. the decision ----
 
+@_deal_locked
 def decide(deal_id: str, decider_id: str, verdicts: dict, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     c = _claim(deal_id)
@@ -304,6 +323,7 @@ def loser(c: dict) -> str | None:
     return None if pct is None or pct == 50 else ("buyer" if pct < 50 else "seller")
 
 
+@_deal_locked
 def rereview_terms(deal_id: str, role: str) -> dict:
     """The F3 PaymentInfo the loser authorizes (the seller signs it itself), stored before anything is signed."""
     from bank import core
@@ -320,6 +340,7 @@ def rereview_terms(deal_id: str, role: str) -> dict:
     return pi
 
 
+@_deal_locked
 def request_rereview(deal_id: str, role: str, by: str, signature: str | None = None,
                      now: float | None = None) -> dict:
     """The loser pays F3 within 5 business days of the decision; the case goes to two new deciders."""
@@ -343,6 +364,7 @@ def request_rereview(deal_id: str, role: str, by: str, signature: str | None = N
     return get(deal_id)
 
 
+@_deal_locked
 def decide_rereview(deal_id: str, decider_id: str, verdicts: dict, now: float) -> dict:
     c = _claim(deal_id)
     final = deciders.decide_rereview(c["id"], decider_id, verdicts, now)
@@ -354,6 +376,7 @@ def decide_rereview(deal_id: str, decider_id: str, verdicts: dict, now: float) -
     return get(deal_id)
 
 
+@_deal_locked
 def tick(deal_id: str, now: float | None = None) -> None:
     """Deadlines: negotiation end, the buyer's and the seller's fee, the draw and sample, a late decider, and the
     execution 10 business days after the decision."""

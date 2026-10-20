@@ -603,3 +603,50 @@ def test_a_split_payment_info_that_never_locked_is_rebuilt_after_pre_approval_ex
     auths = [a for fn, a, key, _ in w.sender.sent if fn == "authorize" and ":fee-" not in key]
     assert auths == [PRICE_C] and deals.get(deal_id)["pi_n"] == 2 and disputes.get(deal_id)["split_n"] == 2
     assert _deal_pis(deal_id)[1:] == [(1, PRICE_C, 0), (2, PRICE_C, 1)]
+
+
+def _timer_fires_during_the_fee(monkeypatch, timer_now):
+    """The timer thread fires while the fee's authorize and capture are in flight (the API runs in a threadpool)."""
+    import threading
+    real, timer = escrow.pay_fee, {}
+
+    def slow_pay_fee(deal_id, pi, sig):
+        tx = real(deal_id, pi, sig)
+        timer["t"] = threading.Thread(target=lambda: deadlines.tick(now=timer_now))
+        timer["t"].start()
+        time.sleep(0.3)  # the timer reaches the claim before pay_fee books the fee
+        return tx
+    monkeypatch.setattr(escrow, "pay_fee", slow_pay_fee)
+    return timer
+
+
+def test_a_fee_paid_at_its_deadline_and_the_timer_never_both_act_on_the_claim(w, monkeypatch):
+    bd = config.BUSINESS_DAY_S
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    until = claims_c.get(deal_id)["data"]["buyer_fee_until"]
+    timer = _timer_fires_during_the_fee(monkeypatch, until + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=until - 1)
+    timer["t"].join(timeout=20)
+    assert claims_c.get(deal_id)["state"] == "seller_fee"  # the fee came in time: not withdrawn under it
+    assert k.captures(w) == [] and deal_id in disputes.open_ids()  # D did not go to the seller
+
+    until = claims_c.get(deal_id)["data"]["seller_fee_until"]
+    sig = escrow.buyer_signature(claims_c.fee_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    timer = _timer_fires_during_the_fee(monkeypatch, until + 1)
+    claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=until - 1)
+    timer["t"].join(timeout=20)
+    c = claims_c.get(deal_id)
+    assert c["state"] == "decider" and c["data"].get("outcome") is None and deal_id in disputes.open_ids()
+    assert not [key for fn, _, key, _ in w.sender.sent if fn == "transfer"]  # no fee back: the seller paid in time
+
+
+def test_a_claim_read_before_another_writer_moved_it_is_not_overwritten(w):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    stale = claims_c.get(deal_id)
+    claims_c.agree(deal_id, "seller", now=T0 + 6)  # another writer moved it to refund
+    with pytest.raises(claims_c.ClaimError) as e:
+        claims_c._set(stale, "buyer_fee", "timer", "negotiation_over", buyer_fee_until=T0 + 7)
+    assert e.value.status == 409 and claims_c.get(deal_id)["state"] == "refund"
