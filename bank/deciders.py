@@ -111,9 +111,29 @@ def schedule(now: float) -> dict:
             "sample_round": first_round_after(t2 + 48 * HOUR / config.TIME_DIVISOR)}
 
 
+def anchor(deal_id: str, claim_id: int, step: str, salt_hash: str) -> dict | None:
+    """The salt commitment in the network (§7C.6) without a contract: a 0-value transaction from the operator to
+    itself with the hash as calldata, readable on the explorer. A failure is journalled and does not stop the case:
+    the commitment is in the hash-chained journal either way."""
+    from bank import chain
+    try:
+        me = config.BANK_OPERATOR_ADDR
+        tx = chain.sender(config.BANK_OPERATOR_PK).send(
+            {"to": me, "value": 0, "data": salt_hash}, kind="salt_commit", deal_id=deal_id,
+            idem_key=f"{deal_id}:salt:{claim_id}:{step}:{salt_hash[2:18]}")
+    except Exception as e:  # noqa: BLE001 — e.g. no operator key in CI; the journal still holds the commitment
+        journal.append("bank", "decider.salt_anchor_failed", {"claim_id": claim_id, "step": step,
+                                                              "error": repr(e)[:200]}, deal_id=deal_id)
+        return None
+    journal.append("bank", "decider.salt_anchored", {"claim_id": claim_id, "step": step, "salt_hash": salt_hash,
+                                                     "tx_hash": tx["tx_hash"], "link": tx.get("link")},
+                   deal_id=deal_id)
+    return tx
+
+
 def open_stage(claim: dict, sides: dict, now: float | None = None, exclude: tuple = (), step: str = "first") -> dict:
-    """Both fees are in: fix the schedule and commit to a fresh secret salt (its hash goes to the journal; on a
-    chain-backed deployment, also to the network). sides: {"buyer": ico, "seller": ico}."""
+    """Both fees are in: fix the schedule and commit to a fresh secret salt (its hash goes to the journal and to
+    the network, anchor()). sides: {"buyer": ico, "seller": ico}."""
     now = time.time() if now is None else now
     salt = secrets.token_hex(32)
     case = {"claim_id": claim["id"], "deal_id": claim["deal_id"], "step": step, "sides": sides,
@@ -124,6 +144,7 @@ def open_stage(claim: dict, sides: dict, now: float | None = None, exclude: tupl
     journal.append("bank", "decider.stage_opened", {k: case[k] for k in ("claim_id", "step", "salt_hash", "t1", "t2",
                                                                        "selection_round", "sample_round")},
                    deal_id=claim["deal_id"])
+    anchor(claim["deal_id"], claim["id"], step, case["salt_hash"])
     return public(case)
 
 
@@ -310,6 +331,7 @@ def open_rereview(claim_id: int, now: float | None = None) -> dict:
     journal.append("bank", "decider.rereview_opened", {"claim_id": claim_id, "salt_hash": rr["salt_hash"],
                                                        "t2": rr["t2"], "selection_round": rr["selection_round"]},
                    deal_id=case["deal_id"])
+    anchor(case["deal_id"], claim_id, "rereview", rr["salt_hash"])
     return public(case)
 
 

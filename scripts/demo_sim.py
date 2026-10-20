@@ -34,6 +34,11 @@ class SimChain:
                 return {"tx_hash": prior["tx_hash"], "status": "simulated", "block_number": None, "gas_used": 0,
                         "link": sim_link(prior["tx_hash"]), "receipt": None}
             h = "0x" + secrets.token_hex(32)
+            if isinstance(call, dict):  # a plain tx (the decider salt commitment): nothing to simulate
+                db.run("INSERT INTO onchain_txs (tx_hash, kind, deal_id, status, idem_key, created_at)"
+                       " VALUES (?,?,?,?,?,?)", (h, kind, deal_id, "simulated", idem_key, time.time()))
+                return {"tx_hash": h, "status": "simulated", "block_number": None, "gas_used": 0,
+                        "link": sim_link(h), "receipt": None}
             pi = dict(zip([n for n, _ in escrow.PI_FIELDS], call.args[0]))
             st = self._state(escrow.payment_hash(pi))
             if call.fn_name == "authorize":
