@@ -29,12 +29,25 @@ def names(result):
 # ---- tools: ids only ------------------------------------------------------------------------------
 
 def test_tools_take_ids_only_and_forbid_extra_fields():
-    assert [t["name"] for t in buyer.TOOLS] == ["find_seller", "check_seller", "negotiate", "pay", "get_statement"]
+    assert [t["name"] for t in buyer.TOOLS] == ["find_seller", "check_seller", "negotiate", "pay", "get_statement",
+                                                "fetch_delivery", "file_claim"]
     for t in buyer.TOOLS:
         s = t["input_schema"]
         assert s["type"] == "object" and s["additionalProperties"] is False
         assert not set(s["properties"]) & {"address", "to", "pay_to", "amount", "asset", "wallet"}
     assert buyer.TOOLS[3]["input_schema"]["required"] == ["deal_id"]
+
+
+def test_claim_tool_takes_ids_and_a_closed_reason_list(bank):
+    b = buyer.Buyer(TASK, transport=bank.call)
+    out, err = b.tool("file_claim", {"deal_id": "d-001", "rule": "B", "items": [[1, 0]], "reason": "because"})
+    assert err and "invalid arguments" in out["error"]
+    out, err = b.tool("file_claim", {"deal_id": "d-001", "rule": "B", "items": [[1, 0]], "amount": "5"})
+    assert err and "invalid arguments" in out["error"]
+    out, err = b.tool("file_claim", {"deal_id": "d-unknown", "rule": "B", "items": [[1, 0]]})
+    assert err and "only deals you negotiated" in out["error"]
+    out, err = b.tool("fetch_delivery", {"deal_id": "d-unknown"})
+    assert err
 
 
 def test_tool_arguments_are_validated_in_code(bank):
@@ -223,4 +236,4 @@ def test_seller_counter_parsing_and_modes():
         seller_agent.reply({}, "x", "evil")
     offer = seller_agent.reply({"task": {"asset": "tCZK"}}, "5 €")["offer"]
     assert seller_agent.quote(offer, "0xW") == {"asset": "tCZK", "amount": "12500", "pay_to": "0xW"}
-    assert offer["dispute_terms"]["holdback_bps"] == 500
+    assert offer["rule"] == "B" and offer["b_pct"] == 10  # MODEL_V2 §7: a quality rule, no holdback

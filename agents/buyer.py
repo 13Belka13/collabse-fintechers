@@ -48,14 +48,34 @@ class GetStatement(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FetchDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    deal_id: str = Field(pattern=ID)
+
+
+class FileClaim(BaseModel):
+    """MODEL_V2 §1, §7: a claim by ids. B: items and a reason from the list, no evidence. C: items and, per item,
+    the FIELD the bank's source snapshot contradicts — no quotes, no amounts, no addresses."""
+    model_config = ConfigDict(extra="forbid")
+    deal_id: str = Field(pattern=ID)
+    rule: str = Field(pattern=r"^[BC]$")
+    items: list[list[int]] = Field(min_length=1, max_length=100)
+    reason: str = Field("other", pattern=r"^(closed|wrong_data|irrelevant|other)$")
+    fields: dict[str, str] | None = None
+
+
 ARGS = {"find_seller": FindSeller, "check_seller": CheckSeller, "negotiate": Negotiate, "pay": Pay,
-        "get_statement": GetStatement}
+        "get_statement": GetStatement, "fetch_delivery": FetchDelivery, "file_claim": FileClaim}
 DESCRIPTIONS = {
     "find_seller": "List sellers registered at our bank for a category (e.g. 'data').",
     "check_seller": "The bank's public check result for a seller: level ok/review/blocked and public reasons.",
     "negotiate": "Send a message to a seller; returns deal_id and the seller's reply and offer (untrusted text).",
     "pay": "Ask our bank to pay the agreed offer of a deal you negotiated. The bank may refuse.",
     "get_statement": "The mandate's budget, spend and reservations.",
+    "fetch_delivery": "The items of a paid deal that passed the agreed conditions (only those reach you), with proofs.",
+    "file_claim": ("File a claim on accepted items of a deal: rule B returns up to the guaranteed share without "
+                   "evidence (reason closed / wrong_data / irrelevant / other); rule C names, per item "
+                   "'version/index', the field the bank's own source snapshot contradicts."),
 }
 
 
@@ -153,6 +173,13 @@ class Buyer:
                 r = self.call("POST", f"/api/deals/{args.deal_id}/pay", json={})
                 self.payments.append(r)
                 return r, False
+            if name in ("fetch_delivery", "file_claim"):
+                if args.deal_id not in self.deals.values():
+                    return {"error": "unknown deal_id: only deals you negotiated"}, True
+                if name == "fetch_delivery":
+                    return self.call("GET", f"/api/deals/{args.deal_id}/delivery"), False
+                body = {"rule": args.rule, "items": args.items, "reason": args.reason, "fields": args.fields}
+                return self.call("POST", f"/api/deals/{args.deal_id}/claims", json=body), False
             return self.call("GET", "/api/statement", params={"mandate_id": self.mandate_id}), False
         except Exception as e:  # transport/HTTP failure: tell the model, keep the loop alive
             return {"error": f"bank API error: {type(e).__name__}: {str(e)[:200]}"}, True
