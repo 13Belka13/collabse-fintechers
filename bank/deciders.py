@@ -54,7 +54,7 @@ def pool() -> list[dict]:
              "related_icos": sorted(evsm.decider_icos(f"dec-{i}"))} for i in (1, 2, 3)]
 
 
-# ---- drand ----
+# ---- who decides on the case page: the decider's own token ----
 
 def tokens() -> dict[str, str]:
     """Decider id -> the token that decider types on its case page; the page derives the id from it, never from the
@@ -76,6 +76,8 @@ def by_token(token: str) -> str | None:
             found = decider_id
     return found
 
+
+# ---- drand ----
 
 def round_time(r: int) -> int:
     return DRAND_GENESIS + (r - 1) * DRAND_PERIOD
