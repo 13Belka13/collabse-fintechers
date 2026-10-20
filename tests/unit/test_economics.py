@@ -115,7 +115,10 @@ def test_fee_before_capture_t0_and_refusals():
     refused = deal("d-refused", terms={})
     e = economics.deal(refused, FALLBACK)
     assert (e["tx_count"], e["cost_cents"], e["fee_cents"], e["margin_text"]) == (0, 0, 0, "—")
-    assert "no money moved" in e["fee_note"]
+    assert "no money moved" in e["fee_note"] and e["empty_text"] == "No transaction yet: nothing spent on chain so far."
+    db.run("UPDATE deals SET state='refused' WHERE deal_id=?", (refused,))
+    assert economics.deal(refused, FALLBACK)["empty_text"].startswith("Refused before any transaction")
+    assert economics.deal(d, FALLBACK)["empty_text"] == ""
     back = deal("d-void")
     tx(back, "authorize", 150_000), tx(back, "void", 64_000)
     journal.append("bank", "escrow_voided", {"tx_hash": "0x2"}, deal_id=back)

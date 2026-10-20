@@ -7,7 +7,9 @@
   {% if u.free %}· {{ u.free }} refused or unpaid deal{{ 's' if u.free != 1 }} cost nothing on chain{% endif %}
   <div class="muted">Cost at today's Base mainnet gas price ({{ '%.4g'|format(u.price.wei / 1e9) }} gwei{{ ', fallback constant' if not u.price.live }}){{ '; typical gas, simulated chain' if u.typical }}.</div>
 </div>
-{% elif deal_id %}{% set e = economics.deal(deal_id) %}{% if e %}
+{% elif deal_id %}{% set e = economics.deal(deal_id) %}{% if e and e.empty_text %}
+<div class="card small" id="economics"><strong>What this deal cost:</strong> {{ e.empty_text }}</div>
+{% elif e %}
 <div class="card" id="economics">
   <div class="flex"><strong>What this deal cost and what the bank earned</strong>
     {% if e.typical %}<span class="badge b-warn">typical gas, simulated chain</span>{% endif %}</div>

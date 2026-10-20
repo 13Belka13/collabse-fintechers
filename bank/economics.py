@@ -162,7 +162,7 @@ def _fee(d: dict, moved: bool, sim: bool) -> dict:
 
 def deal(deal_id: str, price: dict | None = None) -> dict | None:
     """Transactions, gas, network cost at today's Base mainnet gas price, the bank's fee and the margin of a deal."""
-    d = db.one("SELECT deal_id, asset, amount, terms_json FROM deals WHERE deal_id=?", (deal_id,))
+    d = db.one("SELECT deal_id, asset, amount, terms_json, state FROM deals WHERE deal_id=?", (deal_id,))
     if d is None:
         return None
     asset = d["asset"] or "EURC"
@@ -190,7 +190,9 @@ def deal(deal_id: str, price: dict | None = None) -> dict | None:
             "gas_text": f"{gas:,}".replace(",", " "), "cost_text": fmt_cents(cost), "fee_text": fmt_cents(fee_cents),
             "fee_native": money.fmt(asset, fee["atomic"]) if asset != "EURC" and fee["atomic"] else "",
             "fee_note": fee["note"], "margin_text": f"{margin:.0f} %" if margin is not None else "—",
-            "caption": caption}
+            "caption": caption,
+            "empty_text": "" if txs else "Refused before any transaction: this deal cost nothing on chain."
+            if d["state"] == "refused" else "No transaction yet: nothing spent on chain so far."}
 
 
 def summary(deal_rows: list[dict]) -> dict:
