@@ -44,8 +44,7 @@ def test_valid_token_confirms_exactly_once_and_story_shows_the_jury(web):
     deal_id = pending_deal(web)
     token = qr_token(web, deal_id)
     assert qr_token(web, deal_id) == token  # the QR stays the same between refreshes of /story
-    row = db.one("SELECT token_hash FROM approvals WHERE deal_id=?", (deal_id,))
-    assert row["token_hash"] != token and token not in str(db.rows("SELECT * FROM approvals"))  # only the hash
+    assert token not in str(db.rows("SELECT * FROM approvals"))  # only the hash is stored
     page = web.api.get(f"/approve/{deal_id}?t={token}")
     assert page.status_code == 200
     for text in ("Alfa s.r.o.", "8,00 €", "Gama s.r.o.", "20 warehouse records", "6,00 €", "Approve", "Decline"):
@@ -83,12 +82,15 @@ def test_expired_reused_foreign_and_missing_tokens_move_nothing(web):
     with pytest.raises(deals.DealError, match="expired"):
         approve.act(a, token_a, "approve", now=exp + 1)
     assert authorizes(web) == [] and deals.get(a)["confirmed_by"] is None and deals.get(b)["confirmed_by"] is None
-    # an expired QR is replaced on the next /story refresh; the old token stops working
-    new, _, _ = approve.issue(a, "https://demo.example", now=exp + 1)
-    assert new != token_a and approve.check(a, token_a, now=exp + 2) == "invalid"
-    assert approve.check(a, new, now=exp + 2) is None
-    # reused: the first use wins even when two phones race
-    assert approve.use(b, token_b) is None and approve.use(b, token_b) == "used"
+    # in its last minute the QR on /story gets a new token; one a phone has just scanned still works until it expires
+    new, _, url = approve.issue(a, "https://demo.example", now=exp - 30)
+    assert new != token_a and url == f"https://demo.example/approve/{a}?t={new}"
+    assert approve.check(a, token_a, now=exp - 20) is None and approve.check(a, new, now=exp + 2) is None
+    assert approve.issue(a, "https://demo.example", now=exp - 20)[0] == new  # and stays the same between refreshes
+    # reused: one approval per deal — the first use spends every token of the deal, even when two phones race
+    assert approve.use(a, token_a, now=exp - 10) is None
+    assert approve.use(a, token_a, now=exp - 10) == "used" and approve.check(a, new, now=exp - 10) == "used"
+    assert approve.check(b, token_b) is None  # another deal's token is untouched
     assert authorizes(web) == []
 
 

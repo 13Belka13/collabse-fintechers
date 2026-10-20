@@ -34,8 +34,9 @@ CREATE TABLE IF NOT EXISTS deals (
   idem_key TEXT UNIQUE, created_at REAL NOT NULL, updated_at REAL, confirmed_by TEXT, terms_json TEXT,
   pi_n INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS approvals (
-  deal_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL, expires_at REAL NOT NULL, used_at REAL, used_by TEXT,
+  token_hash TEXT PRIMARY KEY, deal_id TEXT NOT NULL, expires_at REAL NOT NULL, used_at REAL, used_by TEXT,
   created_at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS approvals_deal ON approvals(deal_id);
 CREATE TABLE IF NOT EXISTS screenings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, source TEXT NOT NULL,
   result_json TEXT NOT NULL, fetched_at REAL NOT NULL);

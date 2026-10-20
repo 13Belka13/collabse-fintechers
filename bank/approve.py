@@ -5,7 +5,6 @@
 # the same function as the confirm button on /mandate (the fallback). Caddy lets /approve/* through without the UI
 # password (deploy/Caddyfile): a valid token is the only key, and without one the page shows nothing about the deal.
 import hashlib
-import hmac
 import secrets
 import threading
 import time
@@ -26,7 +25,7 @@ REASONS = {"invalid": "This approval link is not valid.",
            "used": "This approval link was already used.",
            "expired": "This approval link has expired. Scan the new QR code on the screen.",
            "nothing": "Nothing to approve: this payment no longer waits for a person."}
-_issued: dict[str, tuple[str, float, str]] = {}  # deal_id -> (token, expires_at, url): for the QR on /story only
+_issued: dict[str, tuple[str, float]] = {}  # deal_id -> (token, expires_at): only for the QR on /story
 _lock = threading.Lock()
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -67,31 +66,27 @@ def _why(dec: dict) -> str:
 
 
 def issue(deal_id: str, base_url: str, now: float | None = None) -> tuple[str, float, str]:
-    """The token for the QR on /story: the same one while it has a minute left and is unused, otherwise a new one
-    (its hash replaces the old one, so an older QR stops working). Returns (token, expires_at, url)."""
+    """The token for the QR on /story: the same one while it has a minute left and is unused, otherwise a new one.
+    An older token stays valid until its own expiry (a phone may have just scanned it). Returns (token, expires_at,
+    url)."""
     now = time.time() if now is None else now
     with _lock:
         held = _issued.get(deal_id)
-        if held and held[1] - now > 60:
-            row = db.one("SELECT token_hash, used_at FROM approvals WHERE deal_id=?", (deal_id,))
-            if row and row["used_at"] is None and hmac.compare_digest(row["token_hash"], _hash(held[0])):
-                return held
-        token, expires = secrets.token_urlsafe(16), now + TTL_S
-        with db.immediate():
-            db.run("INSERT INTO approvals (deal_id, token_hash, expires_at, created_at) VALUES (?,?,?,?)"
-                   " ON CONFLICT(deal_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at,"
-                   " used_at=NULL, used_by=NULL, created_at=excluded.created_at", (deal_id, _hash(token), expires, now))
-            journal.append("bank", "approval_link_issued", {"expires_at": expires}, deal_id=deal_id)
-        url = f"{base_url.rstrip('/')}/approve/{deal_id}?t={token}"
-        _issued[deal_id] = (token, expires, url)
-        return _issued[deal_id]
+        if not (held and held[1] - now > 60 and check(deal_id, held[0], now) is None):
+            held = (secrets.token_urlsafe(16), now + TTL_S)
+            with db.immediate():
+                db.run("INSERT INTO approvals (token_hash, deal_id, expires_at, created_at) VALUES (?,?,?,?)",
+                       (_hash(held[0]), deal_id, held[1], now))
+                journal.append("bank", "approval_link_issued", {"expires_at": held[1]}, deal_id=deal_id)
+            _issued[deal_id] = held
+        return held[0], held[1], f"{base_url.rstrip('/')}/approve/{deal_id}?t={held[0]}"
 
 
 def check(deal_id: str, token: str | None, now: float | None = None) -> str | None:
     """None when the token is valid for this deal now, else why not: invalid (unknown, or another deal's) | used |
     expired."""
-    row = db.one("SELECT token_hash, expires_at, used_at FROM approvals WHERE deal_id=?", (deal_id,))
-    if row is None or not token or not hmac.compare_digest(row["token_hash"], _hash(token)):
+    row = db.one("SELECT deal_id, expires_at, used_at FROM approvals WHERE token_hash=?", (_hash(token or ""),))
+    if row is None or not token or row["deal_id"] != deal_id:
         return "invalid"
     if row["used_at"] is not None:
         return "used"
@@ -101,7 +96,8 @@ def check(deal_id: str, token: str | None, now: float | None = None) -> str | No
 
 
 def use(deal_id: str, token: str | None, by: str = BY, now: float | None = None) -> str | None:
-    """Spend the token: check and mark used in one transaction, so two phones cannot both use it. None = spent now."""
+    """Spend the token and every other token of this deal, in one transaction: one approval per deal, and two
+    phones cannot both use one. None = spent now."""
     now = time.time() if now is None else now
     with db.immediate():
         why = check(deal_id, token, now)
@@ -156,7 +152,7 @@ def approve_page(request: Request, deal_id: str, t: str = ""):
         why = "nothing"
     if why:
         return _page(request, 403 if why == "invalid" else 410, error=REASONS[why])
-    expires = db.one("SELECT expires_at FROM approvals WHERE deal_id=?", (deal_id,))["expires_at"]
+    expires = db.one("SELECT expires_at FROM approvals WHERE token_hash=?", (_hash(t),))["expires_at"]
     return _page(request, card=card, token=t, expires_at=expires)
 
 
