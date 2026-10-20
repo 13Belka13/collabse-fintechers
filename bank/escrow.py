@@ -218,8 +218,8 @@ def capture(deal_id: str, amount: int, n: int) -> dict:
     if time.time() >= int(pi["authorizationExpiry"]) - CAPTURE_MARGIN_S:
         raise EscrowError(f"{deal_id}: authorizationExpiry reached, capture is no longer possible (void only)")
     fee = fee_of(pi, amount)
-    call = contract().functions.capture(as_tuple(pi), int(amount), fee,
-                                        Web3.to_checksum_address(pi["feeReceiver"]) if fee else ZERO)
+    # the PaymentInfo's feeReceiver even when the fee floors to 0: the escrow reverts InvalidFeeReceiver on any other
+    call = contract().functions.capture(as_tuple(pi), int(amount), fee, Web3.to_checksum_address(pi["feeReceiver"]))
     with timing.timed("escrow_capture", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="capture", deal_id=deal_id,
                                                         idem_key=idem_key(deal_id, f"capture:{n}"))
