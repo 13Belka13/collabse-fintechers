@@ -46,6 +46,11 @@ def tick(now: float | None = None) -> list[dict]:
             after = journal.entries(deal_id, limit=1)
             if after and (not before or after[0]["id"] != before[0]["id"]):
                 done.append({"deal_id": deal_id, "event": after[0]["event"]})
+        try:
+            from bank import claims_c
+            claims_c.retry_transfers()  # fee shares and decider pay owed by decided C claims (§7C.4)
+        except Exception as e:  # noqa: BLE001 — journalled; the next pass retries
+            journal.append("timer", "clearing.retry_failed", {"error": repr(e)[:200]})
         done += alarms(now)
     return done
 

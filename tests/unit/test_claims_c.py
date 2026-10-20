@@ -670,3 +670,29 @@ def test_a_fee_payment_info_past_pre_approval_expiry_and_never_sent_is_rebuilt(w
     assert int(pi["preApprovalExpiry"]) > later  # signed and authorized before it expires
     keys = [key for fn, _, key, _ in w.sender.sent if fn == "authorize" and ":fee-" in key]
     assert keys == [f"{deal_id}:{escrow.payment_hash(pi)[2:10]}:fee-authorize"]
+
+
+def test_a_failed_fee_transfer_is_written_down_and_resent_by_the_timer_after_the_deal_closed(w, monkeypatch):
+    deal_id, window = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    real, gas = escrow.transfer_from_clearing, {"none": True}
+
+    def transfer(*a, **kw):  # the clearing address has no gas yet: the node refuses the transfer
+        if gas["none"]:
+            raise ValueError("insufficient funds for gas")
+        return real(*a, **kw)
+    monkeypatch.setattr(escrow, "transfer_from_clearing", transfer)
+    deadlines.tick(now=T0 + 5 + 5 * bd + 3)  # the seller did not pay: the buyer's fee is owed back
+    deadlines.tick(now=T0 + 1 + window + 10)  # window end: the settlement closes all the same
+    gas["none"] = False
+    owed = claims_c.get(deal_id)["data"]["transfers"]
+    assert k.state(deal_id) == "settled" and deal_id not in disputes.open_ids()
+    assert [(t["what"], t["amount"], t["done"]) for t in owed] == [("fee_back_buyer", 800_000, False)]
+    deadlines.tick(now=T0 + 1 + window + 20)  # gas arrived: the timer resends it under the same idem key
+    deadlines.tick(now=T0 + 1 + window + 30)
+    transfers = [(amount, key) for fn, amount, key, _ in w.sender.sent if fn == "transfer"]
+    assert transfers == [(800_000, f"{deal_id}:clearing:fee_back_buyer")]  # once
+    assert claims_c.get(deal_id)["data"]["transfers"][0]["done"] is True

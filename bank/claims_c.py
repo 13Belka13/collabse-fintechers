@@ -31,6 +31,7 @@ from bank import config, db, deals, deciders, escrow, evsm, journal, money, snap
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
 PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
+CLEAR_TRIES = 10  # failed sends of one clearing transfer before it waits for a person
 FEE_PI_MARGIN_S = 60  # a fee PaymentInfo this close to its preApprovalExpiry is rebuilt before anyone signs it
 OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided", "rereview")
 
@@ -398,8 +399,9 @@ def tick(deal_id: str, now: float | None = None) -> None:
     elif c["state"] == "buyer_fee" and now >= d["buyer_fee_until"]:
         _set(c, "withdrawn", "timer", "withdrawn", outcome="buyer_fee_not_paid", buyer_share_pct=0)
     elif c["state"] == "seller_fee" and now >= d["seller_fee_until"]:
-        _set(c, "refund", "timer", "seller_fee_not_paid", outcome="for_buyer_without_decider", buyer_share_pct=100)
-        _fees_back(deals.get(deal_id), get(deal_id), buyer_back=d["fee"], seller_back=0, decider_gets=0)
+        _set(c, "refund", "timer", "seller_fee_not_paid", outcome="for_buyer_without_decider", buyer_share_pct=100,
+             transfers=_fees_back(deals.get(deal_id), c, buyer_back=d["fee"], seller_back=0, decider_gets=0))
+        send_transfers(deal_id)
     elif c["state"] == "queued":
         start_review(c, now)
     elif c["state"] == "decider":
@@ -438,25 +440,51 @@ def _execute(deal: dict, c: dict, now: float):
             decider_gets -= refund
             to = core.company(deal["buyer_id"]) if d["rereview"] == "buyer" else core.seller(deal["seller_id"])
             extra.append((to["wallet_address"], refund, "rereview_fee_back"))
-    _set(c, "executed", "timer", "executed", buyer_refund=c["amount"] * pct // 100)
-    _fees_back(deal, get(deal["deal_id"]), buyer_back=buyer_back, seller_back=seller_back,
-               decider_gets=decider_gets, extra=extra)
+    _set(c, "executed", "timer", "executed", buyer_refund=c["amount"] * pct // 100,
+         transfers=_fees_back(deal, c, buyer_back=buyer_back, seller_back=seller_back, decider_gets=decider_gets,
+                              extra=extra))
+    send_transfers(deal["deal_id"])
 
 
-def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int, extra: list = ()):
-    """Transfers from the clearing address: the winning shares of the fees back, the rest to the decider."""
+def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int, extra: list = ()) -> list:
+    """The transfers from the clearing address: the winning shares of the fees back, the rest to the decider. Written
+    down with the state that owes them, before anything is sent (send_transfers)."""
     from bank import core
     case = deciders.get(c["id"]) or {}
     decider = next((x for x in deciders.pool() + [deciders.RESERVE_PROVIDER] if x["id"] == case.get("decider")), None)
-    for to, amount, what in ((core.company(deal["buyer_id"])["wallet_address"], buyer_back, "fee_back_buyer"),
-                             (core.seller(deal["seller_id"])["wallet_address"], seller_back, "fee_back_seller"),
-                             (decider and decider["address"], decider_gets, "decider_fee"), *extra):
-        if to and amount > 0:
-            try:
-                escrow.transfer_from_clearing(deal["deal_id"], deal["asset"], to, amount, what)
-            except Exception as e:  # noqa: BLE001 — journalled; the timer does not move the escrow because of it
-                journal.append("bank", "clearing_transfer_failed", {"what": what, "error": repr(e)[:200]},
-                               deal_id=deal["deal_id"])
+    return [{"to": to, "amount": int(amount), "what": what, "done": False, "tries": 0}
+            for to, amount, what in ((core.company(deal["buyer_id"])["wallet_address"], buyer_back, "fee_back_buyer"),
+                                     (core.seller(deal["seller_id"])["wallet_address"], seller_back, "fee_back_seller"),
+                                     (decider and decider["address"], decider_gets, "decider_fee"), *extra)
+            if to and amount > 0]
+
+
+@_deal_locked
+def send_transfers(deal_id: str) -> None:
+    """Send the written-down transfers not done yet. The timer calls it again (retry_transfers), also after the
+    settlement closed; the idem key {deal_id}:clearing:{what} makes a resend safe. Given up after CLEAR_TRIES
+    failures with a journalled alarm (e.g. a token that refuses the clearing address: a person must act)."""
+    c, deal = get(deal_id), deals.get(deal_id)
+    for t in (c["data"].get("transfers") or []):
+        if t["done"] or t["tries"] >= CLEAR_TRIES:
+            continue
+        try:
+            escrow.transfer_from_clearing(deal_id, deal["asset"], t["to"], t["amount"], t["what"])
+            t["done"] = True
+        except Exception as e:  # noqa: BLE001 — journalled and retried; the timer does not move the escrow for it
+            t["tries"] += 1
+            journal.append("bank", "clearing_transfer_failed" if t["tries"] < CLEAR_TRIES else "clearing_transfer.stuck",
+                           {"what": t["what"], "to": t["to"], "amount": t["amount"], "tries": t["tries"],
+                            "error": repr(e)[:200]}, deal_id=deal_id)
+        db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
+
+
+def retry_transfers() -> None:
+    """The timer: transfers owed by executed or refunded claims that failed are sent again."""
+    for r in db.rows("SELECT deal_id FROM claims WHERE rule='C' AND state IN ('executed','refund') AND EXISTS"
+                     " (SELECT 1 FROM json_each(data_json, '$.transfers') WHERE json_extract(value, '$.done')=0"
+                     " AND json_extract(value, '$.tries') < ?)", (CLEAR_TRIES,)):
+        send_transfers(r["deal_id"])
 
 
 # ---- the schedule's view ----
