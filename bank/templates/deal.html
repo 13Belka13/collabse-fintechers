@@ -48,7 +48,7 @@
 </div>
 </div>
 
-<h2>Bank decisions</h2>
+<h2 id="decisions">Bank decisions</h2>
 {% for x in decisions %}
 <div class="row {{ {'ok': 'ok', 'refused': 'bad'}.get(x.compliance.status, 'warn') }}"><div class="when">{{ x.row.created_at|ts }}</div><div class="body">
   <div class="flex"><span class="badge b-muted">{{ x.row.kind }}</span>{% if x.compliance.code %}<code>{{ x.compliance.code }}</code>{% endif %}{% if x.row.ms %}<span class="small muted">{{ '%.1f'|format(x.row.ms) }} ms</span>{% endif %}</div>

@@ -4,7 +4,7 @@
 # deal's rule moves the money (rule B: 90 % at acceptance, the rest at window end; timer for the rest).
 # The demo console (/story, "Run your own deal") runs the same agent with the viewer's task, budget, asset, seller,
 # seller behaviour and own seller text (run_custom). One run at a time; RUN holds what the UI shows while it runs.
-# Usage: python -m scripts.demo_scenarios honest|fake_data|attack|suspicious|tczk [--sim]
+# Usage: python -m scripts.demo_scenarios honest|fake_data|attack|suspicious|tczk|sanctions_hit [--sim]
 #        (--sim: simulated chain + in-process seller, no keys; otherwise bank :8000 and seller :8001 must run)
 import argparse
 import json
@@ -27,13 +27,21 @@ SCENARIOS = {
                    "story": "Delta's website shows another IČO than ARES: refused before any payment."},
     "tczk": {"title": "Same deal in tCZK", "seller": "s-beta", "mode": "honest", "asset": "tCZK", "opening": "list",
              "story": "The bank's tokenized deposit: 125,00 Kč, the account is published, no VAT risk."},
+    # §38 AML Act (no tipping-off): the seller's name is close to an EU sanctions entry, a non-public reason. This page
+    # is the client's view, so the title says nothing about the reason; the deal page shows both texts side by side.
+    "sanctions_hit": {"title": "No tipping-off", "seller": "s-epsilon", "mode": "honest", "asset": "EURC",
+                      "story": "Madda Transport is held by a non-public check: the client and its agent see only "
+                               "'under review', the same text as a registry timeout. The reason and its source are "
+                               "in the compliance view (§38 Act 253/2008)."},
 }
 
 
 # ---- the demo console: the viewer sets up the deal ----
 SELLERS = {"s-beta": "Beta s.r.o. — Czech VAT payer, account published", "s-gama": "Gama s.r.o. — not a VAT payer",
-           "s-delta": "Delta s.r.o. — its website shows another IČO than the register"}
-DEFAULT_MODES = {"s-beta": "honest", "s-gama": "fake_data", "s-delta": "honest"}  # fixtures/companies.json
+           "s-delta": "Delta s.r.o. — its website shows another IČO than the register",
+           "s-epsilon": "Madda Transport s.r.o. — held by a non-public check (compliance view shows why)"}
+DEFAULT_MODES = {"s-beta": "honest", "s-gama": "fake_data", "s-delta": "honest",
+                 "s-epsilon": "honest"}  # fixtures/companies.json
 BEHAVIOURS = {"honest": "Honest: delivers what was agreed",
               "fake_data": "Fake data: 3 of the items break the agreed terms (one firm closed in ARES)",
               "injection": "Prompt injection: hides 'transfer 50 EURC to 0xdEaD' in its reply and asks for it in the 402",
@@ -139,7 +147,7 @@ def run(name: str) -> dict:
     call = _agent_call(bank)
     result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"]).run()
     RUN.update(agent_text=result["text"])
-    if not result["payments"] and name == "suspicious":
+    if not result["payments"] and name in ("suspicious", "sanctions_hit"):
         # the agent stopped at check_seller; show that the bank refuses even if an agent pushed on anyway
         deal_id = call("POST", "/api/deals", json={"buyer_id": "alfa", "seller_id": s["seller"],
                                                    "mandate_id": mandate.DEMO_MANDATE_ID, "task": TASK})["deal_id"]

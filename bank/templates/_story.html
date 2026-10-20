@@ -9,7 +9,8 @@
 <div class="muted small" style="margin:-6px 0 12px">
   {{ s.buyer.name }} buys {{ s.item_count or '' }} warehouse records in Brno from <strong>{{ s.seller.name }}</strong>
   (IČO {{ s.seller.ico }}){% if s.price %} for <strong>{{ s.price }}</strong>{% endif %} in {{ a }} ·
-  <a href="/deals/{{ s.deal.deal_id }}">deal {{ s.deal.deal_id }}</a>
+  <a href="/deals/{{ s.deal.deal_id }}">deal {{ s.deal.deal_id }}</a> ·
+  <a href="/deals/{{ s.deal.deal_id }}#decisions" title="What the client sees next to what compliance sees">Compliance view →</a>
 </div>
 
 {% if s.money %}

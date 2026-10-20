@@ -100,7 +100,9 @@ def explain_row(row: dict, view: str) -> dict:
     return {"status": d["status"], "code": d["code"], "reasons": d["reasons"],
             "text": row.get("explanation_compliance") or explain.render(d, "compliance")["text"],
             "client_text": client["explanation"],
-            "hidden_from_client": client["code"] == codes.Code.UNDER_REVIEW and d["code"] != codes.Code.UNDER_REVIEW}
+            # the client got the neutral text instead of this code or of a non-public reason (§6.7, no tipping-off)
+            "hidden_from_client": client["code"] == codes.Code.UNDER_REVIEW and (
+                d["code"] != codes.Code.UNDER_REVIEW or any(r.get("public") is not True for r in d["reasons"]))}
 
 
 def ledger(deal: dict) -> dict:

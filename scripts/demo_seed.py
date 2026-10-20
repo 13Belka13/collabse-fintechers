@@ -1,4 +1,5 @@
-# Seed the bank DB with demo data for the UI on a simulated chain: the five §13 scenarios, the VAT risk
+# Seed the bank DB with demo data for the UI on a simulated chain: the §13 scenarios and the no-tipping-off one
+# (sanctions_hit, before tczk so the final scene stays the latest deal on /story), the VAT risk
 # acknowledged once for Beta in EURC (scene 1), and a B claim on the fake-data deal (refund without investigation).
 # Usage: MOCK=1 python -m scripts.demo_seed      then: DEMO_SIM=1 uvicorn bank.app:app --port 8000
 # (DEMO_SIM=1 keeps the simulated chain in the server, so the timer can finish the claim windows.)
@@ -32,7 +33,7 @@ def main():
         except disputes.DisputeError as e:
             print("B claim not filed:", e)
     deadlines.tick(now=time.time() + 3600)
-    for name in ("attack", "suspicious", "tczk"):
+    for name in ("attack", "suspicious", "sanctions_hit", "tczk"):
         out[name] = demo_scenarios.run(name)["deals"]
     print("seeded:", out, "into", db.config.DB_PATH)
 
