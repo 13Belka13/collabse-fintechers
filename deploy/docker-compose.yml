@@ -6,7 +6,7 @@ services:
     image: collabse-app:latest
     env_file: /opt/collabse/.env
     environment:
-      DB_PATH: /app/data/bank.db
+      DB_PATH: /app/data/bank-v26.db  # model v2.6 starts on a fresh DB; the 19.10 file stays in the volume
     volumes:
       - appdata:/app/data
     restart: unless-stopped
