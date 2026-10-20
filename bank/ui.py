@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, receipts, timing
+from bank.screening import website
 
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
@@ -278,6 +279,12 @@ def story(deal_id: str | None = None) -> dict | None:
         steps.append(_step("talk", f"The agents negotiated ({offers} offer{'s' if offers != 1 else ''})",
                            "done", talk=talk, ts=talk[0]["ts"]))
 
+    # 2b. the counterparty check, prefetched during the talk: registries + our Apify actor (public facts only)
+    web = website.latest(seller.get("ico"))
+    if web and not web["hidden"]:
+        steps.append(_step("check", "The bank checked the seller", "done", "ARES, VAT payers, ISIR, EU sanctions and "
+                           "the web footprint.", apify=web))
+
     # 3. the bank's decision(s) before any money moves
     decided = db.rows("SELECT * FROM decisions WHERE deal_id=? AND kind='pay' ORDER BY id", (did,))
     stopped = None
@@ -477,7 +484,9 @@ def deal_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
                             or task.get("predicates") or [])]
     s = disputes.get(deal_id)
     from bank import claims_c
-    return page(request, "deal.html", deal=deal, seller=_seller(deal["seller_id"]), ledger=ledger(deal), c=claims_c.view(deal_id),
+    seller = _seller(deal["seller_id"])
+    return page(request, "deal.html", deal=deal, seller=seller, ledger=ledger(deal), c=claims_c.view(deal_id),
+                web=website.latest(seller.get("ico")),
                 items=_items(deal), conditions=conditions, terms=terms, task=task, s=s,
                 silence=disputes.silence_text(deal, s) if s else "", scale=disputes.config_note(),
                 business_days=_business_days(s), step_text=STEP_TEXT, error=error, ok=ok,

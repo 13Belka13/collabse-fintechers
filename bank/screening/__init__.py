@@ -29,6 +29,7 @@ REASON_LEVEL = {
     "maps_permanently_closed": "blocked",
     "sanctions_near_match": "review", "registry_timeout": "review", "registry_error": "review",
     "ico_missing_on_website": "review", "website_unreachable": "review", "website_check_failed": "review",
+    "website_risk_high": "review",
     "enforcement_record": "review", "regulator_warning": "review", "mass_registered_address": "review",
 }
 FAIL_CLOSED = {"registry_timeout", "registry_error", "website_check_failed"}
@@ -190,16 +191,18 @@ def _check(ico: str, wallet: str | None, website_url: str | None, live: bool) ->
         out = fx.get("company_check")
     elif website_url and config.APIFY_TOKEN:
         try:
-            out = website.run_actor(ico, website_url, res["name"])
+            out = website.run_actor(ico, website_url, res["name"], city=website.city_of(
+                (res.get("registry") or {}).get("address")))
         except Exception as e:  # noqa: BLE001
             reasons.append(codes.reason("website_check_failed", False, f"company-check actor failed: {str(e)[:200]}",
                                         website_url))
     elif website_url:
         res["skipped"].append("company_check: no APIFY_TOKEN (TODO(credential))")
-    if out:
-        res["website"] = {"level": out.get("level"), "score": out.get("score"), "checkedAt": out.get("checkedAt"),
-                          "signals": out.get("signals", [])}
-        reasons += website.reasons(out)
+    if out is not None:
+        res["website"] = {"ico": ico, "level": out.get("level"), "score": out.get("score"),
+                          "checkedAt": out.get("checkedAt"), "signals": out.get("signals", []),
+                          "run": out.get("_run") or ({"origin": "recorded"} if fx is not None else None)}
+        reasons += website.verdict(out)
         if out.get("websiteUrl"):
             res["sources"].append(out["websiteUrl"])
 
