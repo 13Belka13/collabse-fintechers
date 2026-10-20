@@ -41,6 +41,8 @@ class SimChain:
             elif call.fn_name == "capture":
                 if int(call.args[1]) > st["capturable"]:
                     raise chain.TxReverted(f"simulated revert: capture {call.args[1]} > capturable {st['capturable']}")
+                if err := escrow.contract_fee_error(pi, *call.args[1:4]):  # the contract's own fee check
+                    raise chain.TxReverted(f"simulated revert: {err}")
                 st["capturable"] -= int(call.args[1])
                 st["refundable"] += int(call.args[1])
                 st["collected"] = True

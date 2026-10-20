@@ -1,8 +1,10 @@
 # L3 escrow cycle on an anvil fork of Base Sepolia, against the deployed AuthCaptureEscrow 0xf968…B19c and
-# ERC-3009 collector 0x8612…ab88 with real EURC: authorize 5,00 € with the MODEL_V2 §8 terms (T1 rule B: fee
-# 1,2 % to the clearing address, salt keccak(deal_id ‖ 0), long expiries) -> seller checks escrow -> capture
-# 4,50 € (seller gets 4,446 €, the clearing address 0,054 €) -> void 0,50 €. Balances and escrow state are read
-# from the (forked) chain — this also proves AuthCaptureEscrow v1.1 accepts feeAmount = floor(amount·bps/10000).
+# ERC-3009 collector 0x8612…ab88 with real EURC: authorize 5,00 € with the MODEL_V2 §8 terms (fee to the clearing
+# address, salt keccak(deal_id ‖ 0), long expiries) -> seller checks escrow -> capture -> void the rest. Twice:
+# T1 rule B at 1,2 % with an odd capture of 4,499999 € (fee 0,053999 €: floor, not rounded) and T0 rule A at 0 bps
+# (fee 0 with the clearing address still passed as feeReceiver — 0x0 would revert with InvalidFeeReceiver).
+# Balances and escrow state are read from the (forked) chain: AuthCaptureEscrow v1.1 accepts exactly
+# feeAmount = floor(amount·bps/10000) when minFeeBps = maxFeeBps.
 # Skipped when anvil or the public RPC is unavailable (CI). EURC comes from the funded demo buyer by impersonation.
 import os
 import shutil
@@ -66,7 +68,8 @@ def _fund_buyer(w3, buyer):
     w3.provider.make_request("anvil_stopImpersonatingAccount", [FUNDED_BUYER])
 
 
-def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
+@pytest.mark.parametrize("tier,rule,bps,to_seller", [("T1", "B", 120, 4_499_999), ("T0", "A", 0, 4_500_000)])
+def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch, tier, rule, bps, to_seller):
     from scripts.seed import seed
     from seller.app import verify_escrow
 
@@ -83,7 +86,7 @@ def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
     seed()
     _fund_buyer(w3, buyer)
     try:
-        terms = {"rule": "B", "b_pct": 10, "tier": "T1", "window_s": 20, "deadline_s": 300, "fee_bps": 120}
+        terms = {"rule": rule, "b_pct": 10, "tier": tier, "window_s": 20, "deadline_s": 300, "fee_bps": bps}
         db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, quote_json, terms_json, asset, amount, state,"
                " created_at) VALUES ('d-fork','alfa','s-beta',?,?,'EURC',?,'quoted',?)",
                (db.dumps({"pay_to": BETA, "asset": "EURC", "amount": str(PRICE)}), db.dumps(terms), PRICE, time.time()))
@@ -100,17 +103,17 @@ def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
         assert escrow.state("d-fork") == {"collected": True, "capturable": PRICE, "refundable": 0}
         assert bal(buyer) == 0
 
-        offer = {"deal_id": "d-fork", "pay_to": BETA, "prices": {"EURC": str(PRICE)}, "rule": "B", "window_s": 20,
+        offer = {"deal_id": "d-fork", "pay_to": BETA, "prices": {"EURC": str(PRICE)}, "rule": rule, "window_s": 20,
                  "deadline_s": 300}
-        notice = {"n": 0, "tier": "T1", "kind": "deal"}
+        notice = {"n": 0, "tier": tier, "kind": "deal"}
         assert verify_escrow(offer, "EURC", pi, notice=notice) is None  # the seller's own on-chain check passes
         assert verify_escrow({**offer, "prices": {"EURC": "4000000"}}, "EURC", {**pi, "maxAmount": 4_000_000},
                              notice=notice) == "escrow_capturable_not_price"  # never authorized: nothing locked
 
-        to_seller, back = 4_500_000, 500_000  # 18 of 20 items at 0,25 €
+        back = PRICE - to_seller  # an odd amount: the fee is floor(amount·bps/10000), not rounded
         out = escrow.finish("d-fork", to_seller)
         assert out["capture"]["status"] == "mined" and out["void"]["status"] == "mined"
-        fee = to_seller * 120 // 10_000
+        fee = to_seller * bps // 10_000
         assert bal(BETA) - seller0 == to_seller - fee and bal(config.BANK_CLEARING_ADDR) - clearing0 == fee
         assert bal(buyer) == back
         assert escrow.state("d-fork") == {"collected": True, "capturable": 0, "refundable": to_seller}

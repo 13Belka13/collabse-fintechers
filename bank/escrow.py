@@ -205,8 +205,34 @@ def authorize(deal_id: str) -> dict:
 
 
 def fee_of(pi: dict, amount: int) -> int:
-    """The bank's fee taken from a capture: floor(amount · maxFeeBps / 10000), within [min, max] bps."""
+    """The bank's fee taken from a capture: floor(amount · maxFeeBps / 10000). AuthCaptureEscrow v1.1 _validateFee
+    accepts feeAmount in [floor(amount·minFeeBps/10000), floor(amount·maxFeeBps/10000)], so with min = max this
+    is the only accepted value."""
     return int(amount) * int(pi["maxFeeBps"]) // 10_000
+
+
+def capture_fee(pi: dict, amount: int) -> tuple[int, str]:
+    """(feeAmount, feeReceiver) for capture(). The contract reverts with InvalidFeeReceiver when PaymentInfo names a
+    feeReceiver and capture passes another one — also when the fee rounds to 0 (T0 at 0 bps, a tiny capture) — so
+    the configured receiver is always passed; 0x0 only when PaymentInfo leaves it open (then the fee must be 0)."""
+    fee, receiver = fee_of(pi, amount), Web3.to_checksum_address(pi.get("feeReceiver") or ZERO)
+    if receiver == ZERO and fee:
+        raise EscrowError("a fee needs a feeReceiver in PaymentInfo")
+    return fee, receiver
+
+
+def contract_fee_error(pi: dict, amount: int, fee: int, receiver: str) -> str | None:
+    """AuthCaptureEscrow v1.1 _validateFee, line by line (verified source of 0xf968…B19c): the revert it would raise
+    on capture/charge, or None. Used by the simulated chain and the tests; the chain itself is the authority."""
+    lo, hi = int(amount) * int(pi["minFeeBps"]) // 10_000, int(amount) * int(pi["maxFeeBps"]) // 10_000
+    configured, receiver = Web3.to_checksum_address(pi["feeReceiver"]), Web3.to_checksum_address(receiver)
+    if fee < lo or fee > hi:
+        return f"FeeAmountOutOfRange({fee}, {lo}, {hi})"
+    if receiver == ZERO and fee > 0:
+        return "ZeroFeeReceiver()"
+    if configured != ZERO and configured != receiver:
+        return f"InvalidFeeReceiver({receiver}, {configured})"
+    return None
 
 
 def capture(deal_id: str, amount: int, n: int) -> dict:
@@ -217,9 +243,8 @@ def capture(deal_id: str, amount: int, n: int) -> dict:
         raise EscrowError(f"{deal_id}: bad capture amount {amount}")
     if time.time() >= int(pi["authorizationExpiry"]) - CAPTURE_MARGIN_S:
         raise EscrowError(f"{deal_id}: authorizationExpiry reached, capture is no longer possible (void only)")
-    fee = fee_of(pi, amount)
-    call = contract().functions.capture(as_tuple(pi), int(amount), fee,
-                                        Web3.to_checksum_address(pi["feeReceiver"]) if fee else ZERO)
+    fee, receiver = capture_fee(pi, amount)
+    call = contract().functions.capture(as_tuple(pi), int(amount), fee, receiver)
     with timing.timed("escrow_capture", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="capture", deal_id=deal_id,
                                                         idem_key=idem_key(deal_id, f"capture:{n}"))
