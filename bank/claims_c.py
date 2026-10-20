@@ -31,6 +31,7 @@ from bank import config, db, deals, deciders, escrow, evsm, journal, money, snap
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
 PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
+FEE_PI_MARGIN_S = 60  # a fee PaymentInfo this close to its preApprovalExpiry is rebuilt before anyone signs it
 OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided", "rereview")
 
 
@@ -189,10 +190,21 @@ def fee_terms(deal_id: str, role: str) -> dict:
     c, deal = _claim(deal_id), deals.get(deal_id)
     payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
         core.seller(deal["seller_id"])["wallet_address"]
-    pi = c["data"].get(f"fee_pi_{role}")
+    return _fee_pi(c, f"fee_pi_{role}", role, c["data"]["fee"], payer)
+
+
+def _fee_pi(c: dict, key: str, role: str, amount: int, payer: str) -> dict:
+    """The stored fee PaymentInfo, or a new one (next salt) once it is near its preApprovalExpiry and its authorize
+    was never sent: an expired one can never lock, and that side would lose by default."""
+    deal_id, pi = c["deal_id"], c["data"].get(key)
+    if pi is not None and time.time() >= int(pi["preApprovalExpiry"]) - FEE_PI_MARGIN_S and db.one(
+            "SELECT 1 FROM onchain_txs WHERE idem_key=? AND status IN ('signed','mined')",
+            (f"{deal_id}:{escrow.payment_hash(pi)[2:10]}:fee-authorize",)) is None:
+        pi = None
     if pi is None:
-        pi = escrow.fee_payment_info(deal_id, role, c["data"]["fee"], payer)
-        c["data"][f"fee_pi_{role}"] = pi
+        k = db.one("SELECT COUNT(*) n FROM payment_infos WHERE deal_id=? AND purpose=?", (deal_id, f"fee_{role}"))["n"]
+        pi = escrow.fee_payment_info(deal_id, role, amount, payer, k=k)
+        c["data"][key] = pi
         db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
     return pi
 
@@ -206,6 +218,7 @@ def pay_fee(deal_id: str, role: str, by: str, signature: str | None = None, now:
     if c["state"] != want:
         raise ClaimError(409, f"the {role}'s fee is not due now (claim is {c['state']})")
     pi = fee_terms(deal_id, role)
+    c = _claim(deal_id)  # with the fee PaymentInfo fee_terms stored (or rebuilt)
     if role == "buyer":  # the bank holds the buyer's key; the fee comes from the claim-fee budget reserved at pay
         signature = escrow.buyer_signature(pi, deal["asset"], core.wallet_key(deal["buyer_id"]))
     elif escrow.receive_signer(pi, deal["asset"], signature or "") != pi["payer"]:
@@ -330,14 +343,9 @@ def rereview_terms(deal_id: str, role: str) -> dict:
     c, deal = _claim(deal_id), deals.get(deal_id)
     if role != loser(c):
         raise ClaimError(403, "only the side that lost may request a re-review")
-    pi = c["data"].get("fee_pi_rereview")
-    if pi is None:
-        payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
-            core.seller(deal["seller_id"])["wallet_address"]
-        pi = escrow.fee_payment_info(deal_id, f"rereview_{role}", rereview_fee(deal["asset"]), payer)
-        c["data"]["fee_pi_rereview"] = pi
-        db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
-    return pi
+    payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
+        core.seller(deal["seller_id"])["wallet_address"]
+    return _fee_pi(c, "fee_pi_rereview", f"rereview_{role}", rereview_fee(deal["asset"]), payer)
 
 
 @_deal_locked

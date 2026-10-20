@@ -650,3 +650,23 @@ def test_a_claim_read_before_another_writer_moved_it_is_not_overwritten(w):
     with pytest.raises(claims_c.ClaimError) as e:
         claims_c._set(stale, "buyer_fee", "timer", "negotiation_over", buyer_fee_until=T0 + 7)
     assert e.value.status == 409 and claims_c.get(deal_id)["state"] == "refund"
+
+
+def test_a_fee_payment_info_past_pre_approval_expiry_and_never_sent_is_rebuilt(w, monkeypatch):
+    bd = config.BUSINESS_DAY_S
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    w.sender.fail_always = ValueError("gas estimation reverted")  # refused before anything was signed
+    with pytest.raises(ValueError):
+        claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    w.sender.fail_always = None
+    first = claims_c.get(deal_id)["data"]["fee_pi_buyer"]
+    later = time.time() + escrow.PRE_APPROVAL_S + 1  # the retry comes more than 10 minutes later
+    monkeypatch.setattr(escrow.time, "time", lambda: later)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 3)
+    pi = claims_c.get(deal_id)["data"]["fee_pi_buyer"]
+    assert claims_c.get(deal_id)["state"] == "seller_fee" and pi["salt"] != first["salt"]
+    assert int(pi["preApprovalExpiry"]) > later  # signed and authorized before it expires
+    keys = [key for fn, _, key, _ in w.sender.sent if fn == "authorize" and ":fee-" in key]
+    assert keys == [f"{deal_id}:{escrow.payment_hash(pi)[2:10]}:fee-authorize"]
