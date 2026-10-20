@@ -2,11 +2,11 @@
 
 > **Internal runbook**: how the team deploys the demo to AWS. The project is described in the [README](../README.md).
 
-One small EC2 host in **eu-central-1** runs the whole demo in Docker: the bank (API, x402 facilitator, UI on
+One small EC2 host in eu-central-1 runs the whole demo in Docker: the bank (API, x402 facilitator, UI on
 `/story`, `/bank`, …), the demo seller, and Caddy in front with HTTPS on `https://<ip-with-dashes>.sslip.io`
 and a password. Testnet only (Base Sepolia).
 
-**Current host:** https://63-182-160-195.sslip.io — login and password = `UI_PASSWORD` in the local `.env`, given to the jury in the organisers' channel (rotate it after the event: new bcrypt hash in `/collabse/ui`, then deploy). Without it only `/health` answers; everything else is 401. Each honest demo deal spends 5 test EURC from the Alfa wallet: top it up from the Circle faucet before a run.
+**Current host:** https://63-182-160-195.sslip.io. Login `demo`, password `UI_PASSWORD` from the local `.env`, given to the jury in the organisers' channel (rotate it after the event: put a new bcrypt hash in `/collabse/ui`, then deploy). Without it only `/health` and the one-time `/approve/*` links answer; everything else is 401. Each **Honest deal** run spends 5 test EURC from Alfa's wallet: top it up from the Circle faucet before a run.
 
 ```
 GitHub main ──CI green──> deploy.yml ──OIDC──> SSM Run Command ──> host: deploy/deploy.sh
@@ -15,9 +15,9 @@ host: git reset to main → .env from SSM Parameter Store → docker compose up 
 ```
 
 - **No AWS access keys.** The host's instance role calls Bedrock (Claude 4.5 EU profiles) and reads its
-  config; GitHub Actions assumes `collabse-github-deploy` through OIDC. So the 12-hour portal keys do not
-  matter for the deployed demo. The testnet signing keys come from SSM at deploy into the host's env file; in a
-  pilot they live in the bank's HSM.
+  config; GitHub Actions assumes `collabse-github-deploy` through OIDC. The 12-hour portal keys therefore do not
+  matter for the deployed demo. At each deploy the testnet signing keys are copied from SSM into the host's env
+  file; in a pilot they live in the bank's HSM.
 - **Config:** SSM SecureString `/collabse/env` = the app's `.env` without AWS keys (`MOCK=0`, testnet keys,
   Tatum, Apify); `/collabse/ui` = `demo:<bcrypt hash>` for the password. The plain password is `UI_PASSWORD` in
   the local `.env`.
@@ -35,7 +35,7 @@ aws cloudformation deploy --stack-name collabse-demo --template-file infra/aws/s
 aws cloudformation describe-stacks --stack-name collabse-demo --query "Stacks[0].Outputs"
 ```
 
-After that every green CI run on `main` deploys. Run a deploy by hand: GitHub → Actions → deploy → Run
+After that every green CI run on `main` deploys. To deploy by hand: GitHub → Actions → deploy → Run
 workflow, or `aws ssm send-command --document-name AWS-RunShellScript --targets Key=tag:app,Values=collabse
 --parameters 'commands=["/usr/local/bin/collabse-deploy"]'`. Shell on the host: `aws ssm start-session
 --target <instance-id>`; logs: `cd /opt/collabse/repo/deploy && sudo docker compose logs -f app`.
@@ -46,6 +46,6 @@ workflow, or `aws ssm send-command --document-name AWS-RunShellScript --targets 
   (seen in CloudTrail when the first deploy was refused). The deploy role accepts both the new and the old form.
 - Only one bank may use the testnet keys at a time: stop the local live stack while the AWS one runs
   (both would send from the same operator wallet).
-- Change the config: update `/collabse/env`, then deploy again (the host rereads it every deploy).
-- Before the accounts are frozen: `aws cloudformation delete-stack --stack-name collabse-demo` (the SQLite DB
-  lives on the instance volume and goes with it).
+- To change the config: update `/collabse/env`, then deploy again (the host rereads it on every deploy).
+- Before the accounts are frozen, delete the stack: `aws cloudformation delete-stack --stack-name collabse-demo`
+  (the SQLite DB lives on the instance volume and goes with it).

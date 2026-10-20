@@ -8,8 +8,8 @@
 requires there, and checks the company's Google Maps place. It returns a risk level (`low`, `medium`,
 `high`) and a list of signals, each with its source URL and a one-line explanation.
 
-It was built for the bank in our FinTechers Hackathon 2026 project (two AI agents close a B2B deal and the
-bank checks the seller before money moves). The bank checks the official registries itself (ARES, the VAT
+It was built for the bank in our project for The FinTechers Hackathon 2026 (two AI agents close a B2B deal and
+the bank checks the seller before money moves). The bank checks the official registries itself (ARES, the VAT
 payer register, the insolvency register ISIR, EU sanctions). This Actor adds what a registry cannot know.
 
 ## What it checks
@@ -27,7 +27,7 @@ Scoring: unreachable site +50, different IČO +60, missing IČO +30, place perma
 ## How to use
 
 1. Open the Actor in Apify Console, enter the IČO and the website URL, and click **Start**.
-2. Or call it from code or an AI agent (Apify MCP server, `tools=<user>/company-check`).
+2. Or call it from code, or from an AI agent (Apify MCP server, `tools=<user>/company-check`).
 3. Read the dataset item, or the `OUTPUT` record of the default key-value store.
 
 ### Input example
@@ -36,7 +36,7 @@ Scoring: unreachable site +50, different IČO +60, missing IČO +30, place perma
 {"ico": "45274649", "websiteUrl": "https://www.cez.cz", "checkMaps": true, "companyName": "ČEZ", "city": "Praha"}
 ```
 
-Optional fields all have defaults (`checkMaps` true, `companyName` = website domain, `city` Brno, `maxPlaces` 3),
+All optional fields have defaults (`checkMaps` true, `companyName` = website domain, `city` Brno, `maxPlaces` 3),
 so API and MCP calls work with only `ico` and `websiteUrl`.
 
 ### Output example
@@ -57,7 +57,7 @@ per signal with its source link).
 
 ## Pricing
 
-The website part costs only Actor compute (a few seconds of the smallest memory). The Google Maps part runs
+The website part costs only Actor compute (a few seconds at the smallest memory size). The Google Maps part runs
 compass/crawler-google-places for at most `maxPlaces` places (about $0.004 per place, capped by
 `max_total_charge_usd` 0.50). Turn it off with `checkMaps: false`.
 
@@ -72,7 +72,7 @@ compass/crawler-google-places for at most `maxPlaces` places (about $0.004 per p
 
 ## FAQ
 
-**Why a medium level for a big company?** Some large sites render the footer with JavaScript or keep the
+**Why does a big company get `medium`?** Some large sites render the footer with JavaScript or keep the
 IČO on another page (for example `cez.cz` has no `/kontakt`). Medium means "look at it", not "fraud".
 
 **Does it check the registries?** No. The calling bank checks ARES, VAT, ISIR and sanctions itself.
@@ -83,11 +83,11 @@ IČO on another page (for example `cez.cz` has no `/kontakt`). Medium means "loo
 ## On the Apify platform
 
 Pushed on 2026-10-19 to the team account as **`savvy_sauger/company-check`** (Actor id `LBLUo7ixHlcyIjNSU`,
-build 0.1.1, private): <https://console.apify.com/actors/LBLUo7ixHlcyIjNSU>. It runs under **Limited
+private, first build 0.1.1): <https://console.apify.com/actors/LBLUo7ixHlcyIjNSU>. It runs under **Limited
 permissions** (`actorPermissionLevel: LIMITED_PERMISSIONS`, so the Apify MCP server can call it), and
 `actor.json` carries `meta.generatedBy`. Default run options: 512 MB, timeout 300 s, build `latest` (now 0.1.2).
 
-Live runs (2026-10-19, 512 MB):
+Live runs (2026-10-19 and 2026-10-20, 512 MB):
 
 | Input | Run | Result | Cost |
 | --- | --- | --- | --- |
@@ -101,18 +101,18 @@ is a ČEZ charging station. Pass `companyName` and `city` for a sharper Maps mat
 The Brno warehouse dataset the seller delivers was recorded with the same account
 (`fixtures/maps/record_maps.py`, compass/crawler-google-places run w9XlXOBtETIUObLGm, $0.37, 74 places);
 see `fixtures/maps/brno_warehouses_recorded.json`. Total Apify spend for the push, the two runs and the
-recording: about **$0.38** (cycle to 2026-10-19). The account is on the FREE plan: $5 of platform credit per
-monthly cycle, hard usage cap $105; the cycle from 2026-10-20 shows $0.053 after the O2 check and one live
-Google Maps run of the demo console (DyUodCZn9bdCVmRDZ, 12 places in Praha, $0.048).
+recording: about **$0.38** (cycle to 2026-10-19). The account is on the FREE plan ($5 of platform credit per
+monthly cycle, hard usage cap $105). The cycle from 2026-10-20 shows $0.053 after the O2 check and one live
+Google Maps run from the demo console (DyUodCZn9bdCVmRDZ, 12 places in Praha, $0.048).
 
 ## How the bank uses the answer
 
 `bank/screening/website.py` runs the Actor during negotiation only (never on the money path), with
 `companyName` and `city` from ARES and `maxPlaces: 1`, keeps the run id, duration and cost, and caches the
-answer a day. Signals map to reasons: another IČO on the site or a permanently closed place blocks the seller;
+answer for a day. Signals map to reasons: another IČO on the site or a permanently closed place blocks the seller;
 a missing IČO or an unreachable site sends it to review. The level itself counts too, fail-closed: `high`
 without a mapped signal is `website_risk_high` (review), and an answer without a known level or without the
-website signal is `website_check_failed` (review, never clean). The deal page and the story show one line:
+website signal is `website_check_failed` (review, never clean). The deal page and `/story` show one line:
 where the IČO was found, the Maps place, the level and a link to the run.
 
 ## Develop, validate, push
