@@ -622,20 +622,33 @@ def auto_settle(deal_id: str):
 
 # ---- human actions (bank UI, HUMAN_TOKEN): the agent can never call these ----
 
+def asks_human(deal: dict, code: str) -> bool:
+    """The bank is waiting for a person on this deal: the agent asked to pay and the bank's last answer was `code`
+    (CONFIRMATION_REQUIRED or VAT_LIABILITY_RISK). Only then may a person's action start pay()."""
+    if deal["state"] != "awaiting_human":
+        return False
+    dec = db.one("SELECT codes_json FROM decisions WHERE deal_id=? AND kind='pay' ORDER BY id DESC LIMIT 1",
+                 (deal["deal_id"],))
+    return dec is not None and (db.loads(dec["codes_json"]) or [None])[0] == code
+
+
 def confirm(deal_id: str, by: str) -> dict:
-    """A human approves a payment above the mandate's confirmation threshold, then the bank pays it."""
-    deal = _require(deal_id)
-    if deal["state"] not in PAYABLE:
-        raise DealError(409, f"deal is {deal['state']}")
-    _set(deal_id, deal["state"], "payment_confirmed", {"by": by}, actor=by, confirmed_by=by)
+    """A human approves a payment above the mandate's confirmation threshold, then the bank pays it. Only when the
+    bank asked for exactly this confirmation: a person cannot start a payment the agent never asked for."""
+    with _locks[deal_id]:
+        deal = _require(deal_id)
+        if not asks_human(deal, Code.CONFIRMATION_REQUIRED):
+            raise DealError(409, f"no confirmation is pending for this deal (it is {deal['state']})")
+        _set(deal_id, deal["state"], "payment_confirmed", {"by": by}, actor=by, confirmed_by=by)
     return pay(deal_id)
 
 
 def ack_vat(deal_id: str, by: str) -> dict:
-    """A human accepts the §109 VAT risk for this seller and asset once (new mandate version), then the bank pays."""
+    """A human accepts the §109 VAT risk for this seller and asset once (new mandate version), then the bank pays.
+    Only when the bank's last answer on this deal was the VAT question."""
     deal = _require(deal_id)
-    if deal["state"] not in PAYABLE:
-        raise DealError(409, f"deal is {deal['state']}")
+    if not asks_human(deal, Code.VAT_LIABILITY_RISK):
+        raise DealError(409, f"no VAT question is pending for this deal (it is {deal['state']})")
     seller = core.seller(deal["seller_id"])
     version = _module("mandate").acknowledge_vat(deal["mandate_id"], seller["ico"], deal["asset"], by)
     journal.append(by, "vat_risk_acknowledged", {"seller_ico": seller["ico"], "asset": deal["asset"],

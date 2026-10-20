@@ -184,6 +184,8 @@ def test_confirmation_above_threshold_needs_a_human(bank):
     assert bank.api.post(f"/api/deals/{deal_id}/confirm", json={"by": "anna"}).status_code == 401
     view = bank.api.post(f"/api/deals/{deal_id}/confirm", json={"by": "anna"}, headers=HUMAN).json()
     assert view["status"] == "ok" and "confirmed by human:anna" in view["marks"]
+    again = bank.api.post(f"/api/deals/{deal_id}/confirm", json={"by": "anna"}, headers=HUMAN)
+    assert again.status_code == 409 and [s[0] for s in bank.sender.sent].count("authorize") == 1  # nothing pending
 
 
 # ---- the review findings, each pinned ------------------------------------------------------------------
@@ -353,6 +355,7 @@ def test_capture_refused_at_gas_estimation_waits_in_escrow(bank):
 def test_a_new_offer_needs_a_new_human_confirmation(bank, monkeypatch):
     task = {**TASK, "budget": {"value": "1000", "currency": "EUR"}, "criteria": {**TASK["criteria"], "count": 32}}
     deal_id, _ = deal(bank, asset="tCZK", task=task)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["code"] == "CONFIRMATION_REQUIRED"
     with monkeypatch.context() as m:
         m.setattr(screening, "cached", lambda ico: None)  # the confirmed pay is refused for another reason
         view = bank.api.post(f"/api/deals/{deal_id}/confirm", json={"by": "anna"}, headers=HUMAN).json()

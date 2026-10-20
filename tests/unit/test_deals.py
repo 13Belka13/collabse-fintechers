@@ -257,6 +257,32 @@ def test_vat_risk_waits_for_human(world):
     assert world.bank.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
 
 
+def test_confirm_or_ack_without_a_pending_question_is_refused_and_does_not_pay(world):
+    deal_id, _ = new_deal(world)  # a fresh 'offered' deal: the agent never asked to pay
+    for fn in (deals.confirm, deals.ack_vat):
+        with pytest.raises(deals.DealError) as e:
+            fn(deal_id, "human:alfa")
+        assert e.value.status == 409 and "pending" in str(e.value)
+    assert deals.get(deal_id)["state"] == "offered" and deals.get(deal_id)["confirmed_by"] is None
+    assert_no_money_moved(world, deal_id)
+    world.mandate.verdict = codes.refuse(Code.VAT_LIABILITY_RISK, [codes.reason("vat_payer_eurc", True, "§109")])
+    world.bank.post(f"/api/deals/{deal_id}/pay")  # the bank asks about VAT, not for a confirmation
+    with pytest.raises(deals.DealError, match="no confirmation is pending"):
+        deals.confirm(deal_id, "human:alfa")
+    assert_no_money_moved(world, deal_id)
+
+
+def test_confirm_pays_only_after_the_bank_asked_for_it(world):
+    deal_id, _ = new_deal(world)
+    world.mandate.verdict = codes.refuse(Code.CONFIRMATION_REQUIRED, [codes.reason("confirm_above", True, "> 6 €")])
+    assert world.bank.post(f"/api/deals/{deal_id}/pay").json()["code"] == "CONFIRMATION_REQUIRED"
+    with pytest.raises(deals.DealError, match="no VAT question"):
+        deals.ack_vat(deal_id, "human:alfa")
+    world.mandate.verdict = codes.ok()
+    assert deals.confirm(deal_id, "human:alfa")["status"] == "ok" and world.sender.sent[0][0] == "authorize"
+    assert deals.get(deal_id)["confirmed_by"] == "human:alfa"
+
+
 def test_no_cached_screening_fails_closed_with_neutral_text(world):
     deal_id, _ = new_deal(world)
     world.screening.cache.clear()
