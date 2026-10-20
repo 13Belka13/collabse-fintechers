@@ -293,7 +293,7 @@ def story(deal_id: str | None = None) -> dict | None:
             status, title = "done", "The bank approved the payment"
             marks = [part.split("]")[0] for part in (x["text"] or "").split("[")[1:]]  # "[VAT risk acknowledged …]"
             reasons = ["Within the mandate and the task budget; the seller passed the bank's checks."] + \
-                [f"Note: {m}." for m in marks]
+                [f"Note: {m.replace(approve.BY, 'a jury member')}." for m in marks]
         elif x["status"] == "requires_user_action":
             status = "done" if human else "wait"
             title = f"The bank asked a person first: {plain}"

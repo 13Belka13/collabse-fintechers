@@ -49,8 +49,8 @@ button { font: inherit; font-weight: 800; border-radius: 12px; border: 2px solid
     <dl class="small">
       {% if card.threshold %}<dt>Limit without confirmation</dt><dd>{{ card.threshold }}</dd>{% endif %}
       {% if card.per_deal %}<dt>Limit per deal</dt><dd>{{ card.per_deal }}</dd>{% endif %}
-      <dt>Why you are asked</dt><dd>{{ card.why }}</dd>
     </dl>
+    <p class="small"><span class="muted">Why the bank asks a person:</span> {{ card.why }}</p>
   </div>
   <p class="small muted">If you approve, the bank locks the money in an escrow safe on chain; the seller is paid only for items that pass the agreed checks, the rest comes back.</p>
   <form method="post" action="/approve/{{ card.deal_id }}">

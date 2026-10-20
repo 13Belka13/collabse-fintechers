@@ -54,7 +54,16 @@ def pending(deal_id: str) -> dict | None:
     return {"deal_id": deal_id, "buyer": buyer["name"] if buyer else deal["buyer_id"],
             "seller": seller["name"] if seller else deal["seller_id"], "price": money.fmt(asset, amount),
             "eur": eur(money.to_eur_cents(asset, amount)), "asset": asset, "count": (deal["offer"] or {}).get("count"),
-            "threshold": limit("confirm_above"), "per_deal": limit("per_deal_max"), "why": dec["explanation_client"]}
+            "threshold": limit("confirm_above"), "per_deal": limit("per_deal_max"), "why": _why(dec)}
+
+
+def _why(dec: dict) -> str:
+    """The bank's public reasons in one line ("8.00 € is above the confirmation threshold 6.00 €."); the client's
+    explanation when any reason is non-public (same rule as codes.client_view)."""
+    reasons = db.loads(dec["evidence_json"]) or []
+    if reasons and all(r.get("public") is True for r in reasons):
+        return " ".join(r["text"] for r in reasons)
+    return dec["explanation_client"]
 
 
 def issue(deal_id: str, base_url: str, now: float | None = None) -> tuple[str, float, str]:
@@ -158,4 +167,5 @@ def approve_post(request: Request, deal_id: str, t: str = Form(""), action: str 
     except deals.DealError as e:
         return _page(request, e.status if 400 <= e.status < 600 else 409, error=REASONS.get(str(e), str(e)))
     view = codes.client_view(result) if action == "approve" else result  # the client's view, never compliance text
-    return _page(request, done={"action": action, "status": view.get("status"), "text": view.get("explanation") or ""})
+    text = (view.get("explanation") or "").replace(BY, "a jury member")
+    return _page(request, done={"action": action, "status": view.get("status"), "text": text})

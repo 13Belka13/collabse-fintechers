@@ -53,7 +53,8 @@ def test_valid_token_confirms_exactly_once_and_story_shows_the_jury(web):
     assert authorizes(web) == []  # opening the page (a phone's link preview too) moves nothing
 
     done = web.api.post(f"/approve/{deal_id}", data={"t": token, "action": "approve"})
-    assert done.status_code == 200 and "Approved" in done.text
+    assert done.status_code == 200 and "Approved. Thank you!" in done.text and "locked in escrow" in done.text
+    assert "human:jury" not in done.text and "a jury member" in done.text
     assert authorizes(web) == [("authorize", 8_000_000)]
     assert deals.get(deal_id)["confirmed_by"] == approve.BY
     assert [e["actor"] for e in journal.entries(deal_id, limit=500) if e["event"] == "payment_confirmed"] == [approve.BY]
@@ -65,6 +66,7 @@ def test_valid_token_confirms_exactly_once_and_story_shows_the_jury(web):
 
     story = web.api.get(f"/story/panel?deal_id={deal_id}").text
     assert "Confirmed by a jury member" in story and "escrow safe" in story and "Scan to approve" not in story
+    assert "Note: confirmed by a jury member." in story
 
 
 def test_expired_reused_foreign_and_missing_tokens_move_nothing(web):
