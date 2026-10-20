@@ -376,3 +376,18 @@ def test_random_audit_of_five_percent_of_decisions(w):
     deciders._save({**case, "claim_id": 78, "salt": miss, "sample_beacon": {"randomness": rand}})
     deciders.decide(78, "dec-1", {"0": "buyer", "1": "buyer", "2": "seller"}, now=now)
     assert "audit" not in deciders.get(78)
+
+
+def test_items_refunded_under_b_cannot_go_into_a_c_claim(w):
+    deal_id, _ = c_deal(w)
+    disputes.file_b(deal_id, [[1, 0]], "wrong_data", "agent:buyer", now=T0 + 3)
+    out = claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    assert out["admissible"] == 9 and out["excluded"] == [
+        {"version": 1, "index": 0, "field": "founded", "why": "not an accepted item without a claim"}]
+
+
+def test_task_id_is_part_of_the_hashed_terms():
+    task = {"terms": {"count": 5, "predicates": [{"op": "required", "field": "ico"}]}}
+    a, b = deals.task_terms({**task, "task_id": "t-1"}), deals.task_terms({**task, "task_id": "t-2"})
+    assert a["hash"] != b["hash"] and a["task_id"] == "t-1"  # two tasks never share `unique` or tier sums
+    assert deals.task_terms({**task, "task_id": "t-1"})["hash"] == a["hash"]
