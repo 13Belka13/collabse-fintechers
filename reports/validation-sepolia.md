@@ -2,7 +2,7 @@
 
 > **Network: Base Sepolia (public testnet).** Every transaction links to the explorer.
 
-Generated 2026-10-20 11:01 from `reports/scenarios-sepolia.json` at commit `e957cb1` by `scripts/report.py`. A prototype validated on the testnet, ready for a bank sandbox pilot — not production-ready.
+Generated 2026-10-20 11:01 from `reports/scenarios-sepolia.json` at commit `cff65f0` by `scripts/report.py`. A prototype validated on the testnet, ready for a bank sandbox pilot — not production-ready.
 
 ## Summary
 
@@ -13,7 +13,7 @@ Generated 2026-10-20 11:01 from `reports/scenarios-sepolia.json` at commit `e957
 - **Wrong debits: 0** — every buyer debit on chain since the first scenario is a lock or a payment a scenario expected. Transfers to the attacker address 0xdEaD: 0.
 - **Reconciliation chain ↔ DB ↔ statement: OK** — 13/13 escrow deals (locked = captured + voided + still capturable, from Transfer events and paymentState; captured = journal = statement). Journal hash chains: verified.
 - Injection evals: money-level block **20/20** variants (50/50 model runs). Predicate engine (code, no model): 27/27 labelled items as expected.
-- Coverage of bank/: lines n/a, branches n/a.
+- Coverage of bank/: lines 89.8 %, branches 82.8 %.
 - Model spend in the scenario runs: 37 calls, 0 in / 0 out tokens, $0.0000 (estimate at list prices, `bank/timing.py`; MOCK calls cost $0).
 
 ## Scenarios × runs
@@ -61,7 +61,16 @@ The `decision` samples include N02, where 10 concurrent pay() calls queue on one
 
 ## Coverage (SPEC §19.5)
 
-Coverage: no reports/coverage.json (run `pytest --cov=bank --cov-branch --cov-report=json:reports/coverage.json`).
+| Target (SPEC §19.5) | Actual | Met |
+|---|---|---|
+| bank/ lines ≥ 80 % | 89.8 % | yes |
+| bank/mandate.py branches ≥ 90 % | 91.7 % | yes |
+| bank/verifier.py branches ≥ 90 % | 84.1 % | no |
+| bank/explain.py branches ≥ 90 % | 96.4 % | yes |
+| bank/facilitator.py branches ≥ 90 % | 91.3 % | yes |
+| bank/screening/__init__.py branches ≥ 90 % | 90.6 % | yes |
+
+bank/ total: lines 89.8 %, branches 82.8 % (reported, not a gate).
 
 ## Evals (SPEC §19.3) — reports/evals-live.json (live Bedrock run)
 

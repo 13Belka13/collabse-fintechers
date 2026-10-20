@@ -1,6 +1,6 @@
 {
  "generated": "2026-10-20 11:01",
- "commit": "e957cb1",
+ "commit": "cff65f0",
  "target": "sepolia",
  "label": "Base Sepolia (chain id 84532)",
  "summary": {
@@ -170,7 +170,44 @@
    "met": false
   }
  ],
- "coverage": null,
+ "coverage": {
+  "total": {
+   "lines": 89.76987447698745,
+   "branches": 82.83018867924528
+  },
+  "targets": [
+   {
+    "target": "bank/ lines ≥ 80 %",
+    "value": 89.76987447698745,
+    "met": true
+   },
+   {
+    "target": "bank/mandate.py branches ≥ 90 %",
+    "value": 91.66666666666667,
+    "met": true
+   },
+   {
+    "target": "bank/verifier.py branches ≥ 90 %",
+    "value": 84.0909090909091,
+    "met": false
+   },
+   {
+    "target": "bank/explain.py branches ≥ 90 %",
+    "value": 96.42857142857143,
+    "met": true
+   },
+   {
+    "target": "bank/facilitator.py branches ≥ 90 %",
+    "value": 91.30434782608695,
+    "met": true
+   },
+   {
+    "target": "bank/screening/__init__.py branches ≥ 90 %",
+    "value": 90.625,
+    "met": true
+   }
+  ]
+ },
  "evals": {
   "mode": "live eu.anthropic.claude-opus-4-5-20251101-v1:0 / eu.anthropic.claude-haiku-4-5-20251001-v1:0",
   "injections": {
