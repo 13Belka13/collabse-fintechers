@@ -31,9 +31,11 @@ The FinTechers Hackathon 2026, Prague · Track 2: Stablecoins and new financial 
 >   [pay 90 % of the accepted items, the bank's fee to the testnet fee receiver](https://sepolia.basescan.org/tx/0x94315d0d5c6db9899416ed10e6d9340fab93d11c76cd4cf2936b4b8f60a35f4a) →
 >   [pay the rest after the claim window](https://sepolia.basescan.org/tx/0x1f59d475f54bc6b604ad9705bf5d2a8e8b5497a37869b8d3d8a47027c044f749) →
 >   [return the rest to the buyer](https://sepolia.basescan.org/tx/0x956611d8f6a26e2d5f2a528df637db40832b23eac44c4476ee88568d8b64ea5e)
+> - The seller paid out in crowns to its bank account (final code, live models): tCZK burned
+>   [90 % at acceptance](https://sepolia.basescan.org/tx/0x18d2020cc46eeb78be725714c1d49973fdbaf5e2d69aab2ee01e4a056dc82679) → [the rest at window end](https://sepolia.basescan.org/tx/0x750598914a64347abab5a98765a387480b159f707ed1b4ac5d5e51874fa81252)
 > - A client tries to move tCZK around the bank: [reverted, `TransferViaBankOnly`](https://sepolia.basescan.org/tx/0x657b64845a216547a9f9fe4a222c00b5b41e8c1e29012321a6902a63c2a849c4)
-> - **25/25** scenarios on Base Sepolia, **12/12** attacks stopped, **0** wrong debits; every number below comes
->   from the committed reports in [reports/](reports/)
+> - **25/25** scenarios on Base Sepolia (scripted model replies; **5/5** with live Claude), **12/12** attacks
+>   stopped, **0** wrong debits; every number below comes from the committed reports in [reports/](reports/)
 > - Watch it: [demo video](#demo-video) · [screenshots](#screenshots)
 
 ## Contents
@@ -338,7 +340,7 @@ Pilot: separate HSM keys, a relayer with `ROUTER_ROLE` only, and a timelocked ad
 
 ## Proof: test results
 
-A prototype validated on testnet, ready for a bank sandbox pilot. Every number here is quoted from the committed
+A prototype validated on testnet, ready to scope a bank sandbox pilot. Every number here is quoted from the committed
 reports, which `scripts/report.py` builds from the scenario runner's raw JSON. Scenarios assert against the
 chain (balances, escrow `paymentState`, `Transfer` events), not against our database; negative scenarios prove
 that no money moved.
@@ -347,8 +349,9 @@ that no money moved.
 
 | What | Result | Source |
 | --- | --- | --- |
-| Scenario matrix on **Base Sepolia**, model v2.6 (19 core scenarios, 5 fault injections, bank API auth) | **25/25 pass** | [validation-sepolia.md](reports/validation-sepolia.md) |
+| Scenario matrix on **Base Sepolia**, model v2.6 (19 core scenarios, 5 fault injections, bank API auth; scripted model replies, live models in the next row) | **25/25 pass** | [validation-sepolia.md](reports/validation-sepolia.md) |
 | The same money path with **live Claude on Bedrock** on Base Sepolia (S02, S03, S04, N05, N06) | **5/5 pass**, reconciliation OK for all 3 escrow deals | [scenarios-sepolia-live.json](reports/scenarios-sepolia-live.json) |
+| The **final code** (`main` 5fbfbbb) with **live Claude on Bedrock** on Base Sepolia (S02, S03, S04, N05, N06), incl. the S04 payout in crowns to Beta's bank account | **5/5 pass**, reconciliation OK, 0 wrong debits; 13 model calls, $0.15 | [scenarios-sepolia-final.json](reports/scenarios-sepolia-final.json) |
 | Scenario matrix on an **anvil fork** of Base Sepolia (25 scenarios × 3 runs) | **75/75 pass** | [validation.md](reports/validation.md) |
 | Attacks stopped before any money moved | **12/12** on Base Sepolia, **36/36** on the fork | both reports |
 | Wrong debits / transfers to the attacker address | **0 / 0** | both reports |
@@ -356,8 +359,8 @@ that no money moved.
 | Budget race: 10 parallel `pay()` with budget for 3 | exactly 3 locks on Base Sepolia (N02); 20 offline rounds, overspend 0 | [validation-sepolia.md](reports/validation-sepolia.md), [numbers.md](reports/numbers.md) |
 | Automated tests (unit + evals, MOCK, every push in CI) | **757** (753 pass, 4 need live keys or a fork) | [CI](https://github.com/13Belka13/collabse-fintechers/actions/workflows/ci.yml) |
 | Contract tests (Foundry) | **24** unit + 3 fork tests | `contracts/test/` |
-| Coverage of `bank/` | **89.8 %** lines, 82.8 % branches | [coverage.json](reports/coverage.json) |
-| Prompt-injection evals | Money-level block **20/20** variants (50/50 runs: scripted, deliberately compromised, live Claude Opus 4.5); live Opus buyer: 0 calls the bank had to reject in 17 runs | [evals](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run) |
+| Coverage of `bank/` | **89.8 %** lines, 82.8 % branches | [numbers.md](reports/numbers.md), from `reports/coverage.json` |
+| Prompt-injection evals | Money-level block **20/20** variants (50/50 runs: scripted, deliberately compromised, live Claude Opus 4.5, run of 19.10); live Opus buyer: 0 calls the bank had to reject in 17 runs | [evals](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run) |
 | Injected delivered items paid | **0** of 3 variants; predicate engine 27/27 labelled items as expected | same |
 | Explanations | Cited sources ⊆ evidence 64/64; client texts without a non-public reason 32/32; AI texts labelled 29/29 | same |
 
@@ -386,13 +389,17 @@ own time budget. Each is fixed in the code on this branch.
 
 ### Speed (Base Sepolia, model v2.6)
 
-| Stage | p50 | p95 | n |
-| --- | --- | --- | --- |
-| New counterparty: ARES + VAT + ISIR + sanctions | 33.8 ms | 108.4 ms | 80 |
-| Signature → transaction in block | 125.8 ms | 760.6 ms | 43 |
-| Transaction in block → row in the `/bank` feed | 1 112 ms | 1 561 ms | 22 |
-| Mandate decision + cached check + journal | 0.8 ms | 110.6 ms (incl. N02: 10 concurrent `pay()` calls queued on one write lock) | 48 |
-| Refusal → message to the client | 16.5 ms | 119.7 ms | 14 |
+| Stage | Target p95 | p50 | p95 | n |
+| --- | --- | --- | --- | --- |
+| New counterparty: ARES + VAT + ISIR + sanctions | ≤ 2 500 ms | 33.8 ms | 108.4 ms | 80 |
+| Signature → transaction in block | ≤ 6 000 ms | 125.8 ms | 760.6 ms | 43 |
+| Transaction in block → row in the `/bank` feed | ≤ 5 000 ms | 1 112 ms | 1 561 ms | 22 |
+| Mandate decision + cached check + journal | ≤ 50 ms | 0.8 ms | 110.6 ms | 48 |
+| Bank facilitator `verify` with screening | ≤ 500 ms | 377.8 ms | 684.9 ms | 2 |
+| Refusal → message to the client | ≤ 100 ms | 16.5 ms | 119.7 ms | 14 |
+
+The decision p95 includes the race N02 (10 parallel `pay()` calls queued on one write lock); the facilitator's
+n = 2 includes the bank's cold start. Targets and results: [validation-sepolia.md](reports/validation-sepolia.md).
 
 Offline, 1 000 mandate decisions take 0.48 ms at p50 ([numbers.md](reports/numbers.md)).
 
@@ -403,6 +410,7 @@ Offline, 1 000 mandate decisions take 0.48 ms at p50 ([numbers.md](reports/numbe
 | S01: x402 EURC settled by the bank facilitator | [0x1461c079…a10a8d48](https://sepolia.basescan.org/tx/0x1461c079f79a7290dfcbf0ab20af760766ee74beab147dcf17c59759a10a8d48) |
 | S03: lock / pay 90 % with the fee / pay the rest / return the rejected items | [authorize](https://sepolia.basescan.org/tx/0x18e6575bfce12d56bca96a2a4050221bd7ec4ec648886688b41d5ed7c0aecba9) · [capture](https://sepolia.basescan.org/tx/0x277c9e25bb2ab1e9c74e96890b9297d6debfc4626c16ca7b345c3c28b3ad53c0) · [capture](https://sepolia.basescan.org/tx/0x5948c94ff21fa32c8a872dd4e0dda69fd737e05fed1b736d7bbd9a3fb4f112ce) · [void](https://sepolia.basescan.org/tx/0x83ab0be98bf7801328a713464eb3e27f4e32a9a7e769673cde6d9f6c933b00ec) |
 | S04: the same deal in tCZK on the strict-mode token | [authorize](https://sepolia.basescan.org/tx/0x43e4dc417acb91d13101ecb8aa969365f9c12669aff08026e4d14af3fa7f9cac) · [capture](https://sepolia.basescan.org/tx/0x94315d0d5c6db9899416ed10e6d9340fab93d11c76cd4cf2936b4b8f60a35f4a) · [capture](https://sepolia.basescan.org/tx/0x1f59d475f54bc6b604ad9705bf5d2a8e8b5497a37869b8d3d8a47027c044f749) · [void](https://sepolia.basescan.org/tx/0x956611d8f6a26e2d5f2a528df637db40832b23eac44c4476ee88568d8b64ea5e) |
+| S04 on the final code: payout to Beta's bank account, tCZK burned | [burn 90 %](https://sepolia.basescan.org/tx/0x18d2020cc46eeb78be725714c1d49973fdbaf5e2d69aab2ee01e4a056dc82679) · [burn the rest](https://sepolia.basescan.org/tx/0x750598914a64347abab5a98765a387480b159f707ed1b4ac5d5e51874fa81252) |
 | N10: direct tCZK transfer reverted, `TransferViaBankOnly` | [0x657b6484…c2a849c4](https://sepolia.basescan.org/tx/0x657b64845a216547a9f9fe4a222c00b5b41e8c1e29012321a6902a63c2a849c4) |
 | N11: replayed signature reverted, `ERC3009UsedAuthorization` | [0x3c92f7dd…608e9604](https://sepolia.basescan.org/tx/0x3c92f7dd75407021f6f223d0bb2a59bfab1e096f5846e9312b5b919a608e9604) |
 
@@ -417,10 +425,12 @@ Every other transaction of the run is linked per scenario in
   execution ([numbers.md](reports/numbers.md)).
 - **Models:** the live-model run of the five demo-shaped scenarios made 10 calls for **$0.10** (11 697 input /
   1 162 output tokens); the live eval run made 117 calls for $1.13. The buyer on Claude Opus 4.5 is almost all
-  of it: about **6 cents per negotiated deal**. Every model call is logged with tokens, latency and cost, and the
+  of it: about **2–3 cents per deal** in the live demo-shaped runs ($0.10 and, on the final code, $0.15 for 5
+  scenarios); the eval-run average for the Opus
+  buyer is about 6 cents per negotiated deal. Every model call is logged with tokens, latency and cost, and the
   total shows on `/bank`.
-- **AWS:** Cost Explorer shows **$2.41** of Bedrock through 19 October ($2.30 Claude Opus 4.5, $0.11 Claude Haiku
-  4.5) out of the team's $800 credit; the stand is one t4g.small host at about $0.6 a day.
+- **AWS:** AWS Cost Explorer, 20.10.2026: **$2.41** of Bedrock through 19.10 ($2.30 Opus 4.5, $0.11 Haiku 4.5)
+  ([aws-cost.json](reports/aws-cost.json)) out of the team's $800 credit; the stand is one t4g.small host at about $0.6 a day.
 
 ## How we use Apify, AWS and Tatum
 
@@ -446,28 +456,32 @@ Every other transaction of the run is linked per scenario in
 
 ### AWS
 
-- **Claude on Amazon Bedrock** runs both agents (`bank/llm.py`, `AnthropicBedrock`). Models come from `.env`,
-  never hard-coded: Claude Opus 4.5 negotiates, Claude Haiku 4.5 explains (EU inference profiles in
-  eu-central-1). JSON answers are validated with pydantic; the tool loop is manual and a model refusal is handled.
+- **Claude on Amazon Bedrock** runs both agents (`bank/llm.py`, `AnthropicBedrock`). Model ids come from `.env`
+  (`MODEL_MAIN`, `MODEL_FAST`), with EU inference-profile defaults in `bank/config.py`: Claude Opus 4.5
+  negotiates (the seller agent too, by default: `SELLER_MODEL=main`), Claude Haiku 4.5 explains (eu-central-1). JSON answers are validated with pydantic; the tool loop is manual and a model refusal is handled.
 - **A slow or failing model never stops a deal.** Each call has a timeout and each stage a time budget (the
-  seller's turn 20 s, the buyer's 40 s); only throttling, server errors and timeouts are retried, with backoff
-  and a cool-down after failures. Then code takes over: the seller answers from a template, the buyer stops
-  cleanly with nothing paid, explanations come from templates. A daily spend cap (`LLM_DAILY_USD`) bounds the
-  bill. No model call sits on the money path, and the seller's replies and delivered items reach the buyer's
+  seller's turn 20 s, each buyer model call 40 s), and the HTTP timeouts nest: seller model 20 s < bank → seller
+  30 s < agent → bank 180 s. Only throttling, server errors, timeouts and connection errors are retried, with
+  backoff and a cool-down after failures. Then code takes over: the seller answers from a template, the buyer stops
+  cleanly with nothing paid, explanations come from templates. A daily cap on the logged model spend (`LLM_DAILY_USD`,
+  at list prices) hands every caller to code once it is reached. No model call sits on the money path, and the seller's replies and delivered items reach the buyer's
   model wrapped as untrusted data.
 - **Every model call is logged** with model, input / output / cache tokens, latency and cost (`bank/timing.py`).
 - **The live stand** ([https://63-182-160-195.sslip.io](https://63-182-160-195.sslip.io)) is one t4g.small EC2
   host in Frankfurt (eu-central-1). Docker runs the bank, the seller and Caddy, which serves HTTPS with a Let's
-  Encrypt certificate and puts a password in front of everything but `/health`. Cost: about $0.6 a day, plus
-  about 6 cents of Bedrock per negotiated deal; $2.41 of Bedrock through 19 October.
-- **No access keys anywhere.** The host calls Bedrock through its instance role. The app's config lives
-  encrypted in SSM Parameter Store, not on disk in the repository.
+  Encrypt certificate and puts a password in front of everything but `/health` and the one-time `/approve` links. Cost: about
+  $0.6 a day, plus a few cents of Bedrock per negotiated deal ([Cost](#cost)).
+- **No AWS access keys.** The host calls Bedrock through its instance role, and GitHub deploys through OIDC.
+  The app's config lives encrypted in SSM Parameter Store, not in the repository; the testnet signing keys come
+  from it at deploy into the host's env file. In a pilot they live in the bank's HSM.
 - **Continuous deployment.** A green CI run on `main` triggers the `deploy` workflow, which assumes an AWS role
-  through GitHub OIDC and sends an SSM Run Command to the host: pull `main`, rebuild, check `/health`. The image
-  pins exactly the package versions the test suite passed on.
+  through GitHub OIDC and sends an SSM Run Command to the host: pull `main`, rebuild, check `/health`. As a
+  fallback, the host also pulls `main` on a 2-minute timer. CI installs `requirements.txt`; the image installs it
+  with the pinned constraints (`deploy/constraints.txt`).
 
   ```
   push to main ─► CI green ─► deploy.yml ─OIDC─► SSM Run Command ─► host: git pull → docker compose up --build → /health
+                                         (fallback: the host pulls main every 2 min)
   ```
 
 - **Infrastructure as code:** the host, its role and the GitHub OIDC trust are two CloudFormation templates in
@@ -503,7 +517,7 @@ below are the team's; in a bank pilot they are confirmed by the bank's counsel. 
 | Operational resilience | DORA (Reg. 2022/2554) | Idempotency keys on every money transaction, one nonce queue per key, fail-closed registries, a configurable RPC endpoint (Tatum or public), webhook signatures checked and the chain re-read, model timeouts with code fallbacks, a deadline timer that carries on past a failing deal | `bank/chain.py`, `bank/webhooks.py`, `bank/llm.py`, `bank/deadlines.py` |
 | Who may act | Bank security policy | The UI accepts actions only from the bank's own pages (same-origin check); in the bank UI the acting person is set by the server, never by a form field (the human API takes the actor with the human token); a confirmation or VAT acknowledgement counts only when the bank actually asked for one; each decider has its own token (derived by the bank in the demo; in production each decider signs with its own key), and each seller's credential works only for that seller | `bank/ui_auth.py`, `bank/ui.py`, `bank/deciders.py`, `bank/api.py` |
 | Control over the deposit token | Banking law, account terms | Allowlist bound to accounts, freeze, forced transfer with case reference, strict mode | `contracts/src/TCZK.sol` |
-| No secrets in code | — | Keys only in `.env` (gitignored); AWS deploy by GitHub OIDC with no access keys | `.github/workflows/deploy.yml` |
+| No secrets in code | — | Keys only in `.env` (gitignored) and, on the stand, in SSM Parameter Store; AWS deploy by GitHub OIDC with no AWS access keys | `.github/workflows/deploy.yml` |
 
 **The closed list of decision codes** (each a result with a client text, a compliance text and the next step):
 `MANDATE_NOT_ACTIVE`, `MANDATE_EXPIRED`, `CATEGORY_NOT_IN_SCOPE`, `COUNTERPARTY_NOT_IN_SCOPE`,
@@ -547,7 +561,7 @@ We never call the product "MiCA-licensed" or "MiCA-compliant": the licence belon
 | --- | --- | --- |
 | **The seller** | the bank, at each capture | A fee on the captured amount, taken by the escrow contract itself: the lock fixes `feeReceiver` = the bank's clearing address and `minFeeBps = maxFeeBps` = the tariff, and the seller checks both on-chain before it delivers |
 | **The bank** | Collabse (proposal) | A licence for the rules, the agents' API and the checks, plus a share of the tariff |
-| **The buyer** | its own model provider | The buyer's agent works for the buyer, so its model cost is the buyer's (about 6 cents of Claude per negotiated deal, [below](#cost)), not part of the bank's fee |
+| **The buyer** | its own model provider | The buyer's agent works for the buyer, so its model cost is the buyer's (a few cents of Claude per negotiated deal, [Cost](#cost)), not part of the bank's fee |
 
 | Deal size (sum with this seller, 24 h) | Protection | Fee, paid by the seller (proposal) |
 | --- | --- | --- |
