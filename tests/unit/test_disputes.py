@@ -166,3 +166,39 @@ def test_alarm_once_when_an_open_deal_is_near_authorization_expiry(w):
     assert deadlines.alarms(time.time()) == []
     e = next(e for e in journal.entries(deal_id) if e["event"] == "escrow_expiry_alarm")
     assert e["actor"] == "timer" and "1 h" in e["payload"]["rule"]
+
+
+def test_one_failing_deal_never_stops_the_others_and_raises_one_stuck_alarm(w, monkeypatch):
+    from bank import ui
+    monkeypatch.setattr(deadlines, "_fails", {})
+    bad = k.make_deal(w, deal_id="d-a-bad", task_hash="t-bad", now=T0)  # open_ids() is sorted: it runs first
+    good = k.make_deal(w, deal_id="d-b-good", task_hash="t-good", now=T0)
+    k.deliver(w, good, now=T0 + 1)
+    real = disputes.tick
+    monkeypatch.setattr(disputes, "tick", lambda deal_id, now=None: (
+        (_ for _ in ()).throw(RuntimeError("rpc down")) if deal_id == bad else real(deal_id, now=now)))
+    deadlines.tick(now=T0 + 22)
+    assert k.state(good) == "settled" and k.captures(w) == [4_500_000, 500_000]
+    assert deadlines.tick(now=T0 + 23) == []
+    assert deadlines.tick(now=T0 + 24) == [{"deal_id": bad, "alarm": "settlement.stuck"}]
+    deadlines.tick(now=T0 + 25)
+    events = [e["event"] for e in journal.entries(bad)]
+    assert events.count("timer.deal_failed") == 4 and events.count("settlement.stuck") == 1
+    failed = next(e for e in journal.entries(bad) if e["event"] == "timer.deal_failed")
+    assert failed["actor"] == "timer" and failed["payload"] == {"attempt": 4, "error": "RuntimeError: rpc down"}
+    assert [a for a in ui.alarms(T0) if a.get("stuck")] == [{"deal_id": bad, "state": "authorized", "stuck": True}]
+    assert any(r.get("event") == "settlement.stuck" for r in ui.feed("client"))
+
+
+def test_a_deal_that_recovers_starts_counting_again(w, monkeypatch):
+    monkeypatch.setattr(deadlines, "_fails", {})
+    deal_id = k.make_deal(w, now=T0)
+    real, fail = disputes.tick, {"on": True}
+    monkeypatch.setattr(disputes, "tick", lambda d, now=None: (
+        (_ for _ in ()).throw(RuntimeError("x")) if fail["on"] else real(d, now=now)))
+    deadlines.tick(now=T0 + 1), deadlines.tick(now=T0 + 2)
+    fail["on"] = False
+    deadlines.tick(now=T0 + 3)
+    fail["on"] = True
+    deadlines.tick(now=T0 + 4), deadlines.tick(now=T0 + 5)
+    assert "settlement.stuck" not in [e["event"] for e in journal.entries(deal_id)]
