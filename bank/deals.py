@@ -132,6 +132,8 @@ def task_terms(task: dict) -> dict:
         c = buyer_criteria(task)
         terms = {"category": "data_purchase", "count": c["count"], "predicates": verifier.criteria_predicates(c),
                  "deadline_s": DEFAULT_DEADLINE_S}
+    if task.get("task_id"):  # one task, bought from several sellers, shares `unique`; another task does not
+        terms["task_id"] = str(task["task_id"])[:64]
     if terms["count"] < 1 or terms["deadline_s"] < 1:
         raise ValueError("count and deadline must be positive")
     return {**terms, "hash": receipts.terms_hash(terms)}
@@ -336,6 +338,10 @@ def pay(deal_id: str) -> dict:
                 decision = _wallet_refusal(deal, seller) or decision
             if decision["status"] == "ok":
                 marks = decision.get("marks", [])
+                decision = _reserve_b_slot(_require(deal_id))
+                decision["marks"] = marks + decision.get("marks", [])
+            if decision["status"] == "ok":
+                marks = decision.get("marks", [])
                 decision = _reserve(deal, money.to_eur_cents(deal["asset"], quote["amount"]))
                 decision["marks"] = marks + decision.get("marks", [])
         if decision["status"] != "ok":
@@ -404,15 +410,29 @@ def _fix_terms(deal: dict, eur_cents: int) -> dict:
             if floor["status"] != "ok":
                 return floor
             marks += floor.get("marks", [])
-        if rule in ("B", "C"):
-            avail = disputes.b_availability(deal["buyer_id"], deal["seller_id"], except_deal=deal["deal_id"])
-            if avail["available"]:
-                terms["b_slot"] = 1
-            elif not deal.get("confirmed_by"):
-                return codes.refuse(Code.CONFIRMATION_REQUIRED, [codes.reason(
-                    avail["reason"], True, avail["text"] + " A person can confirm the deal as B without claims.")])
-            else:
-                marks.append("B without claims (confirmed by a person)")
+        db.run("UPDATE deals SET terms_json=?, updated_at=? WHERE deal_id=?",
+               (db.dumps(terms), time.time(), deal["deal_id"]))
+    return codes.ok(marks=marks)
+
+
+def _reserve_b_slot(deal: dict) -> dict:
+    """§7B: a B (or C) deal takes a claim slot at pay — after the mandate and the counterparty checks, so a refusal
+    is never hidden behind a slot question. Check and write in one transaction: parallel pays cannot share a slot."""
+    from bank import disputes
+    terms = deal["terms"]
+    if terms["rule"] not in ("B", "C"):
+        return codes.ok()
+    with db.immediate():
+        avail = disputes.b_availability(deal["buyer_id"], deal["seller_id"], except_deal=deal["deal_id"])
+        marks = []
+        if avail["available"]:
+            terms["b_slot"] = 1
+        elif not deal.get("confirmed_by"):
+            return codes.refuse(Code.CONFIRMATION_REQUIRED, [codes.reason(
+                avail["reason"], True, avail["text"] + " A person can confirm the deal as B without claims.")])
+        else:
+            terms["b_slot"] = 0
+            marks.append("B without claims (confirmed by a person)")
         db.run("UPDATE deals SET terms_json=?, updated_at=? WHERE deal_id=?",
                (db.dumps(terms), time.time(), deal["deal_id"]))
     return codes.ok(marks=marks)

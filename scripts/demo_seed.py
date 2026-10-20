@@ -1,14 +1,16 @@
 # Seed the bank DB with demo data for the UI on a simulated chain: the five §13 scenarios, the VAT risk
-# acknowledged once for Beta in EURC (scene 1), and a dispute half-way (one seller objection, waiting for the bank).
+# acknowledged once for Beta in EURC (scene 1), and a B claim on the fake-data deal (refund without investigation).
 # Usage: MOCK=1 python -m scripts.demo_seed      then: DEMO_SIM=1 uvicorn bank.app:app --port 8000
-# (DEMO_SIM=1 keeps the simulated chain in the server, so the timer can finish holdbacks and disputes.)
+# (DEMO_SIM=1 keeps the simulated chain in the server, so the timer can finish the claim windows.)
 import os
 
 os.environ.setdefault("BANK_TIMER", "0")
 
 
 def main():
-    from bank import db, deals, disputes, mandate
+    import time
+
+    from bank import db, deadlines, deals, disputes, mandate
     from scripts import demo_scenarios, demo_sim, seed
     seed.seed()
     demo_sim.install()
@@ -20,13 +22,18 @@ def main():
         mandate.acknowledge_vat(m["mandate_id"], "30181020", "EURC", "human:alfa")
         deals.pay(deal_id)
     out["honest"] = deal_id
-    for name in ("fake_data", "attack", "suspicious", "tczk"):
-        out[name] = demo_scenarios.run(name)["deals"]
+    deadlines.tick(now=time.time() + 3600)  # the claim window of the first deal ends: its B slot is free again
+    out["fake_data"] = demo_scenarios.run("fake_data")["deals"]
     gama = out["fake_data"].get("s-gama")
-    d = disputes.get(gama) if gama else None
-    if d and d["items"]:
-        disputes.seller_objection(gama, d["items"][0]["placeId"], "The warehouse moved to Brno last month; "
-                                  "the listing is out of date.", "human:gama")
+    s = disputes.get(gama) if gama else None
+    if s and s["rule"] == "B" and not s["claims"] and s["window_end_at"]:
+        try:
+            disputes.file_b(gama, [[1, 0]], "wrong_data", "agent:buyer")
+        except disputes.DisputeError as e:
+            print("B claim not filed:", e)
+    deadlines.tick(now=time.time() + 3600)
+    for name in ("attack", "suspicious", "tczk"):
+        out[name] = demo_scenarios.run(name)["deals"]
     print("seeded:", out, "into", db.config.DB_PATH)
 
 

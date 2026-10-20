@@ -118,7 +118,7 @@ def install():
     seller_mod.bank_post = lambda path, body, *a, **k: bank_client.post(
         path, json=body, headers={"x-seller-token": getattr(config, "SELLER_TOKEN", "")}).raise_for_status()
     deals.seller_http = lambda base_url: TestClient(SELLER)
-    deals.auto_settle = lambda deal_id: disputes.settle(deal_id)  # L5: holdback + dispute instead of settle-and-void
+    deals.auto_settle = lambda deal_id: disputes.advance(deal_id)  # the rule's schedule (MODEL_V2 §8.2)
     ACTIVE = True
     print("*** DEMO_SIM: simulated chain and in-process seller (no Base Sepolia transactions) ***", flush=True)
 

@@ -209,7 +209,7 @@ class NegotiateIn(BaseModel):
     message: str = ""
 
 
-def offer_rule(terms: dict, price_cents: int, req: dict | None = None) -> dict:
+def offer_rule(terms: dict, price_cents: int, req: dict | None = None, rule: str | None = None) -> dict:
     """The seller's quality rule within the bank's published tiers (MODEL_V2 §4, §7): SELLER_RULE overrides;
     otherwise C when the task has a source template and the sum with this buyer is in T2 (or the mandate requires
     C there), else B with SELLER_B_PCT (10 %). The tier counts the buyer's prior deals with us (tier_sum, §2)."""
@@ -217,7 +217,7 @@ def offer_rule(terms: dict, price_cents: int, req: dict | None = None) -> dict:
     total = price_cents + int(req.get("prior_eur_cents") or 0)
     tier = "T2" if total > config.TIER_T1_MAX else "T1"
     has_source = any(p.get("op") == "source" for p in terms.get("predicates") or [])
-    rule = os.getenv("SELLER_RULE", "").strip().upper() or ("C" if has_source and tier == "T2" else "B")
+    rule = rule or os.getenv("SELLER_RULE", "").strip().upper() or ("C" if has_source and tier == "T2" else "B")
     if rule == "C":
         tier = "T2"
     floor = float((req.get("min_window_s") or {}).get(tier) or 0)
@@ -244,6 +244,7 @@ class EscrowIn(BaseModel):
 class ModeIn(BaseModel):
     seller_id: str
     mode: str
+    rule: str | None = None  # "A" | "B" | "C" overrides the quality rule; "" clears it (demo and scenario control)
 
 
 def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
@@ -315,7 +316,9 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         if body.seller_id not in app.state.sellers:
             raise HTTPException(404, "unknown seller")
         app.state.sellers[body.seller_id]["mode"] = body.mode
-        return {"seller_id": body.seller_id, "mode": body.mode}
+        if body.rule is not None:
+            app.state.sellers[body.seller_id]["rule"] = body.rule.strip().upper() or None
+        return {"seller_id": body.seller_id, "mode": body.mode, "rule": app.state.sellers[body.seller_id].get("rule")}
 
     @app.post("/negotiate")
     def negotiate(body: NegotiateIn):
@@ -325,8 +328,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         seller = app.state.sellers.get(body.seller_id)
         if seller is None:
             raise HTTPException(404, "unknown seller")
-        terms = body.terms or {}
-        count = int(terms.get("count") or 20)
+        terms = body.terms or {}  # direct x402 buyers (L1, smoke) send only the task's criteria
+        count = int(terms.get("count") or ((body.task or {}).get("criteria") or {}).get("count") or 20)
         fixed = os.getenv("SELLER_PRICE_PER_ITEM_EUR_CENTS", "").strip()
         list_c, min_c = ((count * int(fixed),) * 2 if fixed
                          else (count * LIST_PER_ITEM_EUR_CENTS, count * MIN_PER_ITEM_EUR_CENTS))
@@ -343,7 +346,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                                " confirmed predicates", "count": count, "price_eur_cents": cents,
                  "prices": {a: str(money.from_eur_cents(a, cents)) for a in quoted}, "pay_to": seller["pay_to"],
                  # the buyer's confirmed predicates verbatim; a seller may add its own (only narrowing, AND)
-                 "predicates": list(terms.get("predicates") or []), **offer_rule(terms, cents, body.requirements),
+                 "predicates": list(terms.get("predicates") or []), **offer_rule(terms, cents, body.requirements, seller.get("rule")),
                  "deadline_s": min(DEADLINE_S, int(terms.get("deadline_s") or DEADLINE_S)),
                  "created_at": round(time.time(), 3)}
         app.state.offers[offer["offer_id"]] = offer
@@ -405,6 +408,8 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             raise HTTPException(409, reason)
         if body.kind != "deal":  # the disputed sum locked again (§8.2): checked, nothing to deliver
             return {"ok": True, "offer_id": offer_id, "kind": body.kind}
+        if mode_of(offer) == "no_delivery":  # takes the lock and delivers nothing (scenario N13: NO_DELIVERY)
+            return {"ok": True, "offer_id": offer_id, "delivering": False}
         if offer_id not in app.state.delivered and offer_id not in app.state.delivering:
             app.state.delivering.add(offer_id)
             background.add_task(deliver_to_bank, offer_id, body.deal_id, signed_delivery(offer_id, mode_of(offer)))

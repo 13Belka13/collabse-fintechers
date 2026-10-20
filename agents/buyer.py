@@ -8,6 +8,7 @@
 import argparse
 import json
 import re
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
@@ -128,7 +129,7 @@ class Buyer:
                  buyer_id: str = "alfa", budget_eur_cents: int = 500, asset: str = "EURC", seller_hint: str | None = None):
         self.call = transport or http_transport()
         self.mandate_id, self.buyer_id = mandate_id, buyer_id
-        self.task = {"text": task_text, "category": "data", "asset": asset,
+        self.task = {"text": task_text, "category": "data", "asset": asset, "task_id": "t-" + uuid.uuid4().hex[:12],
                      "budget": {"value": str(budget_eur_cents), "currency": "EUR"}, "criteria": None}
         self.seller_hint = seller_hint
         self.deals: dict[str, str] = {}  # seller_id -> deal_id (only these deals may be paid)
