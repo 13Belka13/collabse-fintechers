@@ -384,25 +384,34 @@ def home():
 
 
 @router.get("/story", response_class=HTMLResponse)
-def story_page(request: Request, deal_id: str | None = None):
-    from scripts.demo_scenarios import SCENARIOS
+def story_page(request: Request, deal_id: str | None = None, busy: str = ""):
+    return _story_page(request, deal_id, busy=bool(busy))
+
+
+def _story_page(request: Request, deal_id: str | None = None, busy=False, form: dict | None = None, error=""):
+    from scripts import demo_scenarios as ds
     recent = db.rows("SELECT d.deal_id, d.asset, d.state, c.name FROM deals d LEFT JOIN sellers s"
                      " ON s.seller_id=d.seller_id LEFT JOIN companies c ON c.id=s.company_id"
                      " ORDER BY d.created_at DESC LIMIT 8")
-    return page(request, "story.html", s=story(deal_id), deal_id=deal_id, scenarios=SCENARIOS, recent=recent)
+    form = form or {"task": ds.TASK, "budget": "5", "asset": "EURC", "seller": "", "mode": "honest", "say": "",
+                    "opening": "list", "data": "companies", "rule": ""}
+    return page(request, "story.html", s=story(deal_id), deal_id=deal_id, scenarios=ds.SCENARIOS, recent=recent,
+                run=run_view(), busy=busy, error=error, form=form, ds=ds)
 
 
 @router.get("/story/panel", response_class=HTMLResponse)
 def story_panel(request: Request, deal_id: str | None = None):
-    return templates.TemplateResponse(request, "_story.html", {"s": story(deal_id), "deal_id": deal_id})
+    return templates.TemplateResponse(request, "_story.html", {"s": story(deal_id), "deal_id": deal_id,
+                                                               "run": run_view()})
 
 
 @router.get("/bank", response_class=HTMLResponse)
 def bank_page(request: Request, view: str = "client"):
     from scripts.demo_scenarios import SCENARIOS
+    from scripts.demo_scenarios import busy as run_busy
     view = "compliance" if view == "compliance" else "client"
     return page(request, "bank.html", view=view, rows=feed(view), panel=panel(), alarms=alarms(),
-                scenarios=SCENARIOS, names=_names())
+                scenarios=SCENARIOS, names=_names(), busy=run_busy())
 
 
 @router.get("/bank/feed", response_class=HTMLResponse)
@@ -606,13 +615,165 @@ def reconcile(request: Request, mandate_id: str = DEMO_MANDATE):
     return templates.TemplateResponse(request, "_reconcile.html", {"rows": out})
 
 
+# ---- the demo console: scripted scenarios and the viewer's own deal, one run at a time ----
+
+TOOL_TEXT = {"find_seller": ("Our agent looks for a data seller", "the agent looks for a seller"),
+             "check_seller": ("Our agent asks the bank to check the seller", "the bank checks the seller"),
+             "pay": ("Our agent asks the bank to pay", "the bank decides"),
+             "fetch_delivery": ("Our agent fetches the delivery through the bank", "the delivery is checked"),
+             "file_claim": ("Our agent files a claim", "a claim is filed")}
+WAITING_S = 8  # no new journal entry for this long while running: "waiting for the model…"
+
+
+def run_steps(since_id: int) -> dict:
+    """The current run's journal in plain steps for the live banner. Decisions pass codes.client_view (what the
+    audience sees is what the client may see); the seller's words are marked as untrusted data."""
+    rows = db.rows("SELECT * FROM journal WHERE id>? ORDER BY id LIMIT 600", (since_id,))
+    ours = [r["deal_id"] for r in rows if r["event"] == "deal_created" and r["deal_id"]]
+    asset_of = {d: "EURC" for d in ours}
+    asset_of.update({r["deal_id"]: r["asset"] or "EURC" for r in db.rows(
+        "SELECT deal_id, asset FROM deals WHERE deal_id IN (%s)" % ",".join("?" * len(ours)), tuple(ours))} if ours else {})
+    names, steps, turn, seen, paying = _names(), [], 0, set(), False
+
+    def add(r, text, tone="info", phase=None, **kw):
+        steps.append({"ts": r["ts"], "time": _fmt_ts(r["ts"]), "text": text, "tone": tone, "phase": phase, **kw})
+
+    for r in rows:
+        did, e, p = r["deal_id"], r["event"], db.loads(r["payload_json"]) or {}
+        if did and did not in asset_of:
+            continue  # another deal's timer or settlement, not this run
+        a = asset_of.get(did, "EURC")
+        if e == "agent_turn" and r["actor"] == "agent:buyer":
+            for tc in p.get("tool_calls") or []:
+                inp = tc.get("input") or {}
+                if tc.get("name") == "negotiate":
+                    turn += 1
+                    add(r, f"Our agent → {names.get(inp.get('seller_id'), 'the seller')}: “{str(inp.get('message', ''))[:300]}”",
+                        phase=f"agents are negotiating (turn {turn})", who="buyer")
+                else:
+                    text, phase = TOOL_TEXT.get(tc.get("name"), (f"Our agent calls {tc.get('name')}", None))
+                    seller = names.get(inp.get("seller_id"))
+                    add(r, text + (f" ({seller})" if seller else ""), phase=phase)
+        elif e == "seller_reply" and r["actor"] == "agent:seller":
+            add(r, f"The seller's agent: “{str(p.get('reply_text') or '')[:600]}”", "untrusted",
+                f"agents are negotiating (turn {max(turn, 1)})", who="seller", untrusted=True)
+        elif e == "offer_stored":
+            add(r, f"Offer on the table: {_fmt_money(p.get('amount'), a)}, rule {p.get('rule') or '—'}",
+                phase=f"agents are negotiating (turn {max(turn, 1)})")
+        elif e == "screening.checked" and p.get("level") == "ok" and p.get("ico") not in seen and not paying:
+            seen.add(p.get("ico"))  # the seller's prefetch; the delivered items' checks show as the delivery result
+            add(r, f"The bank checked IČO {p.get('ico')} in the public registries: passed", "ok")
+        elif e == "quote_accepted":
+            paying = True
+        elif e == "budget_reserved":
+            add(r, f"The bank approved the payment (mandate version {p.get('version')})", "ok",
+                "the money goes into escrow")
+        elif e in ("pay_refused", "pay_requires_user_action", "x402_refused"):
+            v = codes.client_view({"code": p.get("code"), "reasons": p.get("reasons") or []})
+            plain = PLAIN.get(v["code"], v["code"])
+            if e == "pay_requires_user_action":
+                add(r, f"The bank asks a person first: {plain} ({v['code']}). Decide on the Mandate page.", "warn",
+                    "waiting for a person", link="/mandate")
+            else:
+                add(r, f"The bank refused: {plain} ({v['code']}). No money moved.", "bad", "refused")
+        elif e == "escrow_authorized":
+            add(r, f"{_fmt_money(p.get('amount'), a)} locked in escrow", "ok", "the seller delivers through the bank")
+        elif e == "delivery.autocodes":
+            add(r, f"Delivery checked by code: {p.get('accepted_items', 0)} accepted, "
+                   f"{p.get('rejected_items', 0)} rejected", "ok", "the money moves by the deal's rule")
+        elif e == "escrow_captured":
+            add(r, f"{_fmt_money(p.get('amount'), a)} paid to the seller", "ok", "the money moves by the deal's rule")
+        elif e == "escrow_voided":
+            add(r, "The unearned rest went back to the buyer (final void)", "ok")
+        elif e in ("vat_risk_acknowledged", "payment_confirmed"):
+            add(r, "A person " + ("acknowledged the VAT risk" if e == "vat_risk_acknowledged"
+                                  else "confirmed the payment"), "ok")
+        elif e == "demo.reset_failed":
+            add(r, f"Could not reset the behaviour of {', '.join(p.get('sellers') or [])}", "bad")
+        elif e == "demo.scenario":
+            text, tone = outcome_text(p.get("outcome"))
+            add(r, f"Finished: {text}", tone)
+    return {"steps": steps, "turn": turn, "deals": ours}
+
+
+def outcome_text(outcome: str | None) -> tuple[str, str]:
+    """A run's outcome in plain words + tone."""
+    if not outcome:
+        return "no result yet", "info"
+    if outcome.startswith("error"):
+        return f"the run stopped with an error ({outcome.removeprefix('error: ')}). Nothing else was paid.", "bad"
+    if outcome == "ok":
+        return "the bank approved the payment; the money moves by the deal's rule.", "ok"
+    if outcome in ("VAT_LIABILITY_RISK", "CONFIRMATION_REQUIRED"):
+        return f"the bank stopped and asked a person: {PLAIN[outcome]}. Decide on the Mandate page.", "warn"
+    if outcome in PLAIN:
+        return f"the bank refused: {PLAIN[outcome]}. No money moved.", "bad"
+    return {"done": ("the agent ended without paying.", "info"),
+            "turn_limit": ("the agent stopped after too many turns; nothing was paid.", "warn"),
+            "model_refused": ("the model refused to continue; nothing was paid.", "warn")}.get(
+        outcome, (outcome, "info"))
+
+
+def run_view(now: float | None = None) -> dict | None:
+    """The current or last demo run for /story and GET /demo/run (None before the first run)."""
+    from scripts import demo_scenarios as ds
+    r = dict(ds.RUN)
+    if not r.get("started"):
+        return None
+    now = time.time() if now is None else now
+    x = run_steps(r.get("since_id") or 0)
+    running = not r.get("finished")
+    elapsed = (r.get("finished") or now) - r["started"]
+    idle = now - max([s["ts"] for s in x["steps"]] + [r["started"]])
+    phase = next((s["phase"] for s in reversed(x["steps"]) if s.get("phase")), "starting")
+    text, tone = outcome_text(r.get("outcome")) if not running else ("", "info")
+    return {"name": r.get("name"), "title": r.get("title"), "params": r.get("params"), "started": r["started"],
+            "finished": r.get("finished"), "elapsed_s": round(elapsed, 1), "outcome": r.get("outcome"),
+            "agent_text": r.get("agent_text"), "steps": x["steps"], "turn": x["turn"], "deals": x["deals"],
+            "running": running, "phase": phase, "waiting": running and idle > WAITING_S, "ai": not config.MOCK,
+            "slow": running and elapsed > ds.RUN_TIMEOUT_S, "outcome_text": text, "tone": tone,
+            "deal_id": (x["deals"] or [None])[-1]}
+
+
+def _start(name: str, params: dict | None = None) -> bool:
+    """Start a run in a daemon thread unless one is running (the request never waits for the model)."""
+    from scripts import demo_scenarios as ds
+    if ds.busy():
+        return False
+    threading.Thread(target=ds.run_safe, args=(name,) if params is None else (name, params), daemon=True).start()
+    for _ in range(20):  # up to 0.2 s for the thread to take the lock, so the next page already shows the run
+        if ds.busy():
+            break
+        time.sleep(0.01)
+    return True
+
+
+@router.get("/demo/run")
+def demo_run():
+    return run_view() or {"name": None, "running": False, "steps": []}
+
+
+@router.post("/demo/custom", response_class=HTMLResponse)
+async def demo_custom(request: Request):
+    from scripts import demo_scenarios as ds
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    try:
+        params = ds.custom_params(form)
+    except ValueError as e:  # the form comes back with the viewer's values and the message
+        return _story_page(request, form={**form, "say": form.get("say", "")[:2000]}, error=str(e))
+    if not _start("custom", params):
+        return RedirectResponse("/story?busy=1", status_code=303)
+    return RedirectResponse("/story", status_code=303)
+
+
 @router.post("/demo/{scenario}")
 def demo(scenario: str, next: str = "/bank"):
     from scripts import demo_scenarios
     if scenario not in demo_scenarios.SCENARIOS:
         raise HTTPException(404, "unknown scenario")
-    threading.Thread(target=demo_scenarios.run_safe, args=(scenario,), daemon=True).start()
-    return RedirectResponse(next if next in ("/bank", "/story") else "/bank", status_code=303)  # no open redirect
+    target = next if next in ("/bank", "/story") else "/bank"  # no open redirect
+    started = _start(scenario)
+    return RedirectResponse(target + ("" if started else "?busy=1"), status_code=303)
 
 
 @router.post("/timer/tick")

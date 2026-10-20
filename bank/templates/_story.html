@@ -1,5 +1,6 @@
+{% include "_run.html" %}
 {% if not s %}
-<div class="card"><strong>No deal yet.</strong> Run a scenario above: the story of the deal appears here step by step.</div>
+<div class="card"><strong>No deal yet.</strong> Run your own deal or a scripted scenario above: the story of the deal appears here step by step.</div>
 {% else %}
 {% set a = s.asset %}
 <div class="banner {{ {'ok': 'ok', 'bad': 'bad', 'warn': 'sim', 'info': 'ok'}[s.tone] }} story-head">

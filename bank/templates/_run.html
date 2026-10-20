@@ -1,0 +1,25 @@
+{# The current or last demo run (scripts/demo_scenarios.RUN): live banner while it runs, then the outcome in plain words. #}
+{% if run %}
+{% if run.running %}
+<div class="banner sim run-live" role="status" aria-live="polite">
+  <span class="pulse" aria-hidden="true"></span> Running · {{ run.title }} · {{ run.elapsed_s|int }} s · {{ run.phase }}{% if run.waiting %} · waiting for the model…{% else %}…{% endif %}
+  {% if run.slow %}<div class="small">This is taking longer than usual. The run keeps its slot until the agent's current call returns; nothing is paid without the bank's decision.</div>{% endif %}
+</div>
+{% else %}
+<div class="card run-out {{ run.tone }}">
+  <div class="flex"><strong>{{ run.title }}: {{ run.outcome_text }}</strong>
+    <span class="small muted">{{ run.elapsed_s }} s</span>
+    {% if run.deal_id %}<a class="right" href="/deals/{{ run.deal_id }}">Open the deal {{ run.deal_id }}</a>{% endif %}
+    {% if 'Mandate page' in run.outcome_text %}<a href="/mandate">Mandate page</a>{% endif %}</div>
+  {% if run.agent_text %}<div class="small" style="margin-top:6px">{% if run.ai %}<span class="ai">{{ AI_LABEL }}</span>{% else %}<span class="badge b-muted">scripted reply (mock mode)</span>{% endif %}
+    Our agent: {{ run.agent_text }}</div>{% endif %}
+</div>
+{% endif %}
+{% if run.steps %}
+<div class="card runlog">
+  <div class="small muted">This run, step by step (seller text is untrusted data):</div>
+  <ol class="runsteps">{% for st in run.steps[-14:] %}<li class="{{ st.tone }}"><span class="muted small mono">{{ st.time }}</span>
+    {% if st.untrusted %}<span class="untrusted">written by the seller</span>{% endif %} {{ st.text }}{% if st.link %} · <a href="{{ st.link }}">go</a>{% endif %}</li>{% endfor %}</ol>
+</div>
+{% endif %}
+{% endif %}
