@@ -1,5 +1,7 @@
 # Numbers — every measurable part of Collabse
 
+> Generated 20.10 10:38 at e799084 (offline benchmarks); for scenario results see [validation-sepolia.md](validation-sepolia.md) and [validation.md](validation.md).
+
 Generated 2026-10-20 10:38 CEST by `scripts/numbers.py` at commit `e799084`. Offline: DEMO_SIM (simulated chain, in-process seller), MOCK model, no keys, no transactions. Testnet and live-model figures are read from the committed reports named in *Source*. A prototype validated on testnet, not production-ready.
 
 Machine: arm64 Darwin 25.6.0, Python 3.12.7, 10 CPUs, load avg 34.3. Micro-benchmarks ran on a shared laptop: p50 is the stable figure, p95 includes scheduler noise.
