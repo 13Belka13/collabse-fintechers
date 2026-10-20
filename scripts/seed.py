@@ -1,5 +1,5 @@
 # Load synthetic demo companies and sellers into the bank DB (idempotent).
-# Usage: python -m scripts.seed      Wallet addresses can be overridden by BETA_ADDR / GAMA_ADDR / DELTA_ADDR.
+# Usage: python -m scripts.seed      Wallet addresses can be overridden by <ID>_ADDR (BETA_ADDR ... EPSILON_ADDR).
 import json
 import os
 

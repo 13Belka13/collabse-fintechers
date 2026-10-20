@@ -283,7 +283,8 @@ def test_pay_before_offer_is_409(world):
 
 
 def test_sellers_and_statement(world):
-    assert {s["seller_id"] for s in world.bank.get("/api/sellers?category=data").json()} == {"s-beta", "s-gama", "s-delta"}
+    sellers = {s["seller_id"] for s in world.bank.get("/api/sellers?category=data").json()}
+    assert sellers == {"s-beta", "s-gama", "s-delta", "s-epsilon"}
     check = world.bank.get("/api/sellers/s-beta/check").json()
     assert check["level"] == "ok" and check["public_reasons"] == []
     deal_id, _ = new_deal(world)

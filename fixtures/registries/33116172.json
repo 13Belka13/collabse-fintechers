@@ -1,0 +1,71 @@
+{
+ "_note": "Recorded-format registry answers for a SYNTHETIC demo company (SPEC §14, 'demo-režim registrů'). Same shapes as the live answers in recorded/ (ARES JSON, VAT and ISIR SOAP XML, company-check actor output); values invented, IČO verified absent from ARES on 2026-10-19. The name is deliberately close to an entity in the EU sanctions list snapshot (fixtures/sanctions/eu_companies.json): the no-tipping-off demo (scripts/demo_scenarios.py sanctions_hit).",
+ "demo_fixture": true,
+ "recorded_at": "2026-10-19",
+ "ico": "33116172",
+ "name": "Madda Transport s.r.o.",
+ "ares": {
+  "status": 200,
+  "body": {
+   "ico": "33116172",
+   "obchodniJmeno": "Madda Transport s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2021-06-14",
+   "dic": "CZ33116172",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "textovaAdresa": "Vídeňská 7/7, Štýřice, 63900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  }
+ },
+ "vat_xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?><soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"><soapenv:Header/><soapenv:Body><StatusNespolehlivyPlatceResponse xmlns=\"http://adis.mfcr.cz/rozhraniCRPDPH/\"><status odpovedGenerovana=\"2026-10-19\" statusCode=\"0\" statusText=\"OK\"/><statusPlatceDPH dic=\"33116172\" nespolehlivyPlatce=\"NENALEZEN\"/></StatusNespolehlivyPlatceResponse></soapenv:Body></soapenv:Envelope>",
+ "isir_xml": "<?xml version='1.0' encoding='UTF-8'?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><ns2:getIsirWsCuzkDataResponse xmlns:ns2=\"http://isirws.cca.cz/types/\"><stav><kodChyby>WS2</kodChyby><textChyby>Prázdný výsledek</textChyby><popisChyby>Zadaným kritériím neodpovídají žádné záznamy</popisChyby></stav></ns2:getIsirWsCuzkDataResponse></soap:Body></soap:Envelope>",
+ "company_check": {
+  "ico": "33116172",
+  "websiteUrl": "https://madda-data.example",
+  "score": 0,
+  "level": "low",
+  "signals": [
+   {
+    "name": "website_reachable",
+    "value": true,
+    "source_url": "https://madda-data.example",
+    "explanation": "Home page answered HTTP 200."
+   },
+   {
+    "name": "website_mentions_ico",
+    "value": true,
+    "source_url": "https://madda-data.example/kontakt",
+    "explanation": "IČO 33116172 found on /kontakt (Civil Code §435)."
+   },
+   {
+    "name": "website_other_icos",
+    "value": [],
+    "source_url": "https://madda-data.example/kontakt",
+    "explanation": "No other IČO on the site."
+   },
+   {
+    "name": "maps_listing_found",
+    "value": true,
+    "source_url": "https://www.google.com/maps/search/Madda+Transport+s.r.o.+Brno",
+    "explanation": "A Google Maps place with this name exists in Brno."
+   },
+   {
+    "name": "maps_permanently_closed",
+    "value": false,
+    "source_url": null,
+    "explanation": "The place is open."
+   }
+  ],
+  "checkedAt": "2026-10-19T10:00:00Z",
+  "demo_fixture": true
+ }
+}

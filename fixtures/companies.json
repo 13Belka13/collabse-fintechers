@@ -12,7 +12,10 @@
      "wallet_address": "0x19d12f1e3869e75D819aD9190065D3B77b4c7Ac1", "wallet_key_ref": null},
     {"id": "delta", "name": "Delta s.r.o.", "ico": "54763363", "dic": "CZ54763363", "role": "seller",
      "account_number": "8452341718/9999", "iban": "CZ6599990000008452341718",
-     "wallet_address": "0xeCFf7a2FF48b85eE48150D94f6FAe9338A1D4388", "wallet_key_ref": null}
+     "wallet_address": "0xeCFf7a2FF48b85eE48150D94f6FAe9338A1D4388", "wallet_key_ref": null},
+    {"id": "epsilon", "name": "Madda Transport s.r.o.", "ico": "33116172", "dic": "CZ33116172", "role": "seller",
+     "account_number": "4271905539/9999", "iban": "CZ9399990000004271905539",
+     "wallet_address": "0x0d9F3aF08E9557545703b0779695A2EE45e30640", "wallet_key_ref": null}
   ],
   "sellers": [
     {"seller_id": "s-beta", "company_id": "beta", "category": "data", "mode": "honest",
@@ -26,7 +29,11 @@
     {"seller_id": "s-delta", "company_id": "delta", "category": "data", "mode": "honest",
      "base_url": "http://localhost:8001", "website_url": "https://delta-data.example",
      "profile_url": "https://delta-data.example/o-nas",
-     "story": "Website shows a different IČO than ARES -> COUNTERPARTY_NOT_TRUSTED before payment."}
+     "story": "Website shows a different IČO than ARES -> COUNTERPARTY_NOT_TRUSTED before payment."},
+    {"seller_id": "s-epsilon", "company_id": "epsilon", "category": "data", "mode": "honest",
+     "base_url": "http://localhost:8001", "website_url": "https://madda-data.example",
+     "profile_url": "https://madda-data.example/o-nas",
+     "story": "Name close to an EU sanctions entry -> UNDER_REVIEW; the client sees only the neutral text (no tipping-off, §38 AML Act), compliance sees the match and its source."}
   ],
-  "spare_icos": ["14645441", "33116172"]
+  "spare_icos": ["14645441"]
 }

@@ -160,12 +160,12 @@ def _ico_ok(ico):
 def test_seed_is_idempotent_and_core_lookups(seeded):
     from scripts.seed import seed
     assert seed() == seeded
-    assert db.one("SELECT COUNT(*) n FROM companies")["n"] == 4
+    assert db.one("SELECT COUNT(*) n FROM companies")["n"] == 5
     beta = core.seller("s-beta")
     assert beta["ico"] == "30181020" and beta["account_number"] == "5638829718/9999"
     assert core.bound_account(beta["wallet_address"].lower()) == "5638829718/9999"
     assert core.company_by_ico("64146103")["id"] == "alfa"
-    assert [s["seller_id"] for s in core.sellers("data")] == ["s-beta", "s-delta", "s-gama"]
+    assert [s["seller_id"] for s in core.sellers("data")] == ["s-beta", "s-delta", "s-epsilon", "s-gama"]
     assert core.bound_account("0x0000000000000000000000000000000000000001") is None
 
 
