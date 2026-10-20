@@ -1,28 +1,28 @@
 {
- "generated": "2026-10-19 15:37",
- "commit": "3af5a5b",
+ "generated": "2026-10-20 11:14",
+ "commit": "cff65f0",
  "target": "fork",
- "label": "anvil fork of Base Sepolia (chain id 84532) at block 48324278",
+ "label": "anvil fork of Base Sepolia (chain id 84532) at block 48359527",
  "summary": {
   "scenarios": 25,
   "p0": 19,
   "faults": 5,
   "extra": 1,
-  "attack_scenarios": 11,
+  "attack_scenarios": 12,
   "runs": 3,
   "scenario_runs": 75,
   "status": {
-   "pass": 69,
-   "xfail": 6,
+   "pass": 75,
+   "xfail": 0,
    "fail": 0
   },
-  "attack_runs": 33,
-  "attacks_executed": 33,
+  "attack_runs": 36,
+  "attacks_executed": 36,
   "attacks_not_run": [],
-  "attacks_blocked_money": 33,
-  "attacks_expected_code": 33,
-  "txs_landed": 138,
-  "txs_dead": 42,
+  "attacks_blocked_money": 36,
+  "attacks_expected_code": 36,
+  "txs_landed": 130,
+  "txs_dead": 54,
   "wrong_debits": 0,
   "transfers_to_evil": 0,
   "reconciliation_ok": true,
@@ -31,10 +31,10 @@
   "journal_verified": true,
   "cost": {
    "paid": {
-    "EURC": 6540000,
-    "tCZK": 2100
+    "EURC": 5616000,
+    "tCZK": 2408
    },
-   "gas": 12783958
+   "gas": 12922674
   },
   "per_scenario": {
    "S01": [
@@ -153,14 +153,14 @@
     "pass"
    ],
    "F04": [
-    "xfail",
-    "xfail",
-    "xfail"
+    "pass",
+    "pass",
+    "pass"
    ],
    "F05": [
-    "xfail",
-    "xfail",
-    "xfail"
+    "pass",
+    "pass",
+    "pass"
    ]
   }
  },
@@ -170,76 +170,76 @@
    "title": "Mandate decision + cached check + journal",
    "target_ms": 50,
    "n": 144,
-   "p50": 0.478,
-   "p95": 31.86,
-   "met": true
+   "p50": 0.96,
+   "p95": 57.163,
+   "met": false
   },
   {
    "stage": "facilitator_verify",
    "title": "Bank facilitator verify (with screening)",
    "target_ms": 500,
    "n": 6,
-   "p50": 12.576,
-   "p95": 610.784,
+   "p50": 34.857,
+   "p95": 1608.871,
    "met": false
   },
   {
    "stage": "screening",
    "title": "New counterparty: ARES + VAT + ISIR + sanctions",
    "target_ms": 2500,
-   "n": 119,
-   "p50": 21.961,
-   "p95": 123.888,
+   "n": 238,
+   "p50": 33.786,
+   "p95": 150.45,
    "met": true
   },
   {
    "stage": "tx_in_block:*",
    "title": "Signature → tx in block (settle, authorize, capture, void)",
    "target_ms": 6000,
-   "n": 139,
-   "p50": 641.403,
-   "p95": 752.085,
+   "n": 131,
+   "p50": 636.135,
+   "p95": 690.603,
    "met": true
   },
   {
-   "stage": "bank_feed",
-   "title": "Tx in block → row in the /bank feed",
+   "stage": "block_to_feed*",
+   "title": "Tx in block → row in the /bank feed (RPC poll or Tatum)",
    "target_ms": 5000,
-   "n": 0,
-   "p50": null,
-   "p95": null,
-   "met": null
+   "n": 67,
+   "p50": 3105.047,
+   "p95": 3714.0,
+   "met": true
   },
   {
    "stage": "refusal_to_client",
    "title": "Refusal → message to the client",
    "target_ms": 100,
    "n": 42,
-   "p50": 3.459,
-   "p95": 47.351,
-   "met": true
+   "p50": 3.283,
+   "p95": 168.762,
+   "met": false
   }
  ],
  "coverage": {
   "total": {
-   "lines": 90.17184202592705,
-   "branches": 81.23772102161101
+   "lines": 89.76987447698745,
+   "branches": 82.83018867924528
   },
   "targets": [
    {
     "target": "bank/ lines ≥ 80 %",
-    "value": 90.17184202592705,
+    "value": 89.76987447698745,
     "met": true
    },
    {
     "target": "bank/mandate.py branches ≥ 90 %",
-    "value": 92.37288135593221,
+    "value": 91.66666666666667,
     "met": true
    },
    {
     "target": "bank/verifier.py branches ≥ 90 %",
-    "value": 97.05882352941177,
-    "met": true
+    "value": 84.0909090909091,
+    "met": false
    },
    {
     "target": "bank/explain.py branches ≥ 90 %",
@@ -253,7 +253,7 @@
    },
    {
     "target": "bank/screening/__init__.py branches ≥ 90 %",
-    "value": 91.37931034482759,
+    "value": 90.625,
     "met": true
    }
   ]
@@ -347,7 +347,7 @@
   "source": "reports/evals-live.json (live Bedrock run)"
  },
  "llm_totals": {
-  "calls": 60,
+  "calls": 111,
   "input_tokens": 0,
   "output_tokens": 0,
   "cost_usd": 0.0
@@ -356,16 +356,14 @@
   "deals_checked": 39,
   "deals_ok": 39,
   "buyer_debits": {
-   "EURC": 42,
-   "tCZK": 6
+   "EURC": 44,
+   "tCZK": 7
   },
   "wrong_debits": [],
   "wrong_debit_count": 0,
   "transfers_to_evil": 0,
-  "first_block": 48324297,
+  "first_block": 48359547,
   "ok": true
  },
- "defects": {
-  "D3": "Tatum webhook /webhooks/tatum not built (L7): no HMAC check, no dedupe by txId"
- }
+ "defects": {}
 }

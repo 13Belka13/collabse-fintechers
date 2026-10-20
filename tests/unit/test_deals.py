@@ -5,6 +5,7 @@ import sys
 import time
 import types
 
+import httpx
 import pytest
 from eth_account import Account
 from fastapi import FastAPI
@@ -125,6 +126,29 @@ def test_negotiation_proxy(world):
     assert deal["state"] == "offered" and deal["amount"] == 5_000_000 and deal["offer"]["pay_to"] == BETA
     seller_entries = [e for e in journal.entries(deal_id) if e["actor"] == "agent:seller"]
     assert seller_entries and all(e["payload"]["source"] == "untrusted:seller" for e in seller_entries)
+
+
+def test_a_slow_seller_turn_is_waited_for_then_answered_504(world, monkeypatch):
+    """A live seller turn may take > 10 s on Bedrock: the proxy waits NEGOTIATE_TIMEOUT_S, then a clean 504."""
+    asked = {}
+
+    class Slow:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, path, json=None, timeout=None):
+            asked["timeout"] = timeout
+            raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(deals, "seller_http", lambda base_url: Slow())
+    deal_id = world.bank.post("/api/deals", json={"buyer_id": "alfa", "seller_id": "s-beta", "mandate_id": "m-alfa-1",
+                                                  "task": {"text": "20 warehouses in Brno"}}).json()["deal_id"]
+    r = world.bank.post(f"/api/deals/{deal_id}/negotiate", json={"message": "Price?"})
+    assert r.status_code == 504 and config.NEGOTIATE_TIMEOUT_S >= 20
+    assert deals.get(deal_id)["state"] != "offered"
 
 
 def test_injection_text_is_journalled_as_untrusted(world):

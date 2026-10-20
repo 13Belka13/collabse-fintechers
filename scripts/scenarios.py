@@ -1158,13 +1158,15 @@ def main(argv=None) -> int:
         first_block = chain.w3().eth.block_number
         for run in range(1, a.runs + 1):
             print(f"run {run}/{a.runs}", flush=True)
-            if stack.profile != "main":
-                stack.use_profile("main")
+            # a fresh bank DB per run: the buyer's B claim slots (MODEL_V2 §7B, 2 per 30 days) would run out
+            main_profile = "main" if run == 1 else f"main-r{run}"
+            if stack.profile != main_profile:
+                stack.use_profile(main_profile)
             for sid, (title, fn) in p0.items():
                 if sid in PROFILES:
                     stack.use_profile(f"{sid.lower()}-r{run}", PROFILES[sid])
-                elif stack.profile != "main":
-                    stack.use_profile("main")
+                elif stack.profile != main_profile:
+                    stack.use_profile(main_profile)
                 results.append(run_one(stack, sid, run, title, fn))
             for sid, (title, fn, fault) in faults.items():
                 stack.use_profile(f"{sid.lower()}-r{run}", fault)
