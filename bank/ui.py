@@ -70,6 +70,8 @@ templates.env.filters.update(ts=_fmt_ts, money=_fmt_money, tx=_tx,
                              eur=lambda c: f"{(c or 0) / 100:.2f} €".replace(".", ","),
                              left=lambda t: max(0, int((t or 0) - time.time())))
 templates.env.globals.update(AI_LABEL=explain.AI_LABEL, sim=_sim, STEP_TEXT=STEP_TEXT)
+from bank import economics  # noqa: E402 — the "what this deal cost" panel (_economics.html)
+templates.env.globals["economics"] = economics
 
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:

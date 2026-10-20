@@ -14,6 +14,7 @@
   <tr><th>Asset</th><th class="num">Locked in escrow, total</th><th class="num">Paid to sellers</th><th class="num">Returned</th><th class="num">Still locked</th></tr>
   {% for a, t in totals.items() %}<tr><td>{{ a }}</td><td class="num">{{ t.total|money(a) }}</td><td class="num">{{ t.captured|money(a) }}</td><td class="num">{{ t.returned|money(a) }}</td><td class="num">{{ t.in_escrow|money(a) }}</td></tr>{% endfor %}
 </table>
+{% with econ_rows = rows %}{% include "_economics.html" %}{% endwith %}
 <h2>Deals</h2>
 <table>
   <tr><th>Deal</th><th>Seller</th><th>State</th><th class="num">Price</th><th class="num">Paid</th><th class="num">Returned</th><th class="num">Locked</th></tr>

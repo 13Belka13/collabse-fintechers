@@ -53,4 +53,5 @@
   </li>
 {% endfor %}
 </ol>
+{% with deal_id = s.deal.deal_id %}{% include "_economics.html" %}{% endwith %}
 {% endif %}
