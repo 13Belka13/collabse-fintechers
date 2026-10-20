@@ -1,7 +1,7 @@
 # P3: a person approves an agent's payment from a phone. CONFIRMATION_REQUIRED -> /story shows a QR code to
 # /approve/{deal_id}?t=<token>; the token is one-time, for one deal, 10 minutes, stored only as a hash; a valid one
-# confirms through deals.confirm exactly once, an expired, used, foreign or missing one moves nothing.
-# Same harness as test_integration (real modules, fake chain).
+# confirms through deals.confirm exactly once, an expired, used, foreign or missing one moves nothing. The Caddyfile
+# lets only /health and /approve/* past the UI password. Same harness as test_integration (real modules, fake chain).
 import re
 
 import pytest
@@ -135,3 +135,15 @@ def test_jury_scenario_sits_between_the_threshold_and_the_limit():
     assert mandate.cents(p["confirm_above"]) < s["floor"] <= mandate.cents(p["per_deal_max"]) and s["floor"] <= s["budget"]
     assert len(demo_scenarios.SCENARIOS) == 6
 
+
+def test_caddy_lets_only_health_and_approve_past_the_password():
+    text = (demo_scenarios.config.ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    open_paths = re.findall(r"@(\w+) path (\S+)", body)
+    assert open_paths == [("health", "/health"), ("approve", "/approve/*")]
+    for name, _ in open_paths:  # those handles only proxy; nothing else is reachable without the password
+        block = re.search(rf"handle @{name} \{{(.*?)\n\t\}}", body, re.S).group(1)
+        assert block.strip() == "reverse_proxy app:8000"
+    catch_all = re.search(r"\n\thandle \{(.*?)\n\t\}", body, re.S).group(1)
+    assert "basic_auth" in catch_all and "{$UI_USER} {$UI_HASH}" in catch_all
+    assert body.count("handle") == 3 and "route" not in body

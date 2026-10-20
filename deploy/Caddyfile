@@ -1,9 +1,15 @@
 # SITE_HOST = <elastic-ip-with-dashes>.sslip.io: a real hostname without a domain, so Let's Encrypt works.
-# Everything but /health sits behind a password: the demo buttons spend Bedrock and testnet funds.
+# Everything but /health and /approve/* sits behind a password: the demo buttons spend Bedrock and testnet funds.
+# /approve/{deal_id}?t=<token> is the page a jury member opens from the QR on /story: no password there, the app
+# accepts only a valid one-time token for that one deal (bank/approve.py) and shows nothing without it.
 {$SITE_HOST} {
 	encode gzip
 	@health path /health
 	handle @health {
+		reverse_proxy app:8000
+	}
+	@approve path /approve/*
+	handle @approve {
 		reverse_proxy app:8000
 	}
 	handle {
