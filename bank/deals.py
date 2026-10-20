@@ -5,6 +5,7 @@
 # an atomic budget reservation, the escrow lock, and the seller is told to check the escrow and deliver.
 # Refusals are results (codes.refuse), recorded in `decisions` and the journal; nothing is signed before them.
 import base64
+import hashlib
 import importlib
 import json
 import secrets
@@ -645,6 +646,20 @@ def auto_settle(deal_id: str):
 
 # ---- human actions (bank UI, HUMAN_TOKEN): the agent can never call these ----
 
+def payment_binding(deal: dict | None) -> str | None:
+    """What a person approves, as one hash (PSD2 dynamic linking): the offer (its id and every term), the asset, the
+    amount and the payee (seller and its registered wallet). A new offer gives a new hash, so an approval link made
+    for one payment can never confirm another. None when the deal has no offer to pay."""
+    offer = (deal or {}).get("offer") or {}
+    asset = (deal or {}).get("asset")
+    if not offer.get("offer_id") or asset not in (offer.get("prices") or {}):
+        return None
+    seller = core.seller(deal["seller_id"]) or {}
+    bound = {"offer_id": offer["offer_id"], "offer": offer, "asset": asset, "amount": int(offer["prices"][asset]),
+             "seller_id": deal["seller_id"], "pay_to": str(seller.get("wallet_address") or "").lower()}
+    return hashlib.sha256(json.dumps(bound, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def asks_human(deal: dict, code: str) -> bool:
     """The bank is waiting for a person on this deal: the agent asked to pay and the bank's last answer was `code`
     (CONFIRMATION_REQUIRED or VAT_LIABILITY_RISK). Only then may a person's action start pay()."""
@@ -655,13 +670,16 @@ def asks_human(deal: dict, code: str) -> bool:
     return dec is not None and (db.loads(dec["codes_json"]) or [None])[0] == code
 
 
-def confirm(deal_id: str, by: str) -> dict:
+def confirm(deal_id: str, by: str, binding: str | None = None) -> dict:
     """A human approves a payment above the mandate's confirmation threshold, then the bank pays it. Only when the
-    bank asked for exactly this confirmation: a person cannot start a payment the agent never asked for."""
+    bank asked for exactly this confirmation: a person cannot start a payment the agent never asked for. `binding`
+    (the phone link's payment_binding) must still match the deal's offer, checked under the same lock as negotiate."""
     with _locks[deal_id]:
         deal = _require(deal_id)
         if not asks_human(deal, Code.CONFIRMATION_REQUIRED):
             raise DealError(409, f"no confirmation is pending for this deal (it is {deal['state']})")
+        if binding is not None and binding != payment_binding(deal):
+            raise DealError(409, "changed")
         _set(deal_id, deal["state"], "payment_confirmed", {"by": by}, actor=by, confirmed_by=by)
     return pay(deal_id)
 

@@ -159,3 +159,50 @@ def test_caddy_lets_only_health_and_approve_past_the_password():
     catch_all = re.search(r"\n\thandle \{(.*?)\n\t\}", body, re.S).group(1)
     assert "basic_auth" in catch_all and "{$UI_USER} {$UI_HASH}" in catch_all
     assert body.count("handle") == 3 and "route" not in body
+
+
+def test_renegotiated_price_refuses_the_old_link_and_the_new_qr_works(web):
+    """The QR is bound to the payment it was made for (offer, amount, asset, payee): a phone that loaded the card at
+    8,00 € cannot approve the price the agent renegotiated while the bank waited."""
+    deal_id = pending_deal(web)
+    old = qr_token(web, deal_id)
+    assert "8,00 €" in web.api.get(f"/approve/{deal_id}?t={old}").text  # the phone shows the old price
+    web.seller.post("/mode", json={"seller_id": "s-gama", "mode": "honest", "floor_eur_cents": 700}).raise_for_status()
+    offer = web.api.post(f"/api/deals/{deal_id}/negotiate", json={"message": "7 euro?"}).json()["offer"]
+    assert offer and offer["price_eur_cents"] == 700
+    assert web.api.post(f"/api/deals/{deal_id}/pay").json()["code"] == "CONFIRMATION_REQUIRED"  # waits again
+
+    assert approve.check(deal_id, old) == "changed"
+    page = web.api.get(f"/approve/{deal_id}?t={old}")
+    assert page.status_code == 409 and "changed since this link was made" in page.text and "7,00" not in page.text
+    done = web.api.post(f"/approve/{deal_id}", data={"t": old, "action": "approve"})
+    assert done.status_code == 409 and "scan the new QR" in done.text
+    with pytest.raises(deals.DealError, match="changed"):
+        approve.act(deal_id, old, "approve")
+    assert authorizes(web) == [] and deals.get(deal_id)["confirmed_by"] is None  # nothing paid
+
+    new = qr_token(web, deal_id)  # /story never reuses a token made for the older offer
+    assert new != old
+    card = web.api.get(f"/approve/{deal_id}?t={new}")
+    assert card.status_code == 200 and "7,00 €" in card.text and "Gama s.r.o." in card.text and "8,00 €" not in card.text
+    done = web.api.post(f"/approve/{deal_id}", data={"t": new, "action": "approve"})
+    assert done.status_code == 200 and "Approved. Thank you!" in done.text
+    assert authorizes(web) == [("authorize", 7_000_000)]
+
+
+def test_unchanged_offer_keeps_the_link_and_it_works_once(web):
+    deal_id = pending_deal(web)
+    token = qr_token(web, deal_id)
+    assert web.api.post(f"/api/deals/{deal_id}/pay").json()["code"] == "CONFIRMATION_REQUIRED"  # asked again, same offer
+    assert qr_token(web, deal_id) == token and approve.check(deal_id, token) is None
+    assert web.api.post(f"/approve/{deal_id}", data={"t": token, "action": "approve"}).status_code == 200
+    assert web.api.post(f"/approve/{deal_id}", data={"t": token, "action": "approve"}).status_code == 409
+    assert authorizes(web) == [("authorize", 8_000_000)]
+
+
+def test_confirm_refuses_a_binding_of_another_offer_under_the_lock(web):
+    deal_id = pending_deal(web)
+    with pytest.raises(deals.DealError, match="changed"):
+        deals.confirm(deal_id, approve.BY, binding="0" * 64)
+    assert authorizes(web) == [] and deals.get(deal_id)["confirmed_by"] is None
+    assert deals.payment_binding(deals.get(deal_id)) is not None
