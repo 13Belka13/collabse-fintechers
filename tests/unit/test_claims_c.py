@@ -696,3 +696,17 @@ def test_a_failed_fee_transfer_is_written_down_and_resent_by_the_timer_after_the
     transfers = [(amount, key) for fn, amount, key, _ in w.sender.sent if fn == "transfer"]
     assert transfers == [(800_000, f"{deal_id}:clearing:fee_back_buyer")]  # once
     assert claims_c.get(deal_id)["data"]["transfers"][0]["done"] is True
+
+
+def test_a_clearing_transfer_that_keeps_failing_is_journalled_once_and_then_waits_for_a_person(w, monkeypatch):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    calls = []
+    monkeypatch.setattr(escrow, "transfer_from_clearing", lambda *a, **kw: calls.append(a) or 1 / 0)
+    for i in range(claims_c.CLEAR_TRIES + 5):
+        deadlines.tick(now=T0 + 5 + 5 * bd + 3 + i)
+    events = [e["event"] for e in journal.entries(deal_id, limit=2000) if e["event"].startswith("clearing_transfer")]
+    assert len(calls) == claims_c.CLEAR_TRIES and sorted(events) == ["clearing_transfer.stuck", "clearing_transfer_failed"]

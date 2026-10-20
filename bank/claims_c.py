@@ -31,7 +31,7 @@ from bank import config, db, deals, deciders, escrow, evsm, journal, money, snap
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
 PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
-CLEAR_TRIES = 10  # failed sends of one clearing transfer before it waits for a person
+CLEAR_TRIES = 60  # failed timer sends of one clearing transfer (about 5 min at 5 s) before it waits for a person
 FEE_PI_MARGIN_S = 60  # a fee PaymentInfo this close to its preApprovalExpiry is rebuilt before anyone signs it
 OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided", "rereview")
 
@@ -473,9 +473,10 @@ def send_transfers(deal_id: str) -> None:
             t["done"] = True
         except Exception as e:  # noqa: BLE001 — journalled and retried; the timer does not move the escrow for it
             t["tries"] += 1
-            journal.append("bank", "clearing_transfer_failed" if t["tries"] < CLEAR_TRIES else "clearing_transfer.stuck",
-                           {"what": t["what"], "to": t["to"], "amount": t["amount"], "tries": t["tries"],
-                            "error": repr(e)[:200]}, deal_id=deal_id)
+            if t["tries"] in (1, CLEAR_TRIES):  # the first failure and the give-up, not every timer pass
+                journal.append("bank", "clearing_transfer_failed" if t["tries"] == 1 else "clearing_transfer.stuck",
+                               {"what": t["what"], "to": t["to"], "amount": t["amount"], "tries": t["tries"],
+                                "error": repr(e)[:200]}, deal_id=deal_id)
         db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
 
 
