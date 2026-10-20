@@ -16,7 +16,7 @@
     <span class="badge b-info">{{ s.tier }}</span><span class="badge b-muted">{{ step_text.get(s.step, s.step) }}</span>
     {% if business_days %}<span class="right small">settles in up to {{ business_days }} business day{{ 's' if business_days != 1 }}</span>{% endif %}</div>
   {% if silence %}<div class="small"><strong>If nobody acts:</strong> {{ silence }}</div>{% endif %}
-  <div class="small muted">delivery by {{ s.deadline_at|ts }}{% if s.window_end_at %} · claim window until <span class="countdown" data-deadline="{{ s.window_end_at }}"></span>{% endif %}{% if terms.fee_bps %} · bank fee {{ terms.fee_bps / 100 }} % taken at capture{% endif %}</div>
+  <div class="small muted">delivery by {{ s.deadline_at|ts }}{% if s.window_end_at %} · claim window until <span class="countdown" data-deadline="{{ s.window_end_at }}">{% set l = s.window_end_at|left %}{{ l // 60 }} min {{ l % 60 }} s</span>{% endif %}{% if terms.fee_bps %} · bank fee {{ terms.fee_bps / 100 }} % taken at capture{% endif %}</div>
   {% if scale %}<div class="small muted">{{ scale }}</div>{% endif %}
   {% if s.rule == 'A' and not s.closed_at and not s.accepted_at %}<form method="post" action="/deals/{{ deal.deal_id }}/accept" class="flex" style="margin-top:6px">
     <button type="submit" class="ghost">Confirm acceptance now (a person of the buyer)</button></form>{% endif %}

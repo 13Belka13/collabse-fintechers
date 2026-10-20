@@ -68,7 +68,7 @@
       {% endif %}
       {% if st.tx %}{% set t = st.tx|tx %}<div class="small">{% if t.url %}<a class="mono" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.short }} on the explorer</a>{% else %}<span class="mono muted">{{ t.short }} (simulated)</span>{% endif %}</div>{% endif %}
       {% if st.retry %}<form method="post" action="/ramp/retry" class="flex" style="margin-top:4px"><input type="hidden" name="ref" value="{{ st.retry }}"><input type="hidden" name="next" value="/story"><button type="submit" class="ghost">Retry the payout</button></form>{% endif %}
-      {% if st.deadline %}<div class="small muted">The claim window ends in <span class="countdown" data-deadline="{{ st.deadline }}"></span>; then the rest is settled by the rule.</div>{% endif %}
+      {% if st.deadline %}<div class="small muted">The claim window ends in <span class="countdown" data-deadline="{{ st.deadline }}">{% set l = st.deadline|left %}{{ l // 60 }} min {{ l % 60 }} s</span>; then the rest is settled by the rule.</div>{% endif %}
     </div>
   </li>
 {% endfor %}
