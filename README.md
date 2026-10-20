@@ -309,8 +309,9 @@ Why it matters to a Czech bank: the deal keeps the conditions a stablecoin payme
 accepted item), but the money stays a deposit at the bank, enters and leaves through the client's account, and
 reaches the seller as crowns on its account. Because tCZK is a deposit and the seller's account is published in
 the VAT register, paying in tCZK does not trigger the VAT liability that EURC does ([Compliance](#compliance)).
-The timing fits the local debate: in a blog post of 4 September 2026, ČNB Governor Aleš Michl wrote that banks
-could offer a test tokenized koruna deposit.
+The timing fits the local debate: in a [blog post of 4 September 2026](https://www.cnb.cz/cs/o_cnb/cnblog/Zapisky-guvernera-z-Jackson-Hole-2026-nova-fyzika-digitalni-koruny),
+ČNB Governor Aleš Michl wrote that commercial banks could offer their clients a test tokenized koruna deposit
+("a deposit, not a stablecoin"), and pictured a koruna market where AI agents settle with each other.
 
 ### tCZK on the bank's balance sheet
 
