@@ -229,6 +229,24 @@ def test_invalid_buyer_criteria_fall_back_to_defaults():
     assert deals.buyer_criteria({"criteria": {"city": "Ostrava"}})["postcode_prefix"] is None
 
 
+def test_out_of_range_task_criteria_are_refused_never_replaced_by_the_defaults(bank):
+    """The verifier pays on the deal's terms: 150 in Praha above 4.5 must not become 20 in Brno above 4.0."""
+    from agents import buyer
+    task = {**TASK, "text": "150 warehouses in Praha with rating above 4.5 and a website",
+            "criteria": {**TASK["criteria"], "count": 150, "city": "Praha", "min_rating_exclusive": 4.5}}
+    r = bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1", "task": task})
+    assert r.status_code == 400 and "task terms are not valid" in r.json()["detail"]
+    assert db.one("SELECT COUNT(*) AS n FROM deals")["n"] == 0
+    assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1",
+                                             "task": {**TASK, "criteria": {**TASK["criteria"], "category_keywords": []}}}
+                         ).status_code == 400
+    assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-alfa-1",
+                                             "task": {"text": "x"}}).status_code == 200  # no criteria: defaults
+    # the agent's code fallback never produces criteria the bank would refuse: it stops instead
+    assert buyer.criteria_by_code(task["text"]) is None
+    assert buyer.criteria_by_code("20 warehouses in Praha with rating above 4.5")["count"] == 20
+
+
 def test_mandate_of_another_company_is_refused(bank):
     db.run("INSERT INTO mandates (mandate_id, company_id, current_version) VALUES ('m-gama', 'gama', 1)")
     assert bank.api.post("/api/deals", json={"seller_id": "s-beta", "mandate_id": "m-gama",
@@ -284,6 +302,32 @@ def test_a_failed_capture_is_retried_and_never_turns_into_a_void(bank):
     bank.locked.pop("fail_capture")
     deadlines.tick()  # the capture goes through; Beta takes tCZK on its bank account, so the payout burn follows
     assert bank.sender.money() == [("authorize", 12_500), ("capture", 11_250), ("burn", None)]
+
+
+def test_a_pay_still_waiting_for_its_lock_counts_in_the_tier_sum_and_holds_its_b_slot(bank, monkeypatch):
+    """Two back-to-back pays to one seller for one task: d1's authorize is broadcast but its answer is lost (503,
+    'quoted', reservation and B slot held). d2 must see d1 in tier_sum (10 € > T1 max: a longer window), not 5 €."""
+    d1, o1 = deal(bank, asset="tCZK")
+    d2, _ = deal(bank, asset="tCZK")
+    assert o1["rule"] == "B"
+    real = escrow.authorize
+
+    def lost(d):
+        if d == d1:
+            real(d)
+            raise TimeoutError("rpc timeout")
+        return real(d)
+    monkeypatch.setattr(escrow, "authorize", lost)
+    assert bank.api.post(f"/api/deals/{d1}/pay").status_code == 503
+    assert deals.get(d1)["state"] == "quoted" and deals.get(d1)["terms"]["b_slot"] == 1
+    view = bank.api.post(f"/api/deals/{d2}/pay").json()
+    assert view["code"] == "TERMS_MISMATCH" and view["reasons"][0]["code"] == "window_below_mandate"
+    assert mandate.tier_sum(deals.get(d2), 500, time.time())["tier_sum"] == 1000
+    # the in-flight slot counts toward the pair limit: one more open B deal with Beta and the pair is full
+    assert disputes.b_availability("alfa", "s-beta")["available"]
+    db.run("UPDATE deals SET terms_json=json_set(COALESCE(terms_json, '{}'), '$.b_slot', 1), state='quoted'"
+           " WHERE deal_id=?", (d2,))
+    assert disputes.b_availability("alfa", "s-beta")["reason"] == "b_pair_limit"
 
 
 def test_expired_payment_info_is_rebuilt_with_new_keys(bank, monkeypatch):
@@ -397,6 +441,55 @@ def test_late_authorize_after_expiry_is_recognised_as_the_lock(bank, monkeypatch
     monkeypatch.setattr(bank.sender, "send", real_send)
     view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
     assert view["status"] == "ok" and not any(s[0] == "authorize" for s in bank.sender.sent)  # no second lock
+    assert budget()["reserved_eur_cents"] + budget()["committed_eur_cents"] == 500
+
+
+def test_a_late_escrow_notice_of_a_landed_lock_is_accepted_not_voided(bank, monkeypatch):
+    """The retry of an ambiguous authorize comes 20 min after the PaymentInfo was built: the lock still has 30+ days,
+    so the seller takes it and delivers; the bank never voids a valid lock over the notice time."""
+    deal_id, _ = deal(bank, asset="tCZK")
+    real_send = bank.sender.send
+
+    def lands_but_answer_lost(call, **kw):
+        if call.fn_name == "authorize":
+            bank.locked["capturable"] = int(call.args[1])
+            raise TimeoutError("rpc timeout")
+        return real_send(call, **kw)
+
+    monkeypatch.setattr(bank.sender, "send", lands_but_answer_lost)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").status_code == 503
+    monkeypatch.setattr(bank.sender, "send", real_send)
+    real_time = time.time
+    monkeypatch.setattr(time, "time", lambda: real_time() + 1200)
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and deals.get(deal_id)["state"] in ("authorized", "delivered")
+    assert not any(s[0] == "void" for s in bank.sender.sent)
+
+
+def test_a_pay_retry_resumes_a_landed_lock_even_if_the_mandate_was_paused_meanwhile(bank, monkeypatch):
+    """The authorize is broadcast and lands, its answer is lost (503). A person pauses the mandate before the retry.
+    The retry must not refuse a deal whose money is already in escrow (no settlement would ever return it)."""
+    deal_id, _ = deal(bank, asset="tCZK")
+    real_send = bank.sender.send
+
+    def lands_but_answer_lost(call, **kw):
+        if call.fn_name != "authorize":
+            return real_send(call, **kw)
+        row = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (kw["idem_key"],))
+        if row:  # like chain.Sender: the same key re-broadcasts the same signed tx, now its receipt comes
+            db.run("UPDATE onchain_txs SET status='mined' WHERE idem_key=?", (kw["idem_key"],))
+            return {"tx_hash": row["tx_hash"], "link": chain.tx_link(row["tx_hash"]), "status": "mined"}
+        bank.locked["capturable"] = int(call.args[1])
+        db.run("INSERT INTO onchain_txs (tx_hash, kind, deal_id, status, idem_key, created_at) VALUES (?,?,?,?,?,?)",
+               ("0x" + "ab" * 32, kw["kind"], kw["deal_id"], "signed", kw["idem_key"], time.time()))
+        raise TimeoutError("rpc timeout")
+
+    monkeypatch.setattr(bank.sender, "send", lands_but_answer_lost)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").status_code == 503
+    mandate.amend("m-alfa-1", {"active": False}, "human:alfa")
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and deals.get(deal_id)["state"] in ("authorized", "delivered")
+    assert disputes.get(deal_id) is not None and not any(s[0] == "void" for s in bank.sender.sent)
     assert budget()["reserved_eur_cents"] + budget()["committed_eur_cents"] == 500
 
 

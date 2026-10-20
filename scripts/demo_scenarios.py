@@ -206,6 +206,22 @@ def _agent_call(bank):
     return call
 
 
+PENDING = "the bank is still processing the payment; see the deal page for where the money is"
+
+
+def _outcome(result: dict) -> str:
+    """The run's outcome from the bank's deal state, not only from the agent's tool answers: a pay whose HTTP answer
+    was lost (a timeout) may have locked the money all the same, or may still be on its way ('quoted')."""
+    from bank import deals
+    states = {(deals.get(d) or {}).get("state") for d in result["deals"].values() if d}
+    if states & {"authorized", "delivered", "dispute_c", "settled"}:
+        return "ok"
+    if "quoted" in states:
+        return PENDING
+    pay = (result["payments"] or [{}])[-1]
+    return pay.get("code") or pay.get("status") or result["outcome"]
+
+
 def run(name: str) -> dict:
     from agents.buyer import Buyer
     from bank import mandate
@@ -229,8 +245,7 @@ def run(name: str) -> dict:
         call("POST", f"/api/deals/{deal_id}/negotiate", json={"message": "Your price for the dataset?"})
         result["payments"].append(call("POST", f"/api/deals/{deal_id}/pay", json={}))
         result["deals"][s["seller"]] = deal_id
-    pay = (result["payments"] or [{}])[-1]
-    outcome = pay.get("code") or pay.get("status") or result["outcome"]
+    outcome = _outcome(result)
     journal.append("human:demo", "demo.scenario", {"name": name, "title": s["title"], "outcome": outcome,
                                                    "deals": result["deals"]})
     return {"scenario": name, "outcome": outcome, "deals": result["deals"], "text": result["text"]}
@@ -250,8 +265,7 @@ def run_custom(p: dict) -> dict:
     finally:  # the next run starts from the sellers' usual behaviour, whatever happened
         reset_sellers(seller)
     RUN.update(agent_text=result["text"])
-    pay = (result["payments"] or [{}])[-1]
-    outcome = pay.get("code") or pay.get("status") or result["outcome"]
+    outcome = _outcome(result)
     journal.append("human:demo", "demo.scenario", {"name": "custom", "title": "Your deal", "outcome": outcome,
                                                    "deals": result["deals"], "params": p})
     return {"scenario": "custom", "outcome": outcome, "deals": result["deals"], "text": result["text"]}

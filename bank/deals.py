@@ -110,12 +110,15 @@ class Criteria(BaseModel):
 POSTCODE_PREFIX = {"brno": "6", "praha": "1", "prague": "1"}
 
 
-def buyer_criteria(task: dict | None) -> dict:
-    """Criteria from the buyer's task; anything invalid falls back to the demo defaults (never to the seller's)."""
+def buyer_criteria(task: dict | None, strict: bool = False) -> dict:
+    """Criteria from the buyer's task; anything invalid falls back to the demo defaults (never to the seller's).
+    strict (a deal's binding terms): invalid criteria raise ValidationError; defaults only when none were given."""
     raw = (task or {}).get("criteria") or {}
     try:
         c = Criteria.model_validate(raw).model_dump()
     except ValidationError:
+        if strict:
+            raise
         c = Criteria().model_dump()
     # Brno postcodes are 6xx xx, Prague ones 1xx xx; Google Maps names districts ("Brno-střed", "Praha 5")
     c["postcode_prefix"] = POSTCODE_PREFIX.get(c["city"].strip().lower())
@@ -133,7 +136,7 @@ def task_terms(task: dict) -> dict:
                  "predicates": verifier.validate(list(raw["predicates"])),
                  "deadline_s": int(raw.get("deadline_s") or DEFAULT_DEADLINE_S)}
     else:
-        c = buyer_criteria(task)
+        c = buyer_criteria(task, strict=True)  # the verifier pays on these: never swapped for the demo defaults
         terms = {"category": "data_purchase", "count": c["count"], "predicates": verifier.criteria_predicates(c),
                  "deadline_s": DEFAULT_DEADLINE_S}
     if task.get("task_id"):  # one task, bought from several sellers, shares `unique`; another task does not
@@ -324,6 +327,23 @@ def _reserve(deal: dict, eur_cents: int) -> dict:
     return _module("mandate").reserve(deal["mandate_id"], deal["deal_id"], eur_cents)
 
 
+def _lock_on_its_way(deal: dict) -> bool:
+    """An earlier pay of this deal passed every check, reserved and broadcast its authorize, then lost the answer
+    (503). If that lock landed, or can still land (signed, PaymentInfo not expired), a retry resumes it instead of
+    deciding again: a refusal now would strand the money in escrow with no settlement to return it."""
+    if deal["state"] != "quoted" or not deal["payment_hash"]:
+        return False
+    row = db.one("SELECT status FROM onchain_txs WHERE idem_key=?", (escrow.idem_key(deal["deal_id"], "authorize"),))
+    if row is None:
+        return False
+    if row["status"] == "mined":
+        return True
+    st = escrow.state(deal["deal_id"])
+    if st["capturable"] > 0 or st["collected"]:
+        return True
+    return row["status"] == "signed" and time.time() < int(deal["payment_info"]["preApprovalExpiry"]) - 5
+
+
 def pay(deal_id: str) -> dict:
     """The money path. Returns a Decision (status ok/refused/requires_user_action), never moves money twice."""
     with _locks[deal_id]:
@@ -333,6 +353,9 @@ def pay(deal_id: str) -> dict:
         if deal["state"] not in PAYABLE or not deal["offer"]:
             raise DealError(409, "no offer to pay yet: negotiate first")
         seller = core.seller(deal["seller_id"])
+        if _lock_on_its_way(deal):  # decided, reserved and broadcast earlier: resume that lock, never refuse it now
+            _refresh_payment_info(deal, deal["quote"])
+            return _authorize_and_notify(deal, seller, 0.0)
         t0 = time.perf_counter()
         with timing.timed("quote", deal_id):
             quote, refusal = fetch_quote(deal, seller)

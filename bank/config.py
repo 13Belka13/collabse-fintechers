@@ -59,7 +59,7 @@ def reload():
     # Bedrock timeouts (bank/llm.py). Each HTTP attempt: connect LLM_CONNECT_S, read per role; retries with backoff
     # on throttling / 5xx / timeouts; the whole call (all attempts, json_call's validation retry included) has a
     # wall-clock budget per stage. They nest inside the HTTP timeouts below: seller model 20 s < bank -> seller
-    # /negotiate 30 s < agent -> bank 45 s. A model that does not answer in time = a code-written fallback.
+    # /negotiate 30 s < agent -> bank 180 s. A model that does not answer in time = a code-written fallback.
     g["LLM_CONNECT_S"] = float(_env("LLM_CONNECT_S", "5"))
     g["LLM_READ_S"] = {"main": float(_env("LLM_READ_S_MAIN", "60")), "fast": float(_env("LLM_READ_S_FAST", "30"))}
     g["LLM_RETRIES"] = int(_env("LLM_RETRIES", "2"))  # extra attempts after the first
@@ -71,7 +71,9 @@ def reload():
     g["LLM_DAILY_USD"] = float(_env("LLM_DAILY_USD", "20"))
     g["LLM_FAULT_SLOW_S"] = float(_env("LLM_FAULT_SLOW_S", "8"))  # FAULTS=llm_slow: the model answers this late
     g["NEGOTIATE_TIMEOUT_S"] = float(_env("NEGOTIATE_TIMEOUT_S", "30"))  # bank -> seller /negotiate (model inside)
-    g["BANK_HTTP_TIMEOUT_S"] = float(_env("BANK_HTTP_TIMEOUT_S", "45"))  # agent -> bank API (negotiate inside)
+    # agent -> bank API: longer than the worst pay path inside it (quote 10 s + authorize receipt wait 120 s +
+    # seller notice 10 s + RPC reads), so the agent does not give up on a pay the bank is still completing
+    g["BANK_HTTP_TIMEOUT_S"] = float(_env("BANK_HTTP_TIMEOUT_S", "180"))
 
     g["CZK_PER_EUR_DEMO"] = int(_env("CZK_PER_EUR_DEMO", "25"))
     g["SCENARIO_PRICE_EUR"] = _env("SCENARIO_PRICE_EUR", "0.10")
