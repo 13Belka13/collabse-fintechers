@@ -14,15 +14,16 @@ GitHub main ──CI green──> deploy.yml ──OIDC──> SSM Run Command �
 host: git reset to main → .env from SSM Parameter Store → docker compose up --build → /health
 ```
 
-- **No access keys anywhere.** The host's instance role calls Bedrock (Claude 4.5 EU profiles) and reads its
+- **No AWS access keys.** The host's instance role calls Bedrock (Claude 4.5 EU profiles) and reads its
   config; GitHub Actions assumes `collabse-github-deploy` through OIDC. So the 12-hour portal keys do not
-  matter for the deployed demo.
+  matter for the deployed demo. The testnet signing keys come from SSM at deploy into the host's env file; in a
+  pilot they live in the bank's HSM.
 - **Config:** SSM SecureString `/collabse/env` = the app's `.env` without AWS keys (`MOCK=0`, testnet keys,
   Tatum, Apify); `/collabse/ui` = `demo:<bcrypt hash>` for the password. The plain password is `UI_PASSWORD` in
   the local `.env`.
 - **Versions:** the image installs `requirements.txt` with `deploy/constraints.txt` (the `pip freeze` the
   test suite passed on).
-- **Cost:** t4g.small + 30 GB gp3 + Elastic IP, about $0.6 a day, plus Bedrock per deal (~$0.06 on Opus 4.5).
+- **Cost:** t4g.small + 30 GB gp3 + Elastic IP, about $0.6 a day, plus Bedrock per deal (about 2–3 cents in the live demo-shaped runs on Opus 4.5).
 
 ## First setup (once)
 
