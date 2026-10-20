@@ -1,6 +1,8 @@
 # L3 escrow cycle on an anvil fork of Base Sepolia, against the deployed AuthCaptureEscrow 0xf968…B19c and
-# ERC-3009 collector 0x8612…ab88 with real EURC: authorize 5,00 € -> seller checks escrow -> capture 4,50 €
-# (18 of 20 items) -> void 0,50 €. Asserts balances and escrow state read from the (forked) chain.
+# ERC-3009 collector 0x8612…ab88 with real EURC: authorize 5,00 € with the MODEL_V2 §8 terms (T1 rule B: fee
+# 1,2 % to the clearing address, salt keccak(deal_id ‖ 0), long expiries) -> seller checks escrow -> capture
+# 4,50 € (seller gets 4,446 €, the clearing address 0,054 €) -> void 0,50 €. Balances and escrow state are read
+# from the (forked) chain — this also proves AuthCaptureEscrow v1.1 accepts feeAmount = floor(amount·bps/10000).
 # Skipped when anvil or the public RPC is unavailable (CI). EURC comes from the funded demo buyer by impersonation.
 import os
 import shutil
@@ -66,7 +68,7 @@ def _fund_buyer(w3, buyer):
 
 def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
     from scripts.seed import seed
-    from seller.app import DEMO_DISPUTE_TERMS, verify_escrow
+    from seller.app import verify_escrow
 
     url, w3 = anvil
     operator, buyer_acct = Account.create(), Account.create()  # fresh keys: empty on the fork
@@ -81,11 +83,12 @@ def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
     seed()
     _fund_buyer(w3, buyer)
     try:
-        db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, quote_json, asset, amount, state, created_at)"
-               " VALUES ('d-fork','alfa','s-beta',?,'EURC',?,'quoted',?)",
-               (db.dumps({"pay_to": BETA, "asset": "EURC", "amount": str(PRICE)}), PRICE, time.time()))
+        terms = {"rule": "B", "b_pct": 10, "tier": "T1", "window_s": 20, "deadline_s": 300, "fee_bps": 120}
+        db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, quote_json, terms_json, asset, amount, state,"
+               " created_at) VALUES ('d-fork','alfa','s-beta',?,?,'EURC',?,'quoted',?)",
+               (db.dumps({"pay_to": BETA, "asset": "EURC", "amount": str(PRICE)}), db.dumps(terms), PRICE, time.time()))
         bal = lambda a: chain.balance("EURC", a)  # noqa: E731
-        seller0 = bal(BETA)
+        seller0, clearing0 = bal(BETA), bal(config.BANK_CLEARING_ADDR)
         assert bal(buyer) == PRICE
 
         pi = escrow.payment_info(db.one("SELECT * FROM deals WHERE deal_id='d-fork'"))
@@ -97,20 +100,23 @@ def test_escrow_cycle_authorize_capture_void_on_fork(anvil, monkeypatch):
         assert escrow.state("d-fork") == {"collected": True, "capturable": PRICE, "refundable": 0}
         assert bal(buyer) == 0
 
-        offer = {"pay_to": BETA, "prices": {"EURC": str(PRICE)}, "dispute_terms": DEMO_DISPUTE_TERMS, "deadline_s": 300}
-        assert verify_escrow(offer, "EURC", pi) is None  # the seller's own on-chain check passes
-        assert verify_escrow({**offer, "prices": {"EURC": "4000000"}}, "EURC", {**pi, "maxAmount": 4_000_000}) \
-            == "escrow_capturable_not_price"  # a PaymentInfo that was never authorized has nothing locked
+        offer = {"deal_id": "d-fork", "pay_to": BETA, "prices": {"EURC": str(PRICE)}, "rule": "B", "window_s": 20,
+                 "deadline_s": 300}
+        notice = {"n": 0, "tier": "T1", "kind": "deal"}
+        assert verify_escrow(offer, "EURC", pi, notice=notice) is None  # the seller's own on-chain check passes
+        assert verify_escrow({**offer, "prices": {"EURC": "4000000"}}, "EURC", {**pi, "maxAmount": 4_000_000},
+                             notice=notice) == "escrow_capturable_not_price"  # never authorized: nothing locked
 
         to_seller, back = 4_500_000, 500_000  # 18 of 20 items at 0,25 €
         out = escrow.finish("d-fork", to_seller)
         assert out["capture"]["status"] == "mined" and out["void"]["status"] == "mined"
-        assert bal(BETA) - seller0 == to_seller
+        fee = to_seller * 120 // 10_000
+        assert bal(BETA) - seller0 == to_seller - fee and bal(config.BANK_CLEARING_ADDR) - clearing0 == fee
         assert bal(buyer) == back
         assert escrow.state("d-fork") == {"collected": True, "capturable": 0, "refundable": to_seller}
 
         again = escrow.capture("d-fork", to_seller, 1)  # same idem key: the stored tx, no second capture
-        assert again.get("reused") and bal(BETA) - seller0 == to_seller
+        assert again.get("reused") and bal(BETA) - seller0 == to_seller - fee
         kinds = [r["kind"] for r in db.rows("SELECT kind FROM onchain_txs WHERE deal_id='d-fork' ORDER BY created_at")]
         assert kinds == ["authorize", "capture", "void"]
     finally:
