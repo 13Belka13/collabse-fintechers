@@ -6,7 +6,7 @@ One small EC2 host in **eu-central-1** runs the whole demo in Docker: the bank (
 `/story`, `/bank`, …), the demo seller, and Caddy in front with HTTPS on `https://<ip-with-dashes>.sslip.io`
 and a password. Testnet only (Base Sepolia).
 
-**Current host:** https://63-182-160-195.sslip.io — login `demo`, password = `UI_PASSWORD` in the local `.env`, also published in the root README for the demo (rotate it after the event: new bcrypt hash in `/collabse/ui`, then deploy). Without it only `/health` answers; everything else is 401. Each honest demo deal spends 5 test EURC from the Alfa wallet: top it up from the Circle faucet before a run.
+**Current host:** https://63-182-160-195.sslip.io — login and password = `UI_PASSWORD` in the local `.env`, given to the jury in the organisers' channel (rotate it after the event: new bcrypt hash in `/collabse/ui`, then deploy). Without it only `/health` answers; everything else is 401. Each honest demo deal spends 5 test EURC from the Alfa wallet: top it up from the Circle faucet before a run.
 
 ```
 GitHub main ──CI green──> deploy.yml ──OIDC──> SSM Run Command ──> host: deploy/deploy.sh
