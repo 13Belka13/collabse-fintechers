@@ -51,6 +51,12 @@ def reload():
 
     g["CZK_PER_EUR_DEMO"] = int(_env("CZK_PER_EUR_DEMO", "25"))
     g["SCENARIO_PRICE_EUR"] = _env("SCENARIO_PRICE_EUR", "0.10")
+    # deal economics panel (bank/economics.py): gas priced at today's Base mainnet eth_gasPrice, read off the money
+    # path (10-min cache, 2 s timeout); hermetic tests never call it. Fallback price and the ETH rate are constants.
+    g["BASE_MAINNET_RPC"] = _env("BASE_MAINNET_RPC", "" if os.getenv("COLLABSE_NO_DOTENV") == "1"
+                                 else "https://mainnet.base.org")
+    g["BASE_MAINNET_GAS_PRICE_WEI"] = int(_env("BASE_MAINNET_GAS_PRICE_WEI", "6000000"))
+    g["ETH_EUR_DEMO"] = int(_env("ETH_EUR_DEMO", "3000"))
 
     g["BANK_RELAYER_PK"] = _env("BANK_RELAYER_PK")
     g["BANK_ADMIN_PK"] = _env("BANK_ADMIN_PK")

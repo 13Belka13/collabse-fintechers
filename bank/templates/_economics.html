@@ -1,0 +1,28 @@
+{# What a deal cost on chain and what the bank earned (bank/economics.py). Include with deal_id (/story, /deals/{id})
+   or with econ_rows (the statement's unit-economics line). #}
+{% if econ_rows is defined %}{% set u = economics.summary(econ_rows) %}
+<div class="card small" id="unit-economics"><strong>Unit economics:</strong>
+  {{ u.deals }} deal{{ 's' if u.deals != 1 }} sent {{ u.txs }} transaction{{ 's' if u.txs != 1 }} · average network cost per deal
+  <strong>{{ u.avg_text }}</strong> · bank fees captured <strong>{{ u.fees_text }}</strong> · margin <strong>{{ u.margin_text }}</strong>
+  {% if u.free %}· {{ u.free }} refused or unpaid deal{{ 's' if u.free != 1 }} cost nothing on chain{% endif %}
+  <div class="muted">Cost at today's Base mainnet gas price ({{ '%.4g'|format(u.price.wei / 1e9) }} gwei{{ ', fallback constant' if not u.price.live }}){{ '; typical gas, simulated chain' if u.typical }}.</div>
+</div>
+{% elif deal_id %}{% set e = economics.deal(deal_id) %}{% if e and e.empty_text %}
+<div class="card small" id="economics"><strong>What this deal cost:</strong> {{ e.empty_text }}</div>
+{% elif e %}
+<div class="card" id="economics">
+  <div class="flex"><strong>What this deal cost and what the bank earned</strong>
+    {% if e.typical %}<span class="badge b-warn">typical gas, simulated chain</span>{% endif %}</div>
+  <div class="money">
+    <div class="stat info"><div class="k">Transactions</div><div class="v">{{ e.tx_count }}</div>
+      <div class="small muted">gas {{ e.gas_text }}{% if e.kinds %} · {% for k, n in e.kinds.items() %}{{ k }}{{ ' ×' ~ n if n > 1 }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div></div>
+    <div class="stat warn"><div class="k">Network cost</div><div class="v">{{ e.cost_text }}</div>
+      <div class="small muted">on Base mainnet at today's gas price</div></div>
+    <div class="stat ok"><div class="k">Bank's fee</div><div class="v">{{ e.fee_text }}</div>
+      <div class="small muted">{% if e.fee_native %}{{ e.fee_native }} · {% endif %}{{ e.fee_note }}</div></div>
+    <div class="stat {{ 'ok' if e.margin_pct is not none and e.margin_pct > 0 else 'info' }}"><div class="k">Margin</div><div class="v">{{ e.margin_text }}</div>
+      <div class="small muted">fee minus network cost</div></div>
+  </div>
+  <div class="small muted">{{ e.caption }}</div>
+</div>
+{% endif %}{% endif %}
