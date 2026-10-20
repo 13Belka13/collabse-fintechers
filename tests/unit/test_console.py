@@ -22,7 +22,7 @@ def client(seeded, monkeypatch):
     mandate.ensure_demo()
     app = FastAPI()
     app.include_router(ui.router)
-    return TestClient(app)
+    return TestClient(app, headers={"x-human-token": "dev-human"})  # a UI POST without Origin needs it
 
 
 @pytest.fixture
@@ -240,9 +240,7 @@ def test_full_custom_run_in_sim_completes_and_resets_sellers(client, sim):
 def test_mandate_edit_makes_a_version_that_pay_enforces(client, sim):
     m0 = mandate.current(mandate.DEMO_MANDATE_ID)
     form = {"per_deal_max": "3", "confirm_above": "2,50", "budget": "30", "task_budget_max": "",
-            "asset_EURC": "1", "asset_tCZK": "1", "who": "human:alfa"}
-    r = client.post("/mandate/edit", data={**form, "who": "agent:buyer"})
-    assert "Only a person can change the mandate" in r.text
+            "asset_EURC": "1", "asset_tCZK": "1", "who": "agent:buyer"}  # ignored: the server sets the actor
     r = client.post("/mandate/edit", data={**form, "confirm_above": "3"})
     assert "must be below the per-deal limit" in r.text
     assert mandate.current(mandate.DEMO_MANDATE_ID)["version"] == m0["version"]
