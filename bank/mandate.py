@@ -479,10 +479,11 @@ def related_sellers(seller_id: str) -> list[str]:
 def tier_sum(deal: dict, eur_cents: int, now: float) -> dict:
     """§2: the largest of (this deal; deals with this seller in 24 h incl. this one; deals of this task with this
     seller and its related sellers incl. this one). Sessions would count here too (not built: none exist).
-    Deals already locked or past their decision count; refused ones do not. 24 h is demo-scaled (config.span)."""
+    Deals already locked or past their decision count, and so do deals in flight ('quoted': a parallel pay may be
+    waiting for its escrow lock); refused ones do not. 24 h is demo-scaled (config.span)."""
     sellers = related_sellers(deal["seller_id"])
     marks = ",".join("?" * len(sellers))
-    live = "('authorized','delivered','dispute_c','settled','awaiting_human')"
+    live = "('quoted','authorized','delivered','dispute_c','settled','awaiting_human')"
     day = db.rows(f"SELECT asset, amount FROM deals WHERE buyer_id=? AND seller_id=? AND state IN {live}"
                   " AND deal_id<>? AND created_at>=?", (deal["buyer_id"], deal["seller_id"], deal["deal_id"],
                                                         now - config.span(86400)))

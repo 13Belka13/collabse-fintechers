@@ -304,6 +304,32 @@ def test_a_failed_capture_is_retried_and_never_turns_into_a_void(bank):
     assert bank.sender.money() == [("authorize", 12_500), ("capture", 11_250), ("burn", None)]
 
 
+def test_a_pay_still_waiting_for_its_lock_counts_in_the_tier_sum_and_holds_its_b_slot(bank, monkeypatch):
+    """Two back-to-back pays to one seller for one task: d1's authorize is broadcast but its answer is lost (503,
+    'quoted', reservation and B slot held). d2 must see d1 in tier_sum (10 € > T1 max: a longer window), not 5 €."""
+    d1, o1 = deal(bank, asset="tCZK")
+    d2, _ = deal(bank, asset="tCZK")
+    assert o1["rule"] == "B"
+    real = escrow.authorize
+
+    def lost(d):
+        if d == d1:
+            real(d)
+            raise TimeoutError("rpc timeout")
+        return real(d)
+    monkeypatch.setattr(escrow, "authorize", lost)
+    assert bank.api.post(f"/api/deals/{d1}/pay").status_code == 503
+    assert deals.get(d1)["state"] == "quoted" and deals.get(d1)["terms"]["b_slot"] == 1
+    view = bank.api.post(f"/api/deals/{d2}/pay").json()
+    assert view["code"] == "TERMS_MISMATCH" and view["reasons"][0]["code"] == "window_below_mandate"
+    assert mandate.tier_sum(deals.get(d2), 500, time.time())["tier_sum"] == 1000
+    # the in-flight slot counts toward the pair limit: one more open B deal with Beta and the pair is full
+    assert disputes.b_availability("alfa", "s-beta")["available"]
+    db.run("UPDATE deals SET terms_json=json_set(COALESCE(terms_json, '{}'), '$.b_slot', 1), state='quoted'"
+           " WHERE deal_id=?", (d2,))
+    assert disputes.b_availability("alfa", "s-beta")["reason"] == "b_pair_limit"
+
+
 def test_expired_payment_info_is_rebuilt_with_new_keys(bank, monkeypatch):
     deal_id, _ = deal(bank, asset="tCZK")
     real_authorize = escrow.authorize

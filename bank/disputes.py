@@ -320,14 +320,16 @@ def accept(deal_id: str, by: str, now: float | None = None) -> dict:
 
 def b_availability(buyer_id: str, seller_id: str, now: float | None = None, except_deal: str | None = None) -> dict:
     """Can this pair get the B guarantee (§7B)? Used claims + B/C deals with an open window (their slot reserved at
-    pay) must stay under the limits; a buyer with > 30 % B-claimed deals (smoothed) has no B."""
+    pay) must stay under the limits; a buyer with > 30 % B-claimed deals (smoothed) has no B. A slot taken by a pay
+    still waiting for its escrow lock ('quoted', no settlement yet) counts too."""
     now = _now(now)
     since = now - config.span(DAYS_30)
     used = db.rows("SELECT seller_id FROM claims WHERE buyer_id=? AND rule='B' AND filed_at>=?", (buyer_id, since))
     open_slots = db.rows(
-        "SELECT d.seller_id FROM deals d JOIN settlements s ON s.deal_id=d.deal_id WHERE d.buyer_id=?"
-        " AND json_extract(d.terms_json,'$.b_slot')=1 AND s.closed_at IS NULL AND d.deal_id IS NOT ?"
-        " AND (s.window_end_at IS NULL OR s.window_end_at>?)"
+        "SELECT d.seller_id FROM deals d LEFT JOIN settlements s ON s.deal_id=d.deal_id WHERE d.buyer_id=?"
+        " AND json_extract(d.terms_json,'$.b_slot')=1 AND d.deal_id IS NOT ?"
+        " AND ((s.deal_id IS NOT NULL AND s.closed_at IS NULL AND (s.window_end_at IS NULL OR s.window_end_at>?))"
+        "      OR (s.deal_id IS NULL AND d.state='quoted'))"
         " AND NOT EXISTS (SELECT 1 FROM claims c WHERE c.deal_id=d.deal_id AND c.rule='B')",
         (buyer_id, except_deal, now))
     pair = sum(1 for r in used + open_slots if r["seller_id"] == seller_id)
