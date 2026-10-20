@@ -182,7 +182,9 @@ def _transport():
 def _set_seller(seller_api, sid: str, mode: str, say=None, opening="min", data=None, check=True, rule=None,
                 floor=None):
     from bank import core, screening
-    body = {"seller_id": sid, "mode": mode, "say": say, "opening": opening, "data": data, "floor_eur_cents": floor}
+    body = {"seller_id": sid, "mode": mode, "say": say, "opening": opening, "data": data}
+    if floor is not None:  # every /mode call resets the floor anyway
+        body["floor_eur_cents"] = floor
     if rule is not None:  # "" clears the seller's rule override
         body["rule"] = rule
     seller_api.post("/mode", json=body).raise_for_status()

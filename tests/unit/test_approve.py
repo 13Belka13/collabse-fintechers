@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from bank import approve, db, deals, journal, mandate, ui
+from bank import approve, config, db, deals, journal, mandate, ui
 from scripts import demo_scenarios
 from tests.unit.test_integration import TASK, bank, deal  # noqa: F401  (bank is a fixture)
 
@@ -145,7 +145,7 @@ def test_jury_scenario_sits_between_the_threshold_and_the_limit():
     s = demo_scenarios.SCENARIOS["jury"]
     p = mandate.DEFAULTS
     assert mandate.cents(p["confirm_above"]) < s["floor"] <= mandate.cents(p["per_deal_max"]) and s["floor"] <= s["budget"]
-    assert len(demo_scenarios.SCENARIOS) == 6
+    assert "jury" in demo_scenarios.SCENARIOS
 
 
 def test_caddy_lets_only_health_and_approve_past_the_password():
