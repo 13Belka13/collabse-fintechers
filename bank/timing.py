@@ -93,6 +93,13 @@ def llm_totals() -> dict:
                   " FROM timings WHERE model IS NOT NULL")
 
 
+def llm_spent_today(now: float | None = None) -> float:
+    """Estimated model cost since 00:00 UTC today, failed attempts included (the daily cap in bank/llm.py)."""
+    now = time.time() if now is None else now
+    return db.one("SELECT COALESCE(SUM(cost_usd),0) usd FROM timings WHERE model IS NOT NULL AND ts>=?",
+                  (now - now % 86400,))["usd"]
+
+
 def llm_stats() -> list[dict]:
     """Per (model, stage): answered calls, failed attempts by kind, latency p50 / p95 / max of answered calls,
     tokens and cost — failed attempts included, so a slow or failing Bedrock shows in the numbers."""

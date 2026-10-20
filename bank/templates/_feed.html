@@ -4,7 +4,7 @@
 <div class="grid">
   <div class="stat info"><div class="k">Last decision</div><div class="v">{{ '%.1f'|format(panel.last_ms) if panel.last_ms is not none else '—' }} ms</div></div>
   <div class="stat info"><div class="k">Decision p95 · {{ panel.decision.n }} runs</div><div class="v">{{ '%.1f'|format(panel.decision.p95) if panel.decision.p95 is not none else '—' }} ms</div><div class="small muted">target ≤ 50 ms</div></div>
-  <div class="stat info"><div class="k">Model cost, total</div><div class="v">${{ '%.4f'|format(panel.llm.cost_usd or 0) }}</div><div class="small muted">{{ panel.llm.calls }} calls · {{ panel.llm.input_tokens }} in / {{ panel.llm.output_tokens }} out tokens</div></div>
+  <div class="stat info"><div class="k">Model cost, total</div><div class="v">${{ '%.4f'|format(panel.llm.cost_usd or 0) }}</div><div class="small muted">{{ panel.llm.calls }} calls · {{ panel.llm.input_tokens }} in / {{ panel.llm.output_tokens }} out tokens</div>{% if panel.llm_daily %}<div class="small muted">model budget used today: ${{ '%.2f'|format(panel.llm_today) }} of ${{ '%g'|format(panel.llm_daily) }}</div>{% endif %}</div>
   <div class="stat {{ 'ok' if panel.timer else 'warn' }}"><div class="k">Deal timer</div><div class="v">{{ 'running' if panel.timer else 'stopped' }}</div><div class="small muted">every 5 s, runs each deal's schedule</div></div>
 </div>
 <h2>All transfers and decisions</h2>

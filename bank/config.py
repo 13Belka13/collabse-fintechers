@@ -51,6 +51,9 @@ def reload():
     g["LLM_BACKOFF_S"] = float(_env("LLM_BACKOFF_S", "0.5"))  # 0.5, 1, 2 s ... plus jitter, within the budget
     g["LLM_BUDGET_S"] = {"seller": float(_env("LLM_BUDGET_S_SELLER", "20")), "buyer": 40.0, "criteria": 20.0,
                          "explain": 10.0, "*": float(_env("LLM_BUDGET_S", "60"))}
+    # daily model spend cap (bank/llm.py): above it every call is LLMUnavailable('budget') and the code fallbacks
+    # apply; summed from the timings table since 00:00 UTC. 0 = no cap
+    g["LLM_DAILY_USD"] = float(_env("LLM_DAILY_USD", "20"))
     g["LLM_FAULT_SLOW_S"] = float(_env("LLM_FAULT_SLOW_S", "8"))  # FAULTS=llm_slow: the model answers this late
     g["NEGOTIATE_TIMEOUT_S"] = float(_env("NEGOTIATE_TIMEOUT_S", "30"))  # bank -> seller /negotiate (model inside)
     g["BANK_HTTP_TIMEOUT_S"] = float(_env("BANK_HTTP_TIMEOUT_S", "45"))  # agent -> bank API (negotiate inside)

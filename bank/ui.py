@@ -161,7 +161,7 @@ def feed(view: str, limit: int = 60) -> list[dict]:
 def panel() -> dict:
     last = db.one("SELECT ms FROM timings WHERE stage='decision' ORDER BY id DESC LIMIT 1")
     return {"last_ms": last and last["ms"], "decision": timing.stage_stats("decision"), "llm": timing.llm_totals(),
-            "timer": deadlines.running()}
+            "llm_today": timing.llm_spent_today(), "llm_daily": config.LLM_DAILY_USD, "timer": deadlines.running()}
 
 
 def alarms(now: float | None = None) -> list[dict]:

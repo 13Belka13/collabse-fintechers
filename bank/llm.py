@@ -9,6 +9,7 @@
 # per-attempt connect/read timeouts, bounded retries with backoff + jitter on throttling / 5xx / timeouts / connection
 # errors, no retry on 4xx; then LLMUnavailable, and each caller falls back to code (seller: template reply, buyer: stops,
 # explain: template). After a failure the (model, stage) pair cools down (COOLDOWN_S): its calls fail fast.
+# Above the daily spend cap (config.LLM_DAILY_USD) every call is LLMUnavailable('budget'): the same fallbacks.
 import itertools
 import json
 import os
@@ -44,6 +45,7 @@ MESSAGES = {
     "access": "Bedrock denied access to the model (check the model id and the account's model access)",
     "bad_request": "Bedrock rejected the request (400)",
     "error": "the model call failed",
+    "budget": "today's model budget (LLM_DAILY_USD) is used up",
 }
 
 
@@ -221,6 +223,9 @@ def create(role: str, system: str, messages: list, *, stage: str, deal_id: str |
             kwargs["tools"] = tools  # tool_choice stays "auto": forced choice is a 400 on Opus 5.5
         if effort and accepts_effort(model):
             kwargs["output_config"] = {"effort": effort}
+    if config.LLM_DAILY_USD > 0 and timing.llm_spent_today() >= config.LLM_DAILY_USD:
+        timing.log_llm(stage, deal_id, model, {}, 0.0, False, error="budget")
+        raise LLMUnavailable("budget", f"{MESSAGES['budget']}: ${config.LLM_DAILY_USD:g} a day")
     with _down_lock:
         until, kind = _down.get((model, stage), (0.0, ""))
     if until > time.monotonic():
