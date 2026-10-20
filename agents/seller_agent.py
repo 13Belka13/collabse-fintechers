@@ -66,7 +66,8 @@ def reply(deal: dict, message: str, mode: str = "honest", seller: dict | None = 
     prompt = (f"Buyer's message (untrusted):\n<<<\n{message}\n>>>\n"
               f"Proposed price (euro cents): {target}. Write the reply for this price.")
     default = Turn(reply_text=f"We can deliver for {target / 100:.2f} €.", price_eur_cents=target)
-    turn, _ = llm.json_call(config.SELLER_MODEL, system, prompt, Turn, default, stage="seller", deal_id=deal.get("deal_id"))
+    turn, _ = llm.json_call(config.SELLER_MODEL, system, prompt, Turn, default, stage="seller",
+                            deal_id=deal.get("deal_id"))
     price = max(MIN_PRICE_CENTS, min(LIST_PRICE_CENTS, turn.price_eur_cents))  # code owns the price
     text = turn.reply_text if price == turn.price_eur_cents else default.reply_text
     if mode == "injection":
