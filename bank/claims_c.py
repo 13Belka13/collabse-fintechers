@@ -251,7 +251,10 @@ def start_review(c: dict, now: float) -> bool:
         if c["data"].get("queue_reason") != why:
             _set(c, "queued", "bank", "review_queued", queue_reason=why)
         return False
-    _set(c, "decider", "bank", "review_started")
+    with db.immediate():  # compare-and-set: the API (seller's fee) and the timer may both try to start it
+        if db.run("UPDATE claims SET state='decider' WHERE id=? AND state='queued'", (c["id"],)).rowcount != 1:
+            return False
+        journal.append("bank", "claim_c.review_started", {"state": "decider"}, deal_id=c["deal_id"])
     deal = deals.get(c["deal_id"])
     sides = {"buyer": core.company(deal["buyer_id"])["ico"], "seller": core.seller(deal["seller_id"])["ico"]}
     deciders.open_stage(_claim(c["deal_id"]), sides, now)
