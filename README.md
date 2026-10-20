@@ -72,8 +72,8 @@ questions stay open:
 2. **Who settles a dispute between two machines?** "Pay on delivery" needs a neutral party that holds the
    money, checks what was delivered and gives people a dispute path they can follow.
 3. **What does the bank do?** If its clients' agents pay each other in a private company's stablecoin, the
-   bank loses the deposits — and a Czech buyer that pays a VAT payer in a virtual asset takes on that
-   seller's VAT risk.
+   bank loses the deposits — and a Czech buyer that pays a VAT payer in a virtual asset becomes the guarantor
+   of that seller's unpaid VAT.
 
 Our answer: **the bank becomes the agents' payment rail.** It holds the keys, checks every payment against the
 human's mandate and public registries, runs the escrow, takes the delivery and pays only for what passes, and
@@ -273,10 +273,11 @@ sequenceDiagram
   acceptance predicates and the payout schedule. The models negotiate and explain; they never move money and
   never choose a payee.
 - **The bank checks documents, not goods** — as in trade finance: delivery against secured payment, partial
-  payment per accepted item. Quality beyond the predicates is covered by the seller's rule: a priced-in refund
-  guarantee (B) and an external decider (C).
+  payment per accepted item. Quality beyond the predicates is covered by the seller's rule: a refund guarantee
+  (B) and an external decider (C).
 - **Nobody can steer the decider.** The pool, the challenge commitments and the drand round are fixed before
-  the round is out; the bank's salt is revealed after the decision, so anyone can recheck the draw.
+  the round is out; the bank's salt is committed on-chain before the draw and revealed after the decision, so
+  anyone can recheck it.
 - **The bank's x402 facilitator screens the payee** in both `verify` and `settle`, so a payment that bypasses
   the agent API is still checked: Delta is refused on the direct x402 path too. A refusal is a valid x402 answer
   (`isValid: false`), not an error.
