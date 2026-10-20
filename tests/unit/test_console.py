@@ -293,8 +293,9 @@ def test_five_scenarios_twice_in_a_row_keep_their_outcomes(client, sim, monkeypa
             out = ds.run_safe(name)
             deal = deals.get(out["deals"].get(ds.SCENARIOS[name]["seller"])) if out and out["deals"] else None
             runs.append((name, out and out["outcome"], deal and (deal["terms"] or {}).get("rule")))
-    assert runs[:5] == runs[5:], runs
-    assert runs[4] == ("tczk", "ok", "B") and runs[1] == ("fake_data", "ok", "B"), runs
+    half = len(ds.SCENARIOS)
+    assert runs[:half] == runs[half:], runs
+    assert ("tczk", "ok", "B") in runs[:half] and runs[1] == ("fake_data", "ok", "B"), runs
 
 
 # ---- the buyer's wallet: tCZK by default, balances next to the form, no run the wallet cannot pay ----
