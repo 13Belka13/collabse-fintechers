@@ -8,7 +8,7 @@
 # A slow or failing model never breaks a caller: every call has a wall-clock budget per stage (config.LLM_BUDGET_S),
 # per-attempt connect/read timeouts, bounded retries with backoff + jitter on throttling / 5xx / timeouts / connection
 # errors, no retry on 4xx; then LLMUnavailable, and each caller falls back to code (seller: template reply, buyer: stops,
-# explain: template). After a failure the (model, stage) pair cools down for LLM_COOLDOWN_S: calls fail fast.
+# explain: template). After a failure the (model, stage) pair cools down (COOLDOWN_S): its calls fail fast.
 import itertools
 import json
 import os
@@ -32,7 +32,7 @@ MOCKS: dict[str, Callable[[list, list | None], dict]] = {}
 _pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="bedrock")  # wall-clock cap: the caller stops waiting
 _down: dict[tuple[str, str], tuple[float, str]] = {}  # (model, stage) -> (cooldown until, kind)
 _down_lock = threading.Lock()
-LLM_COOLDOWN_S = 30.0
+COOLDOWN_S = {"throttled": 10.0, "server": 10.0, "connection": 10.0}  # timeout, credentials: 30 s
 MIN_ATTEMPT_S = 1.0  # no new attempt with less budget left than this
 RETRYABLE = {"timeout", "throttled", "server", "connection"}
 MESSAGES = {
@@ -242,7 +242,7 @@ def create(role: str, system: str, messages: list, *, stage: str, deal_id: str |
                 continue
             if kind in RETRYABLE or kind == "credentials":
                 with _down_lock:
-                    _down[(model, stage)] = (time.monotonic() + LLM_COOLDOWN_S, kind)
+                    _down[(model, stage)] = (time.monotonic() + COOLDOWN_S.get(kind, 30.0), kind)
             detail = "" if kind in RETRYABLE else str(e)[:200]  # SDK/botocore texts carry no keys
             raise LLMUnavailable(kind, MESSAGES[kind] + (f": {detail}" if detail else "")) from e
         timing.log_llm(stage, deal_id, model, getattr(resp, "usage", None) or {},
