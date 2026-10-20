@@ -46,6 +46,18 @@
 </div>
 </div>
 
+{% if payout %}<h2>Payout to the seller's bank account</h2>
+<div class="card">
+  {% if payout.off %}<div class="small muted">Payout to the account is off: {{ payout.off }}. The crowns stay in the seller's wallet.</div>{% endif %}
+  <table class="small"><tr><th>Operation</th><th class="num">Amount</th><th>Account</th><th>State</th><th>Burn tx</th><th></th></tr>
+  {% for o in payout.ops %}{% set x = o.tx_hash|tx %}<tr><td><code>{{ o.ref }}</code></td><td class="num">{{ o.amount|money('tCZK') }}</td><td class="mono">{{ payout.account }}</td>
+    <td>{% if o.state == 'done' %}<span class="badge b-ok">on the account</span>{% elif o.state == 'failed' %}<span class="badge b-bad">in the wallet, payout not done</span>{% else %}<span class="badge b-warn">in the wallet, waiting for the burn</span>{% endif %}</td>
+    <td>{% if x %}{% if x.url %}<a class="mono" href="{{ x.url }}" target="_blank" rel="noopener">{{ x.short }}</a>{% else %}<span class="mono">{{ x.short }}</span> <span class="muted">simulated</span>{% endif %}{% endif %}</td>
+    <td>{% if o.state != 'done' %}<form method="post" action="/ramp/retry"><input type="hidden" name="ref" value="{{ o.ref }}"><input type="hidden" name="who" value="human:bank-officer"><input type="hidden" name="next" value="/deals/{{ deal.deal_id }}"><button type="submit" class="ghost">Retry the payout</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing paid out yet: the seller is paid on its account after each capture.</td></tr>{% endfor %}</table>
+</div>
+{% endif %}
+
 <h2>Bank decisions</h2>
 {% for x in decisions %}
 <div class="row {{ {'ok': 'ok', 'refused': 'bad'}.get(x.compliance.status, 'warn') }}"><div class="when">{{ x.row.created_at|ts }}</div><div class="body">

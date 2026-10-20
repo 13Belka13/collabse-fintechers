@@ -19,6 +19,7 @@
     <div class="small muted">on chain, nobody can take it alone</div></div>
   <div class="flow-arrow">→</div>
   <div class="flow-box paid"><div class="k">Paid to the seller</div><div class="v">{{ s.money.to_seller|money(a) }}</div><div class="small muted">{{ s.seller.name }}</div></div>
+  {% if s.money.on_account is not none %}<div class="flow-arrow">→</div><div class="flow-box paid"><div class="k">On the seller's bank account</div><div class="v">{{ s.money.on_account|money(a) }}</div><div class="small muted">account {{ s.money.account }}, in crowns</div></div>{% endif %}
   {% if s.money.returned %}<div class="flow-box back"><div class="k">Back to the buyer</div><div class="v">{{ s.money.returned|money(a) }}</div><div class="small muted">not earned</div></div>{% endif %}
 </div>
 {% endif %}
@@ -48,6 +49,7 @@
         </div>
       {% endif %}
       {% if st.tx %}{% set t = st.tx|tx %}<div class="small">{% if t.url %}<a class="mono" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.short }} on the explorer</a>{% else %}<span class="mono muted">{{ t.short }} (simulated)</span>{% endif %}</div>{% endif %}
+      {% if st.retry %}<form method="post" action="/ramp/retry" class="flex" style="margin-top:4px"><input type="hidden" name="ref" value="{{ st.retry }}"><input type="hidden" name="who" value="human:bank-officer"><input type="hidden" name="next" value="/story"><button type="submit" class="ghost">Retry the payout</button></form>{% endif %}
       {% if st.deadline %}<div class="small muted">The claim window ends in <span class="countdown" data-deadline="{{ st.deadline }}"></span>; then the rest is settled by the rule.</div>{% endif %}
     </div>
   </li>

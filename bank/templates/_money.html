@@ -3,4 +3,5 @@
   <div class="stat ok"><div class="k">Paid to the seller</div><div class="v">{{ ledger.captured|money(deal.asset) }}</div></div>
   <div class="stat {{ 'warn' if ledger.in_escrow else 'info' }}"><div class="k">Still in escrow</div><div class="v">{{ ledger.in_escrow|money(deal.asset) }}</div></div>
   <div class="stat {{ 'bad' if ledger.returned else 'info' }}"><div class="k">Returned to the buyer</div><div class="v">{{ ledger.returned|money(deal.asset) }}</div></div>
+  {% if payout %}<div class="stat {{ 'warn' if payout.open else 'ok' }}"><div class="k">On the seller's bank account</div><div class="v">{{ payout.paid_out|money('tCZK') }}</div><div class="small muted">account {{ payout.account }}{% if payout.open %} · in the wallet, payout not done{% elif payout.off %} · payout off{% endif %}</div></div>{% endif %}
 </div>

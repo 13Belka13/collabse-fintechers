@@ -6,6 +6,8 @@ import time
 
 import pytest
 from eth_account import Account
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from bank import chain, config, db, disputes, escrow, journal, ramp, tczk, ui
 from scripts import demo_sim
@@ -156,6 +158,28 @@ def test_reconcile_books_equal_chain_after_a_series(bank_chain):
     assert r["ok"] is False and r["diff"] == 500
 
 
+@pytest.mark.chain
+def test_statement_buttons_and_reconcile_row(bank_chain):
+    app = FastAPI()
+    app.include_router(ui.router)
+    client = TestClient(app)
+    from bank import mandate
+    mandate.ensure_demo()
+    page = client.get("/statement").text
+    assert "Top up the wallet from the account" in page and "Withdraw to the account" in page and "10 000" not in page
+    r = client.post("/ramp/deposit", data={"who": "human:alfa", "company_id": "alfa", "amount": "100,00"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and "ok=" in r.headers["location"]
+    assert balance("alfa") == ALFA_START - 10_000
+    r = client.post("/ramp/withdraw", data={"who": "agent:buyer", "company_id": "alfa", "amount": "1"})
+    assert r.status_code == 400  # a person only
+    r = client.post("/ramp/withdraw", data={"who": "human:alfa", "company_id": "alfa", "amount": "abc"},
+                    follow_redirects=False)
+    assert "error=" in r.headers["location"]
+    recon = client.get("/statement/reconcile").text
+    assert "Bank books = chain" in recon and "0,00 Kč" in recon
+
+
 def test_prep_token_turns_the_ramp_off(monkeypatch, seeded):
     monkeypatch.setenv("TCZK", "0x6a99C9e95DD220172d07D5f730f2e82B466D4B67")
     monkeypatch.setenv("TCZK_NAME", tczk.PREP_NAME)
@@ -231,6 +255,20 @@ def test_failed_payout_keeps_the_capture_and_can_be_retried(world, monkeypatch):
     monkeypatch.setattr(tczk, "burn", real)
     assert ramp.retry("payout:d-fail:1", "human:bank-officer")["state"] == "done"
     assert balance("beta") == 11_250 and burns(world) == ["tczk:burn:payout:d-fail:1"]
+
+
+def test_story_and_deal_page_show_the_payout(world):
+    deal_id = k.make_deal(world, deal_id="d-story", asset="tCZK", amount=12_500)
+    journal.append("bank", "escrow_authorized", {"amount": 12_500, "tx_hash": "0x" + "1" * 64}, deal_id=deal_id)
+    k.deliver(world, deal_id)
+    app = FastAPI()
+    app.include_router(ui.router)
+    client = TestClient(app)
+    page = client.get(f"/story?deal_id={deal_id}").text
+    assert "The seller received 112,50 Kč on its bank account" in page and "CZ…9718" in page
+    assert "On the seller's bank account" in page
+    page = client.get(f"/deals/{deal_id}").text
+    assert "Payout to the seller's bank account" in page and "on the account" in page
 
 
 # ---- DEMO_SIM: simulated mint/burn, never an explorer link ----

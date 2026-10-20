@@ -6,4 +6,13 @@
     <td>{% if r.err %}<span class="badge b-warn">chain unreachable</span> <span class="small muted">{{ r.err }}</span>{% elif r.ok %}<span class="badge b-ok">reconciled</span>{% else %}<span class="badge b-bad">mismatch</span>{% endif %}</td></tr>
   {% else %}<tr><td colspan="4" class="muted">No escrow locks to reconcile.</td></tr>{% endfor %}
 </table>
+{% if supply and not supply.off %}
+<table style="margin-top:12px">
+  <tr><th>Bank books = chain (tCZK)</th><th class="num">Books: initial + minted − burnt</th><th class="num">Chain: totalSupply</th><th class="num">Difference</th></tr>
+  <tr><td class="small muted">initial {{ (supply.initial or 0)|money('tCZK') }} + {{ supply.minted|money('tCZK') }} − {{ supply.burned|money('tCZK') }}{% if supply.pending %} · {{ supply.pending }} operation(s) pending{% endif %}</td>
+    <td class="num">{{ supply.books|money('tCZK') if supply.books is not none else '—' }}</td>
+    <td class="num">{{ supply.chain|money('tCZK') if supply.chain is not none else '—' }}</td>
+    <td class="num">{% if supply.err %}<span class="badge b-warn">{{ supply.err }}</span>{% elif supply.ok %}<span class="badge b-ok">{{ supply.diff|money('tCZK') }}</span>{% else %}<span class="badge b-bad">{{ supply.diff|money('tCZK') }}</span>{% endif %}</td></tr>
+</table>
+{% elif supply %}<p class="small muted">Bank books = chain: not checked, the ramp is off ({{ supply.off }}).</p>{% endif %}
 {% if sim() %}<p class="small muted">Simulated chain: this compares with the simulator, not Base Sepolia.</p>{% endif %}
