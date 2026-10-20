@@ -10,6 +10,10 @@ pydantic
 python-dotenv
 apify-client>=3.3
 rapidfuzz
+# delivery receipts and the predicate engine (MODEL_V2 ง5.1, ง6)
+rfc8785
+google-re2
+jsonschema
 # tests and coverage (SPEC ยง19)
 pytest
 pytest-cov
