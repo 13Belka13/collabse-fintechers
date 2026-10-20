@@ -395,8 +395,11 @@ def home():
 
 
 @router.get("/story", response_class=HTMLResponse)
-def story_page(request: Request, deal_id: str | None = None, busy: str = ""):
-    return _story_page(request, deal_id, busy=bool(busy))
+def story_page(request: Request, deal_id: str | None = None, busy: str = "", low: str = ""):
+    from scripts import demo_scenarios as ds
+    sc = ds.SCENARIOS.get(low)  # a scripted run the buyer's wallet could not pay: say why
+    error = (ds.balance_problem(sc["asset"], SCRIPTED_BUDGET_EUR_CENTS) or "") if sc else ""
+    return _story_page(request, deal_id, busy=bool(busy), error=error)
 
 
 def _story_page(request: Request, deal_id: str | None = None, busy=False, form: dict | None = None, error=""):
@@ -404,10 +407,13 @@ def _story_page(request: Request, deal_id: str | None = None, busy=False, form: 
     recent = db.rows("SELECT d.deal_id, d.asset, d.state, c.name FROM deals d LEFT JOIN sellers s"
                      " ON s.seller_id=d.seller_id LEFT JOIN companies c ON c.id=s.company_id"
                      " ORDER BY d.created_at DESC LIMIT 8")
-    form = form or {"task": ds.TASK, "budget": "5", "asset": "EURC", "seller": "", "mode": "honest", "say": "",
+    form = form or {"task": ds.TASK, "budget": "5", "asset": "tCZK", "seller": "", "mode": "honest", "say": "",
                     "opening": "list", "data": "companies", "rule": ""}
+    bal = ds.buyer_balances()
+    wallet = [f"{v / 10 ** money.decimals(a):.2f} {a}" for a, v in bal["values"].items()]
     return page(request, "story.html", s=story(deal_id), deal_id=deal_id, scenarios=ds.SCENARIOS, recent=recent,
-                run=run_view(), busy=busy, error=error, form=form, ds=ds)
+                run=run_view(), busy=busy, error=error, form=form, ds=ds, wallet=wallet,
+                wallet_age=int(time.time() - bal["at"]) if bal["at"] else None)
 
 
 @router.get("/story/panel", response_class=HTMLResponse)
@@ -814,6 +820,9 @@ def run_view(now: float | None = None) -> dict | None:
             "deal_id": (x["deals"] or [None])[-1]}
 
 
+SCRIPTED_BUDGET_EUR_CENTS = 500  # the scripted buyer's task budget (agents/buyer.py default)
+
+
 def _start(name: str, params: dict | None = None) -> bool:
     """Start a run in a daemon thread unless one is running (the request never waits for the model)."""
     from scripts import demo_scenarios as ds
@@ -840,6 +849,8 @@ async def demo_custom(request: Request):
         params = ds.custom_params(form)
     except ValueError as e:  # the form comes back with the viewer's values and the message
         return _story_page(request, form={**form, "say": form.get("say", "")[:2000]}, error=str(e))
+    if low := ds.balance_problem(params["asset"], params["budget"]):  # not a failing on-chain authorize
+        return _story_page(request, form={**form, "say": form.get("say", "")[:2000]}, error=low)
     if not _start("custom", params):
         return RedirectResponse("/story?busy=1", status_code=303)
     return RedirectResponse("/story", status_code=303)
@@ -851,6 +862,8 @@ def demo(scenario: str, next: str = "/bank"):
     if scenario not in demo_scenarios.SCENARIOS:
         raise HTTPException(404, "unknown scenario")
     target = next if next in ("/bank", "/story") else "/bank"  # no open redirect
+    if demo_scenarios.balance_problem(demo_scenarios.SCENARIOS[scenario]["asset"], SCRIPTED_BUDGET_EUR_CENTS):
+        return RedirectResponse(f"/story?low={scenario}", status_code=303)
     started = _start(scenario)
     return RedirectResponse(target + ("" if started else "?busy=1"), status_code=303)
 

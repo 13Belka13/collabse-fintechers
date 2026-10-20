@@ -23,9 +23,10 @@
         <input name="budget" inputmode="decimal" value="{{ form.budget }}" title="The most this task may spend. The mandate's limits apply on top.">
         <span class="hint">The agent haggles down to it; the bank refuses above it.</span></label>
       <fieldset><legend>Pay in</legend>
-        {% for a, note in [('EURC', 'stablecoin'), ('tCZK', "the bank's tokenized deposit")] %}
+        {% for a, note in [('tCZK', "the bank's tokenized deposit"), ('EURC', 'stablecoin')] %}
         <label class="inline"><input type="radio" name="asset" value="{{ a }}" {{ 'checked' if form.asset == a }}> {{ a }} <span class="hint">{{ note }}</span></label>
         {% endfor %}
+        {% if wallet %}<span class="hint">Buyer wallet: {{ wallet|join(' · ') }}{% if wallet_age is not none %} · read {{ wallet_age }} s ago{% endif %}</span>{% endif %}
       </fieldset>
       <label>Seller
         <select name="seller">
