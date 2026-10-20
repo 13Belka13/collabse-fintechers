@@ -796,6 +796,7 @@ def n14(ctx: Ctx):
     if got is None:
         return
     deal, amount, to17, before = got
+    ctx.expect_lock(deal, "EURC")
     s = settlement_of(ctx, deal)
     timer(ctx, s["window_end_at"] - time.time() - 5)
     ctx.check("no void while the window runs", not ctx.deal_tx(deal, "void"))
@@ -902,6 +903,17 @@ def f03(ctx: Ctx):
         ctx.journal_chain()
     finally:
         ctx.mode("s-gama", DEFAULT_MODES["s-gama"])
+
+
+# Tatum webhook (L7): the runner plays Tatum and posts to the bank on localhost, signed with the stack's secret (the
+# fork uses a throwaway test secret; no tunnel, no real subscription). The bank's own RPC poller runs meanwhile.
+
+def tatum_body(tx: str, to: str, asset: str = "EURC", value: str = "0.01") -> dict:
+    """Tatum's enriched template (SPEC §11)."""
+    m = config.ASSETS[asset]
+    return {"subscriptionType": "INCOMING_FUNGIBLE_TX", "chain": "base-sepolia",
+            "data": {"txId": tx, "to": to, "value": value, "contractAddress": m["address"],
+                     "tokenMetadata": {"decimals": m["decimals"], "symbol": asset}}}
 
 
 def post_webhook(ctx: Ctx, body: dict, secret: str | None) -> httpx.Response:
@@ -1057,17 +1069,18 @@ def run_one(stack: Stack, sid: str, run: int, title: str, fn) -> dict:
 # ---- reconciliation (chain Transfer events vs DB vs statement) ----
 
 def reconcile_deal(deal: dict, buyer: str) -> dict:
-    """locked (chain) == deals.amount; captured (chain) == Σ journal captures; committed (statement) == captured in
-    euro cents; locked == captured + voided + capturable (chain)."""
+    """locked (chain) == deals.amount; captured (chain, gross: to the seller + the fee to the clearing address) ==
+    Σ journal captures; committed (statement) == captured in euro cents; locked == captured + voided + capturable."""
     asset = deal["asset"]
     seller = core.seller(deal["seller_id"])["wallet_address"]
+    clearing = Web3.to_checksum_address(config.BANK_CLEARING_ADDR)
     sums = {"authorize": 0, "capture": 0, "void": 0}
     for t in db.rows("SELECT kind, tx_hash FROM onchain_txs WHERE deal_id=? AND status='mined'", (deal["deal_id"],)):
         kind = t["kind"].split(":")[0]
         if kind not in sums:
             continue
         for tr in transfers_in(t["tx_hash"], asset):
-            if (kind, tr["from"]) == ("authorize", buyer) or (kind == "capture" and tr["to"] == seller) \
+            if (kind, tr["from"]) == ("authorize", buyer) or (kind == "capture" and tr["to"] in (seller, clearing)) \
                     or (kind == "void" and tr["to"] == buyer):
                 sums[kind] += tr["value"]
     st = escrow.read_state(deal["payment_hash"])
