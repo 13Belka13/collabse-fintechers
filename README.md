@@ -348,7 +348,7 @@ that no money moved.
 | Wrong debits / transfers to the attacker address | **0 / 0** | both reports |
 | Reconciliation chain ↔ DB ↔ statement | **13/13** escrow deals on Base Sepolia, **39/39** on the fork; journal hash chains verified | both reports |
 | Budget race: 10 parallel `pay()` with budget for 3 | exactly 3 locks on Base Sepolia (N02); 20 offline rounds, overspend 0 | [validation-sepolia.md](reports/validation-sepolia.md), [numbers.md](reports/numbers.md) |
-| Automated tests (unit + evals, MOCK, every push in CI) | about **735** | [CI](https://github.com/13Belka13/collabse-fintechers/actions/workflows/ci.yml) |
+| Automated tests (unit + evals, MOCK, every push in CI) | **757** (753 pass, 4 need live keys or a fork) | [CI](https://github.com/13Belka13/collabse-fintechers/actions/workflows/ci.yml) |
 | Contract tests (Foundry) | **24** unit + 3 fork tests | `contracts/test/` |
 | Coverage of `bank/` | **89.8 %** lines, 82.8 % branches | [coverage.json](reports/coverage.json) |
 | Prompt-injection evals | Money-level block **20/20** variants (50/50 runs: scripted, deliberately compromised, live Claude Opus 4.5); live Opus buyer: 0 calls the bank had to reject in 17 runs | [evals](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run) |
