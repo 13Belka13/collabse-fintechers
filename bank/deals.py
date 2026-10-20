@@ -162,7 +162,8 @@ def _negotiate(deal_id: str, message: str) -> dict:
         with seller_http(seller["base_url"]) as http:
             r = http.post("/negotiate", json={"deal_id": deal_id, "seller_id": deal["seller_id"],
                                               "buyer_ico": buyer["ico"], "task": deal["task"],
-                                              "terms": deal["criteria"], "message": message})
+                                              "terms": deal["criteria"], "requirements": _requirements(deal),
+                                              "message": message})
     r.raise_for_status()
     body = r.json()
     reply, offer = str(body.get("reply_text", "")), body.get("offer")
@@ -185,6 +186,11 @@ def _negotiate(deal_id: str, message: str) -> dict:
         out["offer"] = offer_view(offer, deal["asset"])
     _prefetch(seller)
     return out
+
+
+def _requirements(deal: dict) -> dict:
+    mandate = _module("mandate")
+    return mandate.requirements(deal["mandate_id"], deal) if hasattr(mandate, "requirements") else {}
 
 
 def _decode_quote(r: httpx.Response) -> dict:
@@ -334,6 +340,7 @@ def pay(deal_id: str) -> dict:
                 decision["marks"] = marks + decision.get("marks", [])
         if decision["status"] != "ok":
             return _finish_refusal(deal_id, decision, t0)
+        _reserve_fee(_require(deal_id))
         _refresh_payment_info(deal, quote)
         return _authorize_and_notify(_require(deal_id), seller, (time.perf_counter() - t0) * 1000,
                                      decision.get("marks", []))
@@ -391,6 +398,12 @@ def _fix_terms(deal: dict, eur_cents: int) -> dict:
              "b_slot": 0}
     marks = []
     with db.immediate():
+        mandate = _module("mandate")
+        if hasattr(mandate, "protection"):  # §2: the floor by tier_sum, require B / C, unprotected caps, fee budget
+            floor = mandate.protection(deal["mandate_id"], deal, terms, eur_cents)
+            if floor["status"] != "ok":
+                return floor
+            marks += floor.get("marks", [])
         if rule in ("B", "C"):
             avail = disputes.b_availability(deal["buyer_id"], deal["seller_id"], except_deal=deal["deal_id"])
             if avail["available"]:
@@ -403,6 +416,14 @@ def _fix_terms(deal: dict, eur_cents: int) -> dict:
         db.run("UPDATE deals SET terms_json=?, updated_at=? WHERE deal_id=?",
                (db.dumps(terms), time.time(), deal["deal_id"]))
     return codes.ok(marks=marks)
+
+
+def _reserve_fee(deal: dict):
+    """The largest C fee is reserved from the claim-fee budget with the deal's own reservation (§2)."""
+    cents_ = (deal.get("terms") or {}).get("fee_reserved_eur_cents") or 0
+    mandate = _module("mandate")
+    if cents_ and hasattr(mandate, "reserve_fee"):
+        mandate.reserve_fee(deal["mandate_id"], deal["deal_id"], cents_)
 
 
 def _refresh_payment_info(deal: dict, quote: dict):

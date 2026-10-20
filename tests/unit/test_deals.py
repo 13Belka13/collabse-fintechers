@@ -191,7 +191,7 @@ def test_rule_b_captures_at_acceptance_with_the_pis_idem_key(world):
 
 def _offer_patch(world, monkeypatch, **change):
     real = seller_mod.offer_rule
-    monkeypatch.setattr(seller_mod, "offer_rule", lambda terms, cents: {**real(terms, cents), **change})
+    monkeypatch.setattr(seller_mod, "offer_rule", lambda terms, cents, req=None: {**real(terms, cents, req), **change})
 
 
 @pytest.mark.parametrize("change,reason", [

@@ -267,6 +267,9 @@ def _close(deal_id: str, actor: str, now: float):
                                                     "voided": bool(s["voided"]), "outcome": outcome}, deal_id=deal_id)
         if outcome == "no_delivery":
             journal.append(actor, "autocode", {"code": "NO_DELIVERY"}, deal_id=deal_id)
+    mandate = deals._module("mandate")
+    if hasattr(mandate, "release_fee"):  # no C claim came: the claim-fee reservation goes back (§2)
+        mandate.release_fee(deal_id)
 
 
 def _refresh_step(deal_id: str, now: float):

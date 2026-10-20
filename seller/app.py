@@ -205,18 +205,23 @@ class NegotiateIn(BaseModel):
     buyer_ico: str | None = None
     task: dict | None = None
     terms: dict | None = None  # the buyer's confirmed task terms (predicates, count, deadline)
+    requirements: dict | None = None  # what the buyer's mandate needs: prior sums with us, where B / C are required
     message: str = ""
 
 
-def offer_rule(terms: dict, price_cents: int) -> dict:
+def offer_rule(terms: dict, price_cents: int, req: dict | None = None) -> dict:
     """The seller's quality rule within the bank's published tiers (MODEL_V2 §4, §7): SELLER_RULE overrides;
-    otherwise C when the task has a source template and the price is in T2, else B with SELLER_B_PCT (10 %)."""
-    tier = "T2" if price_cents > config.TIER_T1_MAX else "T1"
+    otherwise C when the task has a source template and the sum with this buyer is in T2 (or the mandate requires
+    C there), else B with SELLER_B_PCT (10 %). The tier counts the buyer's prior deals with us (tier_sum, §2)."""
+    req = req or {}
+    total = price_cents + int(req.get("prior_eur_cents") or 0)
+    tier = "T2" if total > config.TIER_T1_MAX else "T1"
     has_source = any(p.get("op") == "source" for p in terms.get("predicates") or [])
     rule = os.getenv("SELLER_RULE", "").strip().upper() or ("C" if has_source and tier == "T2" else "B")
     if rule == "C":
         tier = "T2"
-    window = float(os.getenv("SELLER_WINDOW_S", "").strip() or config.WINDOW_S[tier][0])
+    floor = float((req.get("min_window_s") or {}).get(tier) or 0)
+    window = float(os.getenv("SELLER_WINDOW_S", "").strip() or max(config.WINDOW_S[tier][0], floor))
     out = {"rule": rule, "window_s": 0 if rule == "A" else window, "tier": tier}
     if rule in ("B", "C"):
         out["b_pct"] = int(os.getenv("SELLER_B_PCT", "").strip() or 10)
@@ -338,7 +343,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                                " confirmed predicates", "count": count, "price_eur_cents": cents,
                  "prices": {a: str(money.from_eur_cents(a, cents)) for a in quoted}, "pay_to": seller["pay_to"],
                  # the buyer's confirmed predicates verbatim; a seller may add its own (only narrowing, AND)
-                 "predicates": list(terms.get("predicates") or []), **offer_rule(terms, cents),
+                 "predicates": list(terms.get("predicates") or []), **offer_rule(terms, cents, body.requirements),
                  "deadline_s": min(DEADLINE_S, int(terms.get("deadline_s") or DEADLINE_S)),
                  "created_at": round(time.time(), 3)}
         app.state.offers[offer["offer_id"]] = offer

@@ -69,7 +69,7 @@ def create(mandate_id: str, company_id: str, policy: dict, by: str) -> int:
     co = core.company(company_id)
     if co is None:
         raise ValueError(f"unknown company {company_id}")
-    full = {**DEFAULTS, "valid_until": (date.today() + timedelta(days=30)).isoformat(),
+    full = {**DEFAULTS, **v2_defaults(), "valid_until": (date.today() + timedelta(days=30)).isoformat(),
             "fx_demo": {"CZK_per_EUR": str(config.CZK_PER_EUR_DEMO)}, **policy,
             "mandate_id": mandate_id, "version": 1, "company_ico": co["ico"]}
     with db.immediate() as c:
@@ -433,3 +433,193 @@ def summary(mandate_id: str, now: float | None = None) -> dict | None:
             "committed_eur_cents": committed, "reserved_eur_cents": used - committed,
             "remaining_eur_cents": cents(p["budget"]) - used, "assets_allowed": p["assets_allowed"],
             "vat_risk_acknowledged": p["vat_risk_acknowledged"], "reservations": rows}
+
+
+# ---- MODEL_V2 §2: protection the mandate requires, by tier_sum ----
+
+RULES = ("A", "B", "C")
+TIERS = ("T0", "T1", "T2")
+
+
+def v2_defaults() -> dict:
+    """§2 defaults at the demo scale (§14: euro ÷ MONEY_DIVISOR, windows ÷ TIME_DIVISOR). Euro cents as strings."""
+    m, t = config.MONEY_DIVISOR, config.TIME_DIVISOR
+    c = lambda eur: str(eur * 100 // m)  # noqa: E731
+    return {
+        "unprotected_budget_eur_per_day": c(50), "unprotected_per_seller_eur_per_day": c(20),
+        "session_budget_eur_per_day_per_seller": c(20),
+        "dispute_floor": [
+            {"tier_sum_max": c(20), "min_tier": "T0"},
+            {"tier_sum_max": c(500), "min_tier": "T1", "min_window_s": 1800 / t, "allowed_quality": ["A", "B"]},
+            {"tier_sum_max": None, "min_tier": "T2", "min_window_s": 72 * 3600 / t,
+             "allowed_quality": ["A", "B", "C"]}],
+        "require_b_for": ["data_purchase"], "require_c_above_eur": c(2000),
+        "claim_fee_budget_eur_per_month": c(1000),
+    }
+
+
+def _p(policy: dict, key: str):
+    return policy[key] if key in policy else v2_defaults()[key]
+
+
+def related_sellers(seller_id: str) -> list[str]:
+    """Sellers linked to this one by a common beneficiary (EvSM). TODO(data): no EvSM extract is wired yet, so a
+    seller is related only to itself; the sums below already take the list."""
+    return [seller_id]
+
+
+def tier_sum(deal: dict, eur_cents: int, now: float) -> dict:
+    """§2: the largest of (this deal; deals with this seller in 24 h incl. this one; deals of this task with this
+    seller and its related sellers incl. this one). Sessions would count here too (not built: none exist).
+    Deals already locked or past their decision count; refused ones do not."""
+    sellers = related_sellers(deal["seller_id"])
+    marks = ",".join("?" * len(sellers))
+    live = "('authorized','delivered','dispute_c','settled','awaiting_human')"
+    day = db.rows(f"SELECT asset, amount FROM deals WHERE buyer_id=? AND seller_id=? AND state IN {live}"
+                  " AND deal_id<>? AND created_at>=?", (deal["buyer_id"], deal["seller_id"], deal["deal_id"],
+                                                        now - 86400))
+    task_hash = (_field(deal, "criteria") or {}).get("hash")
+    task = db.rows(f"SELECT asset, amount FROM deals WHERE buyer_id=? AND seller_id IN ({marks}) AND state IN {live}"
+                   " AND deal_id<>? AND json_extract(criteria_json,'$.hash')=?",
+                   (deal["buyer_id"], *sellers, deal["deal_id"], task_hash)) if task_hash else []
+    eur = lambda rows: sum(money.to_eur_cents(r["asset"], int(r["amount"] or 0)) for r in rows)  # noqa: E731
+    parts = {"deal": eur_cents, "seller_24h": eur_cents + eur(day), "task_with_seller": eur_cents + eur(task)}
+    return {"tier_sum": max(parts.values()), **parts}
+
+
+def requirements(mandate_id: str, deal: dict, now: float | None = None) -> dict:
+    """What the seller needs to know to offer terms the mandate accepts (sent with each negotiation turn): the
+    sums this deal adds to, and where B and C are required. The seller knows its own deals with this buyer."""
+    now = time.time() if now is None else now
+    m = current(mandate_id)
+    p = m["policy"] if m else {}
+    ts = tier_sum(deal, 0, now)
+    return {"prior_eur_cents": ts["tier_sum"], "require_b": (_field(deal, "criteria") or {}).get("category")
+            in _p(p, "require_b_for"), "require_c_above_eur_cents": cents(_p(p, "require_c_above_eur")),
+            "min_window_s": {f["min_tier"]: f.get("min_window_s", 0) for f in _p(p, "dispute_floor")}}
+
+
+def floor_for(policy: dict, ts: int) -> dict:
+    for f in _p(policy, "dispute_floor"):
+        if f.get("tier_sum_max") is None or ts <= cents(f["tier_sum_max"]):
+            return f
+    return _p(policy, "dispute_floor")[-1]
+
+
+def _unprotected_today(mandate_id: str, seller_id: str | None, now: float, except_deal: str) -> int:
+    sql = ("SELECT r.amount FROM reservations r JOIN deals d ON d.deal_id=r.deal_id WHERE r.mandate_id=?"
+           " AND r.state IN ('reserved','committed') AND r.created_at>=? AND r.deal_id<>?"
+           " AND json_extract(d.terms_json,'$.tier')='T0'")
+    args = [mandate_id, now - 86400, except_deal]
+    if seller_id:
+        sql, args = sql + " AND d.seller_id=?", args + [seller_id]
+    return sum(r["amount"] for r in db.rows(sql, tuple(args)))
+
+
+def protection(mandate_id: str, deal: dict, terms: dict, eur_cents: int, now: float | None = None) -> dict:
+    """§2–§4 at pay, before the reservation: the tier and rule the mandate requires for this deal's tier_sum.
+    Changes terms in place (tier lifted to the floor, tier_sum, fee reservation) and returns a Decision:
+    TERMS_MISMATCH (the offer is below the floor), CONFIRMATION_REQUIRED (C or B impossible -> a person may take
+    the lower protection), BUDGET_EXCEEDED (unprotected daily caps, the claim-fee budget), or ok with marks."""
+    from bank import claims_c
+    now = time.time() if now is None else now
+    m = current(mandate_id)
+    if m is None:
+        return codes.refuse(Code.MANDATE_NOT_ACTIVE, [codes.reason("mandate_missing", True, "No mandate.")])
+    p, src = m["policy"], _mandate_url(mandate_id, m["version"])
+    ts = tier_sum(deal, eur_cents, now)
+    floor = floor_for(p, ts["tier_sum"])
+    rule, marks = terms["rule"], []
+    need_tier = floor["min_tier"]
+    if terms["category"] in _p(p, "require_b_for") and need_tier == "T0":
+        need_tier = "T1"  # a final data delivery never goes unprotected (§2)
+    terms["tier"] = max(terms["tier"], need_tier, key=TIERS.index)
+    terms["tier_sum"] = ts["tier_sum"]
+    terms["fee_bps"] = config.TARIFF_BPS.get((terms["tier"], rule), terms["fee_bps"])
+
+    def refuse(code, reason_code, text, **ev):
+        d = codes.refuse(code, [codes.reason(reason_code, True, text, src, **ev)])
+        d["explanation"] = explain.template(d)
+        return d
+
+    need = 0
+    if terms["category"] in _p(p, "require_b_for"):
+        need = 1
+    if ts["tier_sum"] > cents(_p(p, "require_c_above_eur")):
+        need = 2
+    have = RULES.index(rule)
+    if have < need:
+        has_source = any(x["op"] == "source" for x in (_field(deal, "criteria") or {}).get("predicates", []))
+        if need == 2 and not has_source and have >= 1:
+            if not deal.get("confirmed_by"):
+                return refuse(Code.CONFIRMATION_REQUIRED, "c_unavailable",
+                              f"The mandate requires rule C above {cents(_p(p, 'require_c_above_eur')) / 100:.2f} € "
+                              "(sum with this seller and this task), but the task has no published source template: "
+                              "the fields are protected by B only. A person can confirm the deal under B.",
+                              tier_sum=ts)
+            marks.append("B instead of C, confirmed by a person (no source template for C)")
+        else:
+            return refuse(Code.TERMS_MISMATCH, "rule_below_mandate",
+                          f"The mandate requires rule {RULES[need]} or higher for this deal "
+                          f"(tier sum {ts['tier_sum'] / 100:.2f} €); the offer has rule {rule}.", tier_sum=ts)
+    if rule not in floor.get("allowed_quality", RULES) and rule != "C":
+        return refuse(Code.TERMS_MISMATCH, "rule_not_allowed_in_tier", f"Rule {rule} is not allowed at this tier.")
+    if rule != "A" and float(terms["window_s"]) < float(floor.get("min_window_s") or 0):
+        return refuse(Code.TERMS_MISMATCH, "window_below_mandate",
+                      f"The mandate requires a claim window of at least {floor['min_window_s']:g} s here.")
+    if terms["tier"] == "T0":  # unprotected: one shared daily cap across sellers, and a cap per seller
+        total, mine = (_unprotected_today(mandate_id, None, now, deal["deal_id"]),
+                       _unprotected_today(mandate_id, deal["seller_id"], now, deal["deal_id"]))
+        cap, per_seller = cents(_p(p, "unprotected_budget_eur_per_day")), cents(_p(p, "unprotected_per_seller_eur_per_day"))
+        if total + eur_cents > cap or mine + eur_cents > per_seller:
+            return refuse(Code.BUDGET_EXCEEDED, "unprotected_daily_cap",
+                          f"Unprotected payments today would exceed {cap / 100:.2f} € in total or "
+                          f"{per_seller / 100:.2f} € with this seller.", total=total, seller=mine)
+    terms["fee_reserved_eur_cents"] = 0
+    if rule == "C":
+        f_max = claims_c.fee_max_eur_cents(int(terms["count"]), eur_cents, claims_c.lost_c(deal["buyer_id"], now))
+        used = fee_budget_used(mandate_id, now, deal["deal_id"])
+        budget = cents(_p(p, "claim_fee_budget_eur_per_month"))
+        if used + f_max > budget:
+            if not deal.get("confirmed_by"):
+                return refuse(Code.CONFIRMATION_REQUIRED, "claim_fee_budget",
+                              f"The claim-fee budget cannot reserve the largest C fee ({f_max / 100:.2f} €): "
+                              f"{used / 100:.2f} of {budget / 100:.2f} € reserved this month. A person can confirm.")
+            marks.append("C without a reserved claim fee, confirmed by a person")
+        else:
+            terms["fee_reserved_eur_cents"] = f_max
+    return codes.ok(marks=marks)
+
+
+# ---- the claim-fee budget (§2): reserved at pay, shrunk to F at filing, released when no C claim came ----
+
+def fee_budget_used(mandate_id: str, now: float, except_deal: str | None = None) -> int:
+    row = db.one("SELECT COALESCE(SUM(amount),0) s FROM fee_reservations WHERE mandate_id=? AND state IN"
+                 " ('reserved','spent') AND created_at>=? AND created_at<? AND deal_id IS NOT ?",
+                 (mandate_id, _month_start(now), _month_end(now), except_deal))
+    return row["s"]
+
+
+def reserve_fee(mandate_id: str, deal_id: str, eur_cents: int):
+    if eur_cents <= 0:
+        return
+    with db.immediate():
+        db.run("INSERT INTO fee_reservations (mandate_id, deal_id, amount, state, created_at) VALUES (?,?,?,?,?)"
+               " ON CONFLICT(deal_id) DO UPDATE SET amount=excluded.amount, state='reserved'",
+               (mandate_id, deal_id, eur_cents, "reserved", time.time()))
+        journal.append("bank", "claim_fee_reserved", {"eur_cents": eur_cents}, deal_id=deal_id)
+
+
+def set_fee_reservation(deal_id: str, eur_cents: int):
+    """At filing: the reservation becomes the actual fee F (never more than reserved)."""
+    with db.immediate():
+        db.run("UPDATE fee_reservations SET amount=MIN(amount, ?), state='spent' WHERE deal_id=?", (eur_cents, deal_id))
+
+
+def release_fee(deal_id: str):
+    """The window closed without a C claim: the reservation goes back to the budget."""
+    with db.immediate():
+        row = db.one("SELECT state FROM fee_reservations WHERE deal_id=?", (deal_id,))
+        if row and row["state"] == "reserved":
+            db.run("UPDATE fee_reservations SET state='released' WHERE deal_id=?", (deal_id,))
+            journal.append("bank", "claim_fee_released", {}, deal_id=deal_id)
