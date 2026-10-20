@@ -434,3 +434,45 @@ def test_a_late_rereview_decider_is_replaced_by_the_reserve_provider(w, monkeypa
         claims_c.decide(deal_id, late, {str(i): "seller" for i in case["sample"]}, now=t2 + 1)
     c = claims_c.decide(deal_id, "reserve", {str(i): "seller" for i in case["sample"]}, now=t2 + 2)
     assert c["state"] == "decided" and c["data"]["buyer_share_pct"] == 0  # majority of three: first + two "seller"
+
+
+# ---- the decider page takes a credential: the decider id comes from the token, never from the form ----
+
+def test_decider_tokens_are_derived_per_decider_or_configured(seeded, monkeypatch):
+    monkeypatch.setattr(config, "DECIDER_TOKENS", "")
+    monkeypatch.setattr(config, "DECIDER_SECRET", "s3cret-base")
+    t = deciders.tokens()
+    assert set(t) == {"dec-1", "dec-2", "dec-3", "reserve"} and len(set(t.values())) == 4
+    assert all(len(v) == 16 for v in t.values()) and "s3cret" not in str(t)
+    assert deciders.by_token(t["dec-2"]) == "dec-2" and deciders.by_token("") is None
+    assert deciders.by_token("dec-2") is None and deciders.by_token(t["dec-2"][:-1]) is None
+    monkeypatch.setattr(config, "DECIDER_TOKENS", "dec-1:tokA, dec-2:tokB")
+    assert deciders.tokens() == {"dec-1": "tokA", "dec-2": "tokB"} and deciders.by_token("tokB") == "dec-2"
+
+
+def test_decider_page_takes_the_decider_from_its_token_not_the_form(w):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import ui
+    app = FastAPI()
+    app.include_router(ui.router)
+    client = TestClient(app, headers={"x-human-token": "dev-human"})
+    deal_id, _ = c_deal(w)
+    _to_seller_fee(w, deal_id)
+    deadlines.tick(now=T0 + 5 + 2 * config.BUSINESS_DAY_S + 10)
+    c = claims_c.get(deal_id)
+    deadlines.tick(now=deciders.round_time(deciders.get(c["id"])["sample_round"]) + 1)
+    case = deciders.get(c["id"])
+    page = client.get(f"/deciders/{deal_id}").text
+    assert 'name="token"' in page and "dec-1" not in page and 'name="decider"' not in page
+    verdicts, tokens = {f"item-{i}": "seller" for i in case["sample"]}, deciders.tokens()
+    other = next(d for d in tokens if d != case["decider"])
+    r = client.post(f"/deciders/{deal_id}", data={**verdicts, "token": "wrong", "decider": case["decider"]})
+    assert "Unknown decider token" in r.text and claims_c.get(deal_id)["state"] == "decider"
+    r = client.post(f"/deciders/{deal_id}", data={**verdicts, "token": tokens[other], "decider": case["decider"]})
+    assert "only the assigned decider" in r.text and claims_c.get(deal_id)["state"] == "decider"
+    r = client.post(f"/deciders/{deal_id}", data={**verdicts, "token": tokens[case["decider"]], "decider": other})
+    assert "decided" in r.text and claims_c.get(deal_id)["state"] == "decided"
+    assert [e["actor"] for e in journal.entries(deal_id) if e["event"] == "decider.decided"] == \
+        [f"decider:{case['decider']}"]

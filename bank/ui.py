@@ -602,11 +602,16 @@ def decider_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
 
 @router.post("/deciders/{deal_id}")
 async def decider_decide(request: Request, deal_id: str):
+    """The decider signs with its own token (bank/deciders.py tokens): the decider id comes from the token."""
     from bank import claims_c, deciders
     form = await request.form()
+    decider = deciders.by_token(str(form.get("token", "")).strip())
+    if decider is None:
+        return RedirectResponse(f"/deciders/{deal_id}?error=Unknown decider token: nothing was decided.",
+                                status_code=303)
     verdicts = {k.removeprefix("item-"): v for k, v in form.items() if k.startswith("item-")}
     try:
-        claims_c.decide(deal_id, str(form.get("decider", "")), verdicts)
+        claims_c.decide(deal_id, decider, verdicts)
     except (claims_c.ClaimError, deciders.DeciderError) as e:
         return RedirectResponse(f"/deciders/{deal_id}?error={e}", status_code=303)
     return RedirectResponse(f"/deciders/{deal_id}?ok=decided", status_code=303)

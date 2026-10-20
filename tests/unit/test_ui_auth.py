@@ -57,3 +57,18 @@ def test_same_origin_post_or_the_human_token_is_accepted(client, headers):
 
 def test_pages_stay_open_without_a_token(client):
     assert client.get("/mandate").status_code == 200 and client.get("/bank").status_code == 200
+
+
+def test_start_warns_on_dev_tokens_with_mock_off_but_never_refuses(monkeypatch, caplog):
+    from bank import app as app_mod, config
+    monkeypatch.setattr(config, "HUMAN_TOKEN", "dev-human")
+    monkeypatch.setattr(config, "DECIDER_TOKENS", "")
+    monkeypatch.setattr(config, "DECIDER_SECRET", "dev-human")
+    monkeypatch.setattr(config, "MOCK", False)
+    with caplog.at_level("WARNING", logger="bank"):
+        app_mod.warn_dev_tokens()  # returns: the stand keeps starting with its current environment
+    assert "HUMAN_TOKEN" in caplog.text and "decider page tokens" in caplog.text
+    caplog.clear()
+    monkeypatch.setattr(config, "MOCK", True)
+    app_mod.warn_dev_tokens()
+    assert caplog.text == ""  # MOCK=1: the printed note only

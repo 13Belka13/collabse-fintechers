@@ -18,12 +18,27 @@ async def lifespan(app: FastAPI):
     db.conn()
     if config.MOCK:
         print("\n*** MOCK=1: scripted LLM replies, $0 model cost. Set MOCK=0 for live Bedrock. ***\n", flush=True)
+    warn_dev_tokens()
+    yield
+
+
+def dev_tokens() -> list[str]:
+    """Shared secrets still at their dev- default (public in the repo)."""
     dev = [n for n, v in (("AGENT_TOKEN_ALFA", next(iter(config.AGENT_TOKENS))), ("SELLER_TOKEN", config.SELLER_TOKEN),
-                          ("HUMAN_TOKEN", config.HUMAN_TOKEN), ("BANK_TO_SELLER_TOKEN", config.BANK_TO_SELLER_TOKEN))
-           if v.startswith("dev-")]
+                          ("HUMAN_TOKEN", config.HUMAN_TOKEN), ("BANK_TO_SELLER_TOKEN", config.BANK_TO_SELLER_TOKEN),
+                          ("DECIDER_TOKEN", config.DECIDER_TOKEN)) if v.startswith("dev-")]
+    if not config.DECIDER_TOKENS and config.DECIDER_SECRET.startswith("dev-"):
+        dev.append("decider page tokens (derived from a dev- default)")
+    return dev
+
+
+def warn_dev_tokens() -> None:
+    """Says so at start, never refuses to start: the live stand keeps its environment."""
+    dev = dev_tokens()
     if dev:
         print(f"*** dev default tokens in use: {', '.join(dev)} — set them in .env before a live demo ***", flush=True)
-    yield
+    if dev and not config.MOCK:
+        log.warning("MOCK=0 with dev default tokens: %s", ", ".join(dev))
 
 
 app = FastAPI(title="Collabse bank", lifespan=lifespan)

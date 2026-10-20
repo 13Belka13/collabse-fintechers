@@ -21,8 +21,10 @@
 # drand: quicknet (3 s rounds). Live rounds from api.drand.sh; recorded rounds in fixtures/drand/quicknet.json;
 # in MOCK a round that is not recorded gets a labelled deterministic stand-in (never presented as the real beacon).
 import hashlib
+import hmac
 import json
 import secrets
+import sys
 import time
 
 import httpx
@@ -53,6 +55,27 @@ def pool() -> list[dict]:
 
 
 # ---- drand ----
+
+def tokens() -> dict[str, str]:
+    """Decider id -> the token that decider types on its case page; the page derives the id from it, never from the
+    form. DECIDER_TOKENS "dec-1:tokA,dec-2:tokB", or, unset, HMAC-SHA256(DECIDER_TOKEN or HUMAN_TOKEN, id)[:16] for
+    each pool decider and the reserve provider (the base secret itself is never shown)."""
+    if config.DECIDER_TOKENS:
+        pairs = (p.split(":", 1) for p in config.DECIDER_TOKENS.split(",") if ":" in p)
+        return {i.strip(): t.strip() for i, t in pairs if i.strip() and t.strip()}
+    key = config.DECIDER_SECRET.encode()
+    return {i: hmac.new(key, i.encode(), hashlib.sha256).hexdigest()[:16]
+            for i in [d["id"] for d in pool()] + [RESERVE_PROVIDER["id"]]}
+
+
+def by_token(token: str) -> str | None:
+    """The decider a token belongs to, or None (compared in constant time)."""
+    found = None
+    for decider_id, t in tokens().items():
+        if token and hmac.compare_digest(token.encode(), t.encode()):
+            found = decider_id
+    return found
+
 
 def round_time(r: int) -> int:
     return DRAND_GENESIS + (r - 1) * DRAND_PERIOD
@@ -412,3 +435,10 @@ def replace_late(claim_id: int, now: float | None = None) -> dict | None:
     journal.append("bank", "decider.late", {"claim_id": claim_id}, deal_id=case["deal_id"])
     return open_stage({"id": claim_id, "deal_id": case["deal_id"]}, case["sides"], now,
                       exclude=tuple(case["exclude"]) + (late,), step="replacement")
+
+
+if __name__ == "__main__":  # python -m bank.deciders tokens: the decider tokens for the presenter
+    if sys.argv[1:] != ["tokens"]:
+        sys.exit("usage: python -m bank.deciders tokens")
+    for decider_id, token in tokens().items():
+        print(f"{decider_id}\t{token}")
