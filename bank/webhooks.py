@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from web3 import Web3
-from web3.exceptions import TransactionNotFound
+from web3.exceptions import BlockNotFound, TransactionNotFound
 
 from bank import chain, config, db, journal
 
@@ -113,12 +113,24 @@ def verify_on_chain(tx_hash: str, hint: dict) -> dict:
     return {"ok": True, "reason": None, "transfers": transfers, "block_number": rcpt["blockNumber"]}
 
 
+def block_ts(block_number: int) -> int | None:
+    """The block's timestamp, or None: on a load-balanced RPC the node that answers may not have the block the
+    receipt came from yet (BlockNotFound answered Tatum with a 500 on Base Sepolia). Only the latency needs it."""
+    for i in range(RECEIPT_TRIES):
+        try:
+            return chain.w3().eth.get_block(block_number)["timestamp"]
+        except BlockNotFound:
+            if i + 1 < RECEIPT_TRIES:
+                time.sleep(RECEIPT_DELAY)
+    return None
+
+
 def record(tx_hash: str, transfers: list[dict], block_number: int, source: str, untrusted=None,
            measure: bool = True) -> bool:
     """One notifications row + one `incoming_transfer` journal entry per tx, atomically. False = already counted.
     measure=False for the poller's catch-up on start: an old block is not block → feed latency."""
     tx_id = tx_hash.lower()
-    block_ts = chain.w3().eth.get_block(block_number)["timestamp"]  # RPC before the write lock, never inside it
+    ts = block_ts(block_number)  # RPC before the write lock, never inside it
     deal = db.one("SELECT deal_id FROM onchain_txs WHERE lower(tx_hash)=?", (tx_id,))
     first = transfers[0]
     stored = {"source": source, "block_number": block_number, "transfers": transfers}
@@ -136,11 +148,11 @@ def record(tx_hash: str, transfers: list[dict], block_number: int, source: str, 
             "amount": sum(t["amount"] for t in transfers if t["asset"] == first["asset"] and t["to"] == first["to"]),
             "to": first["to"], "from": first["from"], "company_id": first["company_id"], "block_number": block_number,
             "transfers": transfers}, deal_id=deal and deal["deal_id"])
-    if not measure:
+    if not measure or ts is None:
         return True
     stage = "block_to_feed" if source == "rpc_poll" else f"block_to_feed:{source}"
     db.run("INSERT INTO timings (ts, deal_id, stage, ms, ok) VALUES (?,?,?,?,1)",
-           (time.time(), deal and deal["deal_id"], stage, max(0.0, (time.time() - block_ts) * 1000)))
+           (time.time(), deal and deal["deal_id"], stage, max(0.0, (time.time() - ts) * 1000)))
     return True
 
 
