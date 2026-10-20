@@ -279,3 +279,21 @@ def test_task_budget_cap_refuses_in_decide(client):
     assert d["code"] == Code.AMOUNT_ABOVE_LIMIT and d["reasons"][0]["code"] == "task_budget_max"
     assert decide(m, screening(), price="2.50", seller="s-gama")["status"] == "ok"
     assert config.MOCK
+
+
+def test_five_scenarios_twice_in_a_row_keep_their_outcomes(client, sim, monkeypatch):
+    """The jury reruns the buttons. Before, the "24 h with the seller" look-back was real time, so every deal with
+    Beta added up past the demo T1 max for a day. Now it is 16 min at ÷90; the first round's tCZK deal (T2: the
+    honest deal awaiting its VAT acknowledgement counts) holds a B slot for its 48-min window, and a new buyer has
+    two, so the second round runs once that window is over and repeats the first round exactly."""
+    from bank import deals
+    real, shift, runs = time.time, [0.0], []
+    monkeypatch.setattr(time, "time", lambda: real() + shift[0])
+    for n in (1, 2):
+        shift[0] = (n - 1) * (config.WINDOW_S["T2"][0] + 60)
+        for name in ds.SCENARIOS:
+            out = ds.run_safe(name)
+            deal = deals.get(out["deals"].get(ds.SCENARIOS[name]["seller"])) if out and out["deals"] else None
+            runs.append((name, out and out["outcome"], deal and (deal["terms"] or {}).get("rule")))
+    assert runs[:5] == runs[5:], runs
+    assert runs[4] == ("tczk", "ok", "B") and runs[1] == ("fake_data", "ok", "B"), runs
