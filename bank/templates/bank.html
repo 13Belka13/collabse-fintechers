@@ -9,8 +9,9 @@
   </div>
 </div>
 <p class="muted small">{% if view == 'client' %}What the client and its agent may see: public reasons only; anything non-public shows as “under review” (no tipping-off, §38 AML Act).{% else %}Full reasons with sources, including non-public ones — for the bank's compliance officer only.{% endif %}</p>
+{% if busy %}<div class="banner sim" role="status">A run is in progress — watch it on <a href="/story">Live deal</a> or in the feed below.</div>{% endif %}
 <div class="card scen">
-  <div class="flex"><strong>Demo scenarios</strong>
+  <div class="flex"><strong>Demo scenarios</strong> <a class="small" href="/story#console">or run your own deal</a>
     <form method="post" action="/timer/tick" class="right"><button class="ghost" type="submit">Run the timer now</button></form>
   </div>
   {% for key, s in scenarios.items() %}<form method="post" action="/demo/{{ key }}"><button type="submit">{{ s.title }}</button></form>{% endfor %}

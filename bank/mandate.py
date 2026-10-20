@@ -280,6 +280,10 @@ def _decide(mandate_id, deal, quote, screening, now) -> dict:
         return refuse(Code.AMOUNT_ABOVE_LIMIT, "task_budget",
                       f"{money.fmt(asset, amount)} is above the task budget {cents(task['budget']) / 100:.2f} €.",
                       eur_cents=eur, limit=cents(task["budget"]))
+    if p.get("task_budget_max") is not None and eur > cents(p["task_budget_max"]):  # the human's cap on any task
+        return refuse(Code.AMOUNT_ABOVE_LIMIT, "task_budget_max",
+                      f"{money.fmt(asset, amount)} is above the mandate's task budget cap "
+                      f"{cents(p['task_budget_max']) / 100:.2f} €.", eur_cents=eur, limit=cents(p["task_budget_max"]))
     if eur > cents(p["per_deal_max"]):
         return refuse(Code.AMOUNT_ABOVE_LIMIT, "per_deal_max",
                       f"{money.fmt(asset, amount)} is above the per-deal limit {cents(p['per_deal_max']) / 100:.2f} €.",
