@@ -249,6 +249,9 @@ def finish(deal_id: str, to_seller: int) -> dict:
         out["capture"] = capture(deal_id, to_seller, 1)
     if to_seller < int(pi["maxAmount"]):
         out["void"] = void(deal_id)
+    if out["capture"]:  # tCZK seller paid on its bank account (bank/ramp.py); never undoes the capture
+        from bank import ramp
+        ramp.after_capture(deal_id, to_seller, 1)
     return out
 
 

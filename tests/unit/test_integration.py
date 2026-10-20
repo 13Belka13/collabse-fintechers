@@ -279,8 +279,8 @@ def test_a_failed_capture_is_retried_and_never_turns_into_a_void(bank):
     assert disputes.get(deal_id)["pending"]["kind"] == "capture"
     assert any(e["event"] == "settlement.tx_failed" for e in journal.entries(deal_id))
     bank.locked.pop("fail_capture")
-    deadlines.tick()
-    assert bank.sender.money() == [("authorize", 12_500), ("capture", 11_250)]
+    deadlines.tick()  # the capture goes through; Beta takes tCZK on its bank account, so the payout burn follows
+    assert bank.sender.money() == [("authorize", 12_500), ("capture", 11_250), ("burn", None)]
 
 
 def test_expired_payment_info_is_rebuilt_with_new_keys(bank, monkeypatch):

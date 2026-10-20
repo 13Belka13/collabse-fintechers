@@ -7,7 +7,7 @@ import time
 import pytest
 from eth_account import Account
 
-from bank import chain, config, db, escrow, journal, ramp, tczk, ui
+from bank import chain, config, db, disputes, escrow, journal, ramp, tczk, ui
 from scripts import demo_sim
 from scripts.seed import seed
 from tests.unit import dealkit as k
@@ -181,12 +181,56 @@ def burns(w):
     return [key for fn, _, key, _ in w.sender.sent if fn == "burn"]
 
 
+def test_payout_after_each_capture_of_a_tczk_deal_n1_then_n2(world, monkeypatch):
+    """Rule B 10 %: 90 % at acceptance is paid out at once (n=1), the held 10 % separately at window end (n=2)."""
+    deal_id = k.make_deal(world, deal_id="d-tczk", asset="tCZK", amount=12_500)
+    k.deliver(world, deal_id)
+    assert k.captures(world) == [11_250]
+    assert burns(world) == ["tczk:burn:payout:d-tczk:1"]
+    assert balance("beta") == 11_250 and ramp.op("payout:d-tczk:1")["state"] == "done"
+    disputes.advance(deal_id, now=time.time() + 60)  # window over: the rest, then the final void
+    assert k.captures(world) == [11_250, 1_250]
+    assert burns(world) == ["tczk:burn:payout:d-tczk:1", "tczk:burn:payout:d-tczk:2"]
+    assert balance("beta") == 12_500 and len(events("payout_to_account")) == 2
+    disputes.advance(deal_id, now=time.time() + 120)  # nothing new: no second burn, no second credit
+    assert len(burns(world)) == 2 and balance("beta") == 12_500
+    view = ramp.deal_view(disputes.deals.get(deal_id))
+    assert view["paid_out"] == 12_500 and view["account"] == "CZ…9718" and not view["open"]
+
+
 def test_payout_is_net_of_the_bank_fee(world):
     deal_id = k.make_deal(world, rule="A", deal_id="d-fee", asset="tCZK", amount=12_500)
     pi = escrow.stored_payment_info(deal_id)
     db.run("UPDATE deals SET payment_info_json=? WHERE deal_id=?", (db.dumps({**pi, "maxFeeBps": 80}), deal_id))
     ramp.after_capture(deal_id, 12_500, 1)
     assert ramp.op("payout:d-fee:1")["amount"] == 12_500 - 100  # 0,8 % stays with the bank
+
+
+def test_no_payout_for_eurc_or_a_wallet_seller(world):
+    deal_id = k.make_deal(world, deal_id="d-eurc")
+    k.deliver(world, deal_id)
+    assert k.captures(world) and not burns(world)
+    assert db.one("SELECT COUNT(*) n FROM ramp_ops WHERE deal_id='d-eurc'")["n"] == 0
+    db.run("UPDATE accounts SET payout_mode='wallet' WHERE company_id='beta'")
+    deal_id = k.make_deal(world, deal_id="d-wallet", asset="tCZK", amount=12_500, task_hash="t-2")
+    k.deliver(world, deal_id)
+    assert not burns(world) and balance("beta") == 0
+
+
+def test_failed_payout_keeps_the_capture_and_can_be_retried(world, monkeypatch):
+    real = tczk.burn
+
+    def broken(*a, **kw):
+        raise RuntimeError("insufficient funds for gas")  # rejected: nothing was broadcast
+    monkeypatch.setattr(tczk, "burn", broken)
+    deal_id = k.make_deal(world, deal_id="d-fail", asset="tCZK", amount=12_500)
+    k.deliver(world, deal_id)
+    assert k.captures(world) == [11_250] and disputes.get(deal_id)["captured"] == 11_250  # the capture stands
+    assert ramp.op("payout:d-fail:1")["state"] == "failed" and balance("beta") == 0
+    assert events("payout_failed")[0]["payload"]["account"] == "CZ…9718"
+    monkeypatch.setattr(tczk, "burn", real)
+    assert ramp.retry("payout:d-fail:1", "human:bank-officer")["state"] == "done"
+    assert balance("beta") == 11_250 and burns(world) == ["tczk:burn:payout:d-fail:1"]
 
 
 # ---- DEMO_SIM: simulated mint/burn, never an explorer link ----
