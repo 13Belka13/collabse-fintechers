@@ -184,7 +184,11 @@ with crowns on the seller's account and the economics panel, approval by QR from
 | ![Deal page with escrow state from the chain](docs/assets/screenshots/05-deal.png) | ![Delivery check on the deal page](docs/assets/screenshots/06-dispute.png) |
 | *`/deals/{id}` — the offer, the Apify company check, escrow state read from the chain* | *Delivery check — 17 items accepted, 3 rejected with the predicate each one broke* |
 | ![Statement reconciled with the chain](docs/assets/screenshots/07-statement.png) | ![Explorer: the direct tCZK transfer reverted](docs/assets/screenshots/08-explorer-revert.png) |
-| *`/statement` — reconciled with the chain, bank books = chain 0,00 Kč* | *Base Sepolia explorer — a transfer around the bank reverts with `TransferViaBankOnly`* |
+| *`/statement` — totals per asset, unit economics, Beta's crowns on its bank account; one click reconciles with the chain* | *Base Sepolia explorer — a transfer around the bank reverts with `TransferViaBankOnly`* |
+| ![QR to approve an agent's payment on /story](docs/assets/screenshots/09-jury-qr.png) | ![The approval card on a phone](docs/assets/screenshots/09-jury-phone.png) |
+| *Jury approves — above the 6 € threshold the bank asks a person: a one-time QR on `/story`* | *The phone card in plain words: Approve locks the money in escrow, Decline moves nothing* |
+| ![No tipping-off: client and compliance texts side by side](docs/assets/screenshots/10-no-tipping-off.png) | |
+| *No tipping-off — the client sees "under review", compliance sees the reason and its source* | |
 
 ## How it works
 
