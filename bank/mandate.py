@@ -479,13 +479,13 @@ def related_sellers(seller_id: str) -> list[str]:
 def tier_sum(deal: dict, eur_cents: int, now: float) -> dict:
     """§2: the largest of (this deal; deals with this seller in 24 h incl. this one; deals of this task with this
     seller and its related sellers incl. this one). Sessions would count here too (not built: none exist).
-    Deals already locked or past their decision count; refused ones do not."""
+    Deals already locked or past their decision count; refused ones do not. 24 h is demo-scaled (config.span)."""
     sellers = related_sellers(deal["seller_id"])
     marks = ",".join("?" * len(sellers))
     live = "('authorized','delivered','dispute_c','settled','awaiting_human')"
     day = db.rows(f"SELECT asset, amount FROM deals WHERE buyer_id=? AND seller_id=? AND state IN {live}"
                   " AND deal_id<>? AND created_at>=?", (deal["buyer_id"], deal["seller_id"], deal["deal_id"],
-                                                        now - 86400))
+                                                        now - config.span(86400)))
     task_hash = (_field(deal, "criteria") or {}).get("hash")
     task = db.rows(f"SELECT asset, amount FROM deals WHERE buyer_id=? AND seller_id IN ({marks}) AND state IN {live}"
                    " AND deal_id<>? AND json_extract(criteria_json,'$.hash')=?",
@@ -518,7 +518,7 @@ def _unprotected_today(mandate_id: str, seller_id: str | None, now: float, excep
     sql = ("SELECT r.amount FROM reservations r JOIN deals d ON d.deal_id=r.deal_id WHERE r.mandate_id=?"
            " AND r.state IN ('reserved','committed') AND r.created_at>=? AND r.deal_id<>?"
            " AND json_extract(d.terms_json,'$.tier')='T0'")
-    args = [mandate_id, now - 86400, except_deal]
+    args = [mandate_id, now - config.span(86400), except_deal]
     if seller_id:
         sql, args = sql + " AND d.seller_id=?", args + [seller_id]
     return sum(r["amount"] for r in db.rows(sql, tuple(args)))

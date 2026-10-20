@@ -28,6 +28,12 @@ def seller_token(seller_id: str) -> str:
     return hmac.new(SELLER_TOKEN.encode(), seller_id.encode(), hashlib.sha256).hexdigest()
 
 
+def span(seconds: float) -> float:
+    """A production window or look-back period at the demo scale (÷ DEMO_TIME_DIVISOR; 1 = production): claim
+    windows, business days, and every "in 24 h / 30 days" a rule counts back over."""
+    return seconds / TIME_DIVISOR
+
+
 def reload():
     """Re-read the environment into module globals (used by tests)."""
     g = globals()
@@ -47,6 +53,9 @@ def reload():
     g["BEDROCK_CLIENT"] = _env("BEDROCK_CLIENT", "invoke")  # invoke = AnthropicBedrock (InvokeModel), or mantle
     g["MODEL_MAIN"] = _env("MODEL_MAIN", "eu.anthropic.claude-opus-4-5-20251101-v1:0")
     g["MODEL_FAST"] = _env("MODEL_FAST", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
+    # the seller agent only phrases a price code has fixed: SELLER_MODEL=fast moves it to MODEL_FAST (anything else
+    # = main, the default while Haiku 4.5 on Bedrock is unreliable)
+    g["SELLER_MODEL"] = "fast" if _env("SELLER_MODEL", "main").lower() == "fast" else "main"
     # Bedrock timeouts (bank/llm.py). Each HTTP attempt: connect LLM_CONNECT_S, read per role; retries with backoff
     # on throttling / 5xx / timeouts; the whole call (all attempts, json_call's validation retry included) has a
     # wall-clock budget per stage. They nest inside the HTTP timeouts below: seller model 20 s < bank -> seller
@@ -57,6 +66,9 @@ def reload():
     g["LLM_BACKOFF_S"] = float(_env("LLM_BACKOFF_S", "0.5"))  # 0.5, 1, 2 s ... plus jitter, within the budget
     g["LLM_BUDGET_S"] = {"seller": float(_env("LLM_BUDGET_S_SELLER", "20")), "buyer": 40.0, "criteria": 20.0,
                          "explain": 10.0, "*": float(_env("LLM_BUDGET_S", "60"))}
+    # daily model spend cap (bank/llm.py): above it every call is LLMUnavailable('budget') and the code fallbacks
+    # apply; summed from the timings table since 00:00 UTC. 0 = no cap
+    g["LLM_DAILY_USD"] = float(_env("LLM_DAILY_USD", "20"))
     g["LLM_FAULT_SLOW_S"] = float(_env("LLM_FAULT_SLOW_S", "8"))  # FAULTS=llm_slow: the model answers this late
     g["NEGOTIATE_TIMEOUT_S"] = float(_env("NEGOTIATE_TIMEOUT_S", "30"))  # bank -> seller /negotiate (model inside)
     g["BANK_HTTP_TIMEOUT_S"] = float(_env("BANK_HTTP_TIMEOUT_S", "45"))  # agent -> bank API (negotiate inside)
@@ -130,9 +142,8 @@ def reload():
     g["TARIFF_BPS"] = {("T0", "A"): 0, ("T1", "A"): 80, ("T1", "B"): 120,
                        ("T2", "A"): 150, ("T2", "B"): 150, ("T2", "C"): 150}
     # claim windows per tier in seconds (production: T1 30 min – 24 h, T2 72 h – 14 days), scaled
-    g["WINDOW_S"] = {"T1": (1800 / g["TIME_DIVISOR"], 86400 / g["TIME_DIVISOR"]),
-                     "T2": (72 * 3600 / g["TIME_DIVISOR"], 14 * 86400 / g["TIME_DIVISOR"])}
-    g["BUSINESS_DAY_S"] = 86400 / g["TIME_DIVISOR"]  # demo: a business day is this many seconds, no calendar
+    g["WINDOW_S"] = {"T1": (span(1800), span(86400)), "T2": (span(72 * 3600), span(14 * 86400))}
+    g["BUSINESS_DAY_S"] = span(86400)  # demo: a business day is this many seconds, no calendar
     # escrow terms §8.3 (not scaled: a long lock is safe, the bank closes the deal itself)
     g["ESCROW_EXTRA_DAYS"] = {"T0": 30, "T1": 30, "T2": 120}
     g["REFUND_EXTRA_DAYS"] = 30

@@ -80,7 +80,7 @@ def custom_params(form: dict) -> dict:
         raise ValueError("The task budget must be a number of euros.") from None
     if not 1 <= budget <= 100_000:
         raise ValueError("The task budget must be between 0,01 € and 1000 €.")
-    asset, seller, mode = form.get("asset") or "EURC", form.get("seller") or "", form.get("mode") or "honest"
+    asset, seller, mode = form.get("asset") or "tCZK", form.get("seller") or "", form.get("mode") or "honest"
     if asset not in ("EURC", "tCZK"):
         raise ValueError("Pay in EURC or tCZK.")
     if seller and seller not in SELLERS:
@@ -99,6 +99,68 @@ def custom_params(form: dict) -> dict:
         raise ValueError("Unknown opening price.")
     return {"task": task, "budget": budget, "asset": asset, "seller": seller or None, "mode": mode, "say": say or None,
             "opening": opening, "data": data, "rule": rule or None}
+
+
+# ---- the buyer's wallet: EURC is not renewable on the stand (paid EURC goes to sellers' wallets whose keys we do
+# not hold), tCZK is minted by the bank. The console shows both balances and does not start a run the wallet cannot
+# pay: a failing on-chain authorize says less than "top it up". Read in the background (30 s cache), like gas.
+BALANCE_CACHE_S, BALANCE_MARGIN = 30, 1.1
+_bal: dict = {"values": {}, "at": None, "tried": 0.0, "busy": False}
+_bal_lock = threading.Lock()
+
+
+def _read_balances(wallet: str):
+    from bank import chain
+    try:
+        values = {a: chain.balance(a, wallet) for a in ("EURC", "tCZK") if config.ASSETS[a]["address"]}
+        with _bal_lock:
+            _bal.update(values=values, at=time.time())
+    except Exception:  # noqa: BLE001 — RPC down: the last values stay, the run is not blocked on a guess
+        pass
+    finally:
+        with _bal_lock:
+            _bal["busy"] = False
+
+
+def buyer_balances() -> dict:
+    """{"values": {asset: atomic}, "at"} as last read; a read older than 30 s starts one background read and the
+    caller never waits. Nothing on the simulated chain or without the buyer's key (hermetic tests)."""
+    from bank import core
+    from scripts import demo_sim
+    if demo_sim.ACTIVE or not config.ALFA_PK:
+        return {"values": {}, "at": None}
+    now = time.time()
+    with _bal_lock:
+        stale = _bal["at"] is None or now - _bal["at"] >= BALANCE_CACHE_S
+        if stale and not _bal["busy"] and now - _bal["tried"] >= BALANCE_CACHE_S / 3:
+            wallet = (core.company("alfa") or {}).get("wallet_address")
+            if wallet:
+                _bal.update(busy=True, tried=now)
+                threading.Thread(target=_read_balances, args=(wallet,), daemon=True).start()
+        return {"values": dict(_bal["values"]), "at": _bal["at"]}
+
+
+def forget_balances():
+    """After a top-up or a ramp operation: the next page reads the balances again."""
+    with _bal_lock:
+        _bal.update(at=None, tried=0.0)
+
+
+def balance_problem(asset: str, budget_eur_cents: int) -> str | None:
+    """The message to show instead of starting a run, or None. The deal price is at most the task budget and the
+    mandate's per-deal limit (the bank refuses above either); the wallet needs that plus a 10 % margin. Unknown
+    balance (not read yet, RPC down) -> None: the bank's own checks still apply."""
+    from bank import mandate, money
+    have = buyer_balances()["values"].get(asset)
+    if have is None:
+        return None
+    m = mandate.current(mandate.DEMO_MANDATE_ID)
+    per_deal = int((m["policy"].get("per_deal_max") or {}).get("value") or budget_eur_cents) if m else budget_eur_cents
+    need = money.from_eur_cents(asset, int(min(budget_eur_cents, per_deal) * BALANCE_MARGIN))
+    if have >= need:
+        return None
+    other = "EURC" if asset == "tCZK" else "tCZK"
+    return (f"The buyer's wallet has {have / 10 ** money.decimals(asset):.2f} {asset}; top it up or pay in {other}.")
 
 
 def _transport():

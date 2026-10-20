@@ -253,3 +253,34 @@ def test_explanation_falls_back_to_the_template(monkeypatch):
     faults(monkeypatch, "llm_error@explain")
     out = explain.render(d, "client", ai=True)
     assert out["ai_generated"] is False and out["text"] == explain.template(d, "client")
+
+
+# ---- the daily spend cap -----------------------------------------------------------------------------------------
+
+def spent(usd, ts=None):
+    db.run("INSERT INTO timings (ts, stage, ms, ok, model, cost_usd) VALUES (?, 'buyer', 1, 1, 'm', ?)",
+           (time.time() if ts is None else ts, usd))
+
+
+def test_daily_budget_makes_every_call_unavailable_and_the_fallbacks_apply(seeded, monkeypatch):
+    monkeypatch.setenv("LLM_DAILY_USD", "20")
+    config.reload()
+    spent(12.0, ts=time.time() - 86400)  # yesterday's spend does not count
+    spent(19.0)
+    assert ask() and llm.timing.llm_spent_today() == pytest.approx(19.0)
+    spent(1.5)
+    with pytest.raises(llm.LLMUnavailable) as e:
+        ask()
+    assert e.value.kind == "budget" and attempts("t")[-1] == (0, "budget")
+    out = seller_agent.negotiate_turn("Can you do 5 €?", list_cents=600, min_cents=500, turn=2, last_cents=600,
+                                      opening_cents=600)
+    assert out == {"reply_text": "We can deliver for 5.00 €.", "price_eur_cents": 500, "ai_generated": False}
+    r = buyer.Buyer(TASK, transport=offline.OfflineBank.setup().call, seller_hint="s-beta").run()
+    assert (r["outcome"], r["payments"]) == ("agent_unavailable", []), r["outcome"]
+    assert db.one("SELECT COUNT(*) n FROM reservations")["n"] == 0
+    from bank import ui
+    page = ui.templates.get_template("_feed.html").render(panel=ui.panel(), rows=[], alarms=[])
+    assert "model budget used today: $20.50 of $20" in page
+    monkeypatch.setenv("LLM_DAILY_USD", "0")  # 0 = no cap
+    config.reload()
+    assert ask()

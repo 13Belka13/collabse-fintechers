@@ -277,3 +277,87 @@ def test_task_budget_cap_refuses_in_decide(client):
     assert d["code"] == Code.AMOUNT_ABOVE_LIMIT and d["reasons"][0]["code"] == "task_budget_max"
     assert decide(m, screening(), price="2.50", seller="s-gama")["status"] == "ok"
     assert config.MOCK
+
+
+def test_five_scenarios_twice_in_a_row_keep_their_outcomes(client, sim, monkeypatch):
+    """The jury reruns the buttons. Before, the "24 h with the seller" look-back was real time, so every deal with
+    Beta added up past the demo T1 max for a day. Now it is 16 min at ÷90; the first round's tCZK deal (T2: the
+    honest deal awaiting its VAT acknowledgement counts) holds a B slot for its 48-min window, and a new buyer has
+    two, so the second round runs once that window is over and repeats the first round exactly."""
+    from bank import deals
+    real, shift, runs = time.time, [0.0], []
+    monkeypatch.setattr(time, "time", lambda: real() + shift[0])
+    for n in (1, 2):
+        shift[0] = (n - 1) * (config.WINDOW_S["T2"][0] + 60)
+        for name in ds.SCENARIOS:
+            out = ds.run_safe(name)
+            deal = deals.get(out["deals"].get(ds.SCENARIOS[name]["seller"])) if out and out["deals"] else None
+            runs.append((name, out and out["outcome"], deal and (deal["terms"] or {}).get("rule")))
+    assert runs[:5] == runs[5:], runs
+    assert runs[4] == ("tczk", "ok", "B") and runs[1] == ("fake_data", "ok", "B"), runs
+
+
+# ---- the buyer's wallet: tCZK by default, balances next to the form, no run the wallet cannot pay ----
+
+def wallet(monkeypatch, **values):
+    monkeypatch.setattr(ds, "buyer_balances", lambda: {"values": values, "at": time.time() - 3})
+
+
+def test_console_defaults_to_tczk_and_shows_the_buyer_wallet(client, monkeypatch):
+    assert ds.custom_params({k: v for k, v in FORM.items() if k != "asset"})["asset"] == "tCZK"
+    wallet(monkeypatch, EURC=17_900_000, tCZK=250_000)
+    page = client.get("/story").text
+    assert 'value="tCZK" checked' in page and 'value="EURC" checked' not in page
+    assert "Buyer wallet: 17.90 EURC · 2500.00 tCZK · read 3 s ago" in page
+
+
+def test_balance_problem_needs_the_price_plus_a_margin(client, monkeypatch):
+    wallet(monkeypatch, EURC=5_400_000, tCZK=13_750)
+    assert ds.balance_problem("EURC", 500) == "The buyer's wallet has 5.40 EURC; top it up or pay in tCZK."
+    assert ds.balance_problem("tCZK", 500) is None            # 137,50 Kč = 5 € + 10 %
+    assert ds.balance_problem("EURC", 400) is None
+    wallet(monkeypatch, EURC=11_000_000)
+    assert ds.balance_problem("EURC", 100_000) is None       # 1000 € budget: the 10 € per-deal limit caps it
+    wallet(monkeypatch)
+    assert ds.balance_problem("EURC", 500) is None           # not read yet: the bank's own checks apply
+
+
+def test_no_run_starts_when_the_wallet_cannot_pay(client, monkeypatch):
+    monkeypatch.setattr(ds, "run_safe", lambda *a: pytest.fail("must not start"))
+    wallet(monkeypatch, EURC=3_200_000, tCZK=1_000_000)
+    r = client.post("/demo/custom", data={**FORM, "asset": "EURC"})
+    assert r.status_code == 200 and "The buyer&#39;s wallet has 3.20 EURC; top it up or pay in tCZK." in r.text
+    r = client.post("/demo/honest?next=/bank", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/story?low=honest"
+    assert "The buyer&#39;s wallet has 3.20 EURC; top it up or pay in tCZK." in client.get(r.headers["location"]).text
+    started = []
+    monkeypatch.setattr(ds, "run_safe", lambda *a: started.append(a))
+    assert client.post("/demo/tczk?next=/story", follow_redirects=False).headers["location"] == "/story"
+    assert client.post("/demo/custom", data={**FORM, "asset": "tCZK"}, follow_redirects=False).status_code == 303
+    for _ in range(50):
+        if len(started) == 2:
+            break
+        time.sleep(0.01)
+    assert [a[0] for a in started] == ["tczk", "custom"]
+
+
+def test_balances_are_read_in_the_background_and_hidden_in_sim(client, monkeypatch):
+    from eth_account import Account
+
+    from bank import chain
+    from scripts import demo_sim
+    monkeypatch.setattr(ds, "_bal", {"values": {}, "at": None, "tried": 0.0, "busy": False})
+    monkeypatch.setenv("ALFA_PK", Account.create().key.hex())
+    monkeypatch.setenv("TCZK", demo_sim.SIM_TCZK)
+    config.reload()
+    gate = __import__("threading").Event()
+    monkeypatch.setattr(chain, "balance", lambda a, w: gate.wait(2) and {"EURC": 9_000_000, "tCZK": 50_000}[a])
+    assert ds.buyer_balances() == {"values": {}, "at": None}  # the page does not wait for the RPC
+    gate.set()
+    for _ in range(100):
+        if ds.buyer_balances()["values"]:
+            break
+        time.sleep(0.01)
+    assert ds.buyer_balances()["values"] == {"EURC": 9_000_000, "tCZK": 50_000}
+    monkeypatch.setattr(demo_sim, "ACTIVE", True)
+    assert ds.buyer_balances() == {"values": {}, "at": None}

@@ -48,6 +48,24 @@ def test_tier_sum_counts_the_seller_in_24h_and_the_task_with_the_seller(m):
     assert ts == {"tier_sum": 200 + 400 + 300, "deal": 200, "seller_24h": 900, "task_with_seller": 600}
 
 
+def test_the_24h_look_back_is_demo_scaled(m):
+    """§14: at ÷90 "24 h with the seller" is 16 min, so two demo deals 17 min apart do not lift each other to T2."""
+    deal("d-old", amount=4_000_000, state="settled")
+    db.run("UPDATE deals SET created_at=? WHERE deal_id='d-old'", (NOW - 17 * 60,))
+    assert config.span(86400) == pytest.approx(960)
+    assert mandate.tier_sum(deal(task_hash="t2"), 200, NOW)["seller_24h"] == 200
+
+
+def test_production_scale_keeps_the_24h_look_back(m, monkeypatch):
+    monkeypatch.setenv("DEMO_TIME_DIVISOR", "1")
+    config.reload()
+    deal("d-old", amount=4_000_000, state="settled")
+    deal("d-older", amount=3_000_000, state="settled")
+    db.run("UPDATE deals SET created_at=? WHERE deal_id='d-old'", (NOW - 23 * 3600,))
+    db.run("UPDATE deals SET created_at=? WHERE deal_id='d-older'", (NOW - 25 * 3600,))
+    assert mandate.tier_sum(deal(task_hash="t2"), 200, NOW)["seller_24h"] == 200 + 400
+
+
 def test_split_lots_reach_t2_and_need_the_t2_window(m):
     deal("d-old", amount=4_000_000, state="settled")
     t = terms(window=20.0)

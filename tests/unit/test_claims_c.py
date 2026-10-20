@@ -484,3 +484,11 @@ def test_decider_page_takes_the_decider_from_its_token_not_the_form(w):
     assert "decided" in r.text and claims_c.get(deal_id)["state"] == "decided"
     assert [e["actor"] for e in journal.entries(deal_id) if e["event"] == "decider.decided"] == \
         [f"decider:{case['decider']}"]
+
+
+def test_lost_c_claims_count_back_over_the_demo_scaled_30_days():
+    for filed in (T0 - 10, T0 - config.span(30 * 86400) - 10):
+        db.run("INSERT INTO claims (deal_id, rule, buyer_id, seller_id, items_json, amount, state, filed_at,"
+               " data_json) VALUES ('d', 'C', 'alfa', 's-beta', '[]', 1, 'executed', ?, ?)",
+               (filed, db.dumps({"buyer_share_pct": 40})))
+    assert claims_c.lost_c("alfa", T0) == 1

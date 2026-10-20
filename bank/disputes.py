@@ -22,7 +22,7 @@ RULES = ("A", "B", "C")
 B_PCTS = (5, 10, 20)
 B_REASONS = ("closed", "wrong_data", "irrelevant", "other")
 B_PAIR_LIMIT, B_NEW_BUYER_LIMIT, B_NEW_BUYER_DEALS, B_RATIO = 2, 2, 20, 0.30
-DAYS_30 = 30 * 86400
+DAYS_30 = 30 * 86400  # B limits count back this long, demo-scaled (config.span)
 _locks: dict[str, threading.RLock] = defaultdict(threading.RLock)
 
 
@@ -320,7 +320,7 @@ def b_availability(buyer_id: str, seller_id: str, now: float | None = None, exce
     """Can this pair get the B guarantee (§7B)? Used claims + B/C deals with an open window (their slot reserved at
     pay) must stay under the limits; a buyer with > 30 % B-claimed deals (smoothed) has no B."""
     now = _now(now)
-    since = now - DAYS_30
+    since = now - config.span(DAYS_30)
     used = db.rows("SELECT seller_id FROM claims WHERE buyer_id=? AND rule='B' AND filed_at>=?", (buyer_id, since))
     open_slots = db.rows(
         "SELECT d.seller_id FROM deals d JOIN settlements s ON s.deal_id=d.deal_id WHERE d.buyer_id=?"
