@@ -540,7 +540,8 @@ def n02(ctx: Ctx):
     for d in oks:
         ctx.expect_lock(d, "EURC")
         ctx.wait_state(d, ("delivered", "settled"))  # rule A settles only at the deadline: the timer below
-    locks = chain.transfers(config.EURC, before["block"] + 1, frm=ctx.s.addr["alfa"])
+    locks = chain.read_retry(lambda: chain.transfers(config.EURC, before["block"] + 1, frm=ctx.s.addr["alfa"]),
+                             ok=lambda xs: len(xs) >= len(oks), tries=10, delay=1.5)
     price = ctx.deal_amount(deals[0])
     ctx.check("buyer debited exactly 3 × price on chain (no extra debit)",
               len(locks) == 3 and sum(t["value"] for t in locks) == 3 * price,
@@ -861,7 +862,8 @@ def f01(ctx: Ctx):
     ctx.require("settle succeeds after the injected failure", bool(s.success and s.transaction), s.error_reason)
     ctx.extra_txs.append({"kind": "x402_settle", "tx_hash": s.transaction, "status": "mined", "deal_id": None})
     ctx.expected_debits.append({"asset": "EURC", "tx_hash": s.transaction, "amount": amount})
-    transfers = chain.transfers(config.EURC, before["block"] + 1, frm=ctx.s.addr["alfa"], to=beta)
+    transfers = chain.read_retry(lambda: chain.transfers(config.EURC, before["block"] + 1, frm=ctx.s.addr["alfa"], to=beta),
+                                 ok=lambda xs: len(xs) >= 1, tries=10, delay=1.5)  # logs lag on the public RPC
     ctx.check("exactly one Transfer on chain", len(transfers) == 1 and transfers[0]["value"] == amount, transfers)
     n = db.one("SELECT COUNT(*) n FROM onchain_txs WHERE kind='x402_settle'")["n"]
     ctx.check("exactly one x402_settle row (idempotency key)", n == 1, n)
