@@ -18,7 +18,7 @@
 {% if run.steps %}
 <div class="card runlog">
   <div class="small muted">This run, step by step (seller text is untrusted data):</div>
-  <ol class="runsteps">{% for st in run.steps[-14:] %}<li class="{{ st.tone }}"><span class="muted small mono">{{ st.time }}</span>
+  <ol class="runsteps">{% for st in run.steps[-14:] %}<li class="{{ 'seller' if st.untrusted else st.tone }}"><span class="muted small mono">{{ st.time }}</span>
     {% if st.untrusted %}<span class="untrusted">written by the seller</span>{% endif %} {{ st.text }}{% if st.link %} · <a href="{{ st.link }}">go</a>{% endif %}</li>{% endfor %}</ol>
 </div>
 {% endif %}

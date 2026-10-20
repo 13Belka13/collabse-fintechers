@@ -90,7 +90,50 @@ ol.steps { list-style: none; margin: 0; padding: 0; }
 .msg.seller { background: #fff6ee; margin-left: 40px; border: 1px solid #f3dcc6; }
 .msg .who { font-weight: 800; margin-right: 6px; }
 .inject { margin: 8px 0 4px; padding: 8px 12px; border-left: 5px solid var(--bad); background: var(--bad-bg); color: var(--bad); font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
-@media (max-width: 640px) { .flow-arrow { display: none; } .msg.seller { margin-left: 0; } main { padding: 16px; } }
+/* page help: what the page shows, what to do next, the terms */
+.help { background: #e8ecf5; border-bottom: 1px solid var(--line); padding: 8px 28px; font-size: 15px; display: flex; gap: 10px 18px; flex-wrap: wrap; align-items: baseline; }
+.help .view { font-weight: 700; color: var(--brand); }
+.help details { margin-left: auto; } .help summary { cursor: pointer; font-weight: 700; color: var(--info); }
+.help dl { margin: 6px 0 2px; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; max-width: 900px; }
+.help dt { font-weight: 700; } .help dd { margin: 0; }
+.term { border-bottom: 1px dotted var(--muted); cursor: help; }
+/* /story: the demo console */
+.console { display: grid; gap: 14px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+.c-title { margin: 0 0 4px; } .c-lead { margin: 0 0 10px; }
+.cform { display: grid; gap: 10px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cform label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 15px; min-width: 0; }
+.cform label.inline { flex-direction: row; align-items: center; gap: 6px; font-weight: 600; }
+.cform .full { grid-column: 1 / -1; }
+.cform select, .cform input:not([type=radio]) { width: 100%; max-width: 100%; }
+.cform fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px 8px; margin: 0; display: flex; gap: 14px; flex-wrap: wrap; }
+.cform legend { font-weight: 700; font-size: 15px; }
+.hint { font-weight: 400; font-size: 13px; color: var(--muted); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: -4px; }
+.chip { font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--info-bg); color: var(--info); border: 1px solid #c9d5f5; }
+.scen-list form { margin: 4px 6px 4px 0; } .scen-notes { padding-left: 18px; margin: 8px 0; }
+.run-live { display: block; }
+.pulse { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); margin-right: 6px; animation: pulse 1s infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.run-out { border-left: 8px solid var(--info); } .run-out.ok { border-left-color: var(--ok); }
+.run-out.bad { border-left-color: var(--bad); background: #fffafa; } .run-out.warn { border-left-color: var(--warn); }
+.runlog { padding: 10px 16px; }
+.runsteps { margin: 6px 0 0; padding-left: 20px; font-size: 15px; max-height: 320px; overflow-y: auto; overflow-wrap: anywhere; }
+.runsteps li { margin: 3px 0; } .runsteps li.bad { color: var(--bad); font-weight: 700; } .runsteps li.ok::marker { color: var(--ok); }
+.runsteps li.seller { background: #fff6ee; border-radius: 6px; padding: 2px 6px; }
+@media (max-width: 900px) { .console { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .flow-arrow { display: none; } .msg.seller { margin-left: 0; } main { padding: 16px; }
+  header { padding: 10px 16px; gap: 8px 16px; } header nav a { margin-right: 10px; font-size: 16px; } header .net { margin-left: 0; font-size: 13px; }
+  .help { padding: 6px 16px; font-size: 13px; gap: 2px 10px; } .help details { margin-left: 0; } .help dl { grid-template-columns: 1fr; }
+  h1 { font-size: 24px; } body { font-size: 16px; } .story-head { font-size: 19px; } .flow-box .v, .stat .v { font-size: 26px; }
+  .cform { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+  .row { flex-direction: column; gap: 4px; } .toggle { margin-left: 0; }
+  .chat { grid-template-columns: minmax(0, 1fr); } .msg { max-width: 100%; }
+  .msg, .row .body, .step .body, .banner, .card { overflow-wrap: anywhere; } .flex > * { min-width: 0; }
+  .right { margin-left: 0; }
+}
 </style>
 </head>
 <body hx-boost="true">
@@ -105,6 +148,35 @@ ol.steps { list-style: none; margin: 0; padding: 0; }
   </nav>
   <span class="net">Base Sepolia testnet · prototype, no real funds</span>
 </header>
+{% set HELP = {
+  "story": ("The deal as people watching the demo see it: what the agents said, what the bank decided, where the money is now.",
+            "Run your own deal or a scripted scenario, then open the deal or the bank feed.", "Client view"),
+  "bank": ("Every decision and transfer of the bank, newest first.",
+           "Switch between the client view and the compliance view; open a deal for its full path.", None),
+  "mandate": ("The limits a person gave the buyer's agent, every version with its hash, and payments waiting for a person.",
+              "Confirm or acknowledge what waits; change the limits to see the next payment checked against them.", "Bank officer view"),
+  "deals": ("All deals with where their money is: paid, returned, still in escrow.", "Open a deal to follow it step by step.", "Bank officer view"),
+  "deal": ("One deal: the agreed conditions, what was delivered and why items failed, where the money went, what happens if nobody acts.",
+           "Accept items anyway or confirm acceptance as a person; check the escrow on chain.", "Client and compliance side by side"),
+  "statement": ("The mandate's statement: totals per asset and our ledger reconciled with the escrow on chain.",
+                "Press Reconcile to compare our ledger with the chain.", "Bank officer view"),
+  "decider": ("A dispute case for the outside decider, with pseudonyms instead of company names.",
+              "Decide each sampled item from the bank's snapshot of the source.", "Decider view"),
+} %}
+{% set help = HELP.get(active) %}
+<div class="help">
+  {% if help %}<span><strong>This page:</strong> {{ help[0] }}</span><span><strong>Next:</strong> {{ help[1] }}</span>
+  {% if help[2] %}<span class="view" title="Client view: only public reasons, non-public ones show as 'under review' (no tipping-off). Compliance view: every reason with its source.">{{ help[2] }}</span>{% endif %}{% endif %}
+  <details><summary>? Terms</summary><dl>
+    <dt>Mandate</dt><dd>The limits a person sets for the agent: per deal, per month, per task, when a person must confirm. Versioned and hashed.</dd>
+    <dt>Escrow</dt><dd>An on-chain safe (AuthCaptureEscrow): the buyer's money is locked; only the bank's code rules pay it out or return it.</dd>
+    <dt>tCZK</dt><dd>The bank's tokenized deposit in Czech crowns (125,00 Kč = 5 € at the demo rate); its account is published, so no §109 VAT risk.</dd>
+    <dt>EURC</dt><dd>A euro stablecoin. Paying a Czech VAT payer in EURC carries the §109 VAT liability risk a person acknowledges once.</dd>
+    <dt>Rule A / B / C</dt><dd>A: no quality claims. B: the buyer may take up to 10 % back without investigation during the claim window. C: B plus a dispute with an outside decider.</dd>
+    <dt>Predicates</dt><dd>The task's conditions as code (e.g. rating above 4.0, active in ARES). Every delivered item is checked against them; no model decides.</dd>
+    <dt>Client / compliance view</dt><dd>The client sees public reasons only; anti-money-laundering reasons stay with compliance (no tipping-off).</dd>
+  </dl></details>
+</div>
 <main>
 {% if sim() %}<div class="banner sim">SIMULATED CHAIN — demo without testnet keys: the transactions shown are not on Base Sepolia.</div>{% endif %}
 {% block main %}{% endblock %}
