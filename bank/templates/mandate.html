@@ -18,12 +18,32 @@
     <tr><th>Rule</th><th>Value</th></tr>
     <tr><td>Category</td><td>{{ current.policy.category }}</td></tr>
     <tr><td>Assets allowed</td><td>{{ current.policy.assets_allowed|join(', ') }}</td></tr>
+    <tr><td>Task budget cap</td><td>{% if current.policy.task_budget_max %}{{ current.policy.task_budget_max.value|int|eur }}{% else %}<span class="muted">none: each task's own budget</span>{% endif %}</td></tr>
     <tr><td>Counterparties</td><td>{{ current.policy.counterparties }}</td></tr>
     <tr><td>Valid until</td><td>{{ current.policy.valid_until }}</td></tr>
     <tr><td>Velocity</td><td>{% set v = current.policy.velocity %}{% if v %}at most {{ v.max_deals }} payments per {{ v.window_s }} s{% else %}no limit{% endif %}</td></tr>
     <tr><td>VAT risk acknowledged (§109 VAT Act)</td><td>{% for a in current.policy.vat_risk_acknowledged %}<div>IČO <code>{{ a.ico }}</code> · {{ a.asset }} · {{ a.at }} by <code>{{ a.by }}</code></div>{% else %}<span class="muted">none</span>{% endfor %}</td></tr>
   </table>
 </div>
+<details class="card" id="edit" {{ 'open' if error }}>
+  <summary><strong>Change the limits</strong> <span class="small muted">a person's action: creates version {{ current.version + 1 }} with a new policy_hash; the next payment is checked against it</span></summary>
+  {% set pol = current.policy %}
+  <form method="post" action="/mandate/edit" class="cform" style="margin-top:10px">
+    <input type="hidden" name="mandate_id" value="{{ mandate_id }}">
+    <label>Per-deal limit, € <input name="per_deal_max" inputmode="decimal" value="{{ '%.2f'|format(pol.per_deal_max.value|int / 100) }}"></label>
+    <label>A person confirms above, € <input name="confirm_above" inputmode="decimal" value="{{ '%.2f'|format(pol.confirm_above.value|int / 100) }}">
+      <span class="hint">must be below the per-deal limit</span></label>
+    <label>Monthly limit, € <input name="budget" inputmode="decimal" value="{{ '%.2f'|format(pol.budget.value|int / 100) }}"></label>
+    <label>Task budget cap, € <input name="task_budget_max" inputmode="decimal" value="{{ '%.2f'|format(pol.task_budget_max.value|int / 100) if pol.task_budget_max else '' }}">
+      <span class="hint">empty: each task's own budget only</span></label>
+    <fieldset class="full"><legend>Assets the agent may pay in</legend>
+      {% for a in ['EURC', 'tCZK'] %}<label class="inline"><input type="checkbox" name="asset_{{ a }}" value="1" {{ 'checked' if a in pol.assets_allowed }}> {{ a }}</label>{% endfor %}
+    </fieldset>
+    <label class="full">Who approves <input name="who" value="human:alfa" pattern="human:.+" required>
+      <span class="hint">a person (human:…); the agent has no tool to change its own mandate</span></label>
+    <div class="full"><button type="submit">Save as a new version</button></div>
+  </form>
+</details>
 <h2>Waiting for a human</h2>
 {% for p in pending %}
 <div class="row warn"><div class="body">

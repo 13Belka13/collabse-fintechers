@@ -438,6 +438,71 @@ def mandate_page(request: Request, mandate_id: str = DEMO_MANDATE, error: str = 
                 has_confirm=hasattr(deals, "confirm"))
 
 
+LIMIT_FIELDS = {"per_deal_max": "The per-deal limit", "confirm_above": "The confirmation threshold",
+                "budget": "The monthly limit", "task_budget_max": "The task budget cap"}
+
+
+def limits_from_form(form: dict, current: dict) -> dict:
+    """The mandate form (euros) -> policy changes in euro cents, with plain messages (ValueError) for the page.
+    mandate.amend validates again and stores a new immutable version with a new policy_hash."""
+    out = {}
+    for key, label in LIMIT_FIELDS.items():
+        raw = str(form.get(key) or "").strip().replace(",", ".").replace("€", "").strip()
+        if not raw:
+            if key == "task_budget_max":
+                out[key] = None  # no cap beyond each task's own budget
+                continue
+            raise ValueError(f"{label} is required.")
+        try:
+            c = round(float(raw) * 100)
+        except ValueError:
+            raise ValueError(f"{label} must be a number of euros.") from None
+        if not 1 <= c <= 10_000_000:
+            raise ValueError(f"{label} must be between 0,01 € and 100 000 €.")
+        out[key] = str(c)
+    per_deal, confirm, month = (int(out[k]) for k in ("per_deal_max", "confirm_above", "budget"))
+    if confirm >= per_deal:
+        raise ValueError("The confirmation threshold must be below the per-deal limit, otherwise a person is never asked.")
+    if per_deal > month:
+        raise ValueError("The per-deal limit must not exceed the monthly limit.")
+    if out["task_budget_max"] is not None and int(out["task_budget_max"]) > month:
+        raise ValueError("The task budget cap must not exceed the monthly limit.")
+    assets = [a for a in config.ASSETS if form.get(f"asset_{a}")]
+    if not assets:
+        raise ValueError("Allow at least one asset (EURC or tCZK).")
+    policy = current["policy"]
+    changes = {"per_deal_max": {**policy["per_deal_max"], "value": out["per_deal_max"]},
+               "confirm_above": {**policy["confirm_above"], "value": out["confirm_above"]},
+               "budget": {**policy["budget"], "value": out["budget"]}, "assets_allowed": assets,
+               "task_budget_max": out["task_budget_max"] and {"value": out["task_budget_max"], "currency": "EUR"}}
+    return {k: v for k, v in changes.items() if v != policy.get(k)}
+
+
+@router.post("/mandate/edit")
+async def mandate_edit(request: Request):
+    """A person sets new limits: a new mandate version (policy_hash) that the next pay() enforces. The agent has
+    no tool for this; like the other human actions here it needs a human: actor."""
+    from bank import mandate
+    form = dict(await request.form())
+    mandate_id, who = str(form.get("mandate_id") or DEMO_MANDATE), str(form.get("who") or "")
+    if not who.startswith("human:"):
+        return RedirectResponse(f"/mandate?mandate_id={mandate_id}&error=Only a person can change the mandate.",
+                                status_code=303)
+    current = mandate.current(mandate_id)
+    if current is None:
+        raise HTTPException(404, "unknown mandate")
+    try:
+        changes = limits_from_form(form, current)
+        if not changes:
+            return RedirectResponse(f"/mandate?mandate_id={mandate_id}&ok=Nothing changed: same limits.",
+                                    status_code=303)
+        version = mandate.amend(mandate_id, changes, who)
+    except ValueError as e:
+        return RedirectResponse(f"/mandate?mandate_id={mandate_id}&error={str(e)[:200]}", status_code=303)
+    return RedirectResponse(f"/mandate?mandate_id={mandate_id}&ok=Version {version} is in force: the next payment "
+                            "is checked against it.", status_code=303)
+
+
 @router.post("/mandate/deals/{deal_id}/{action}")
 def mandate_action(deal_id: str, action: str, who: str = Form(...)):
     """The human in the bank UI confirms a payment above the threshold or acknowledges the §109 VAT risk

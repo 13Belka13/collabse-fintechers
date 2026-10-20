@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from bank import codes, db, journal, mandate, ui
+from bank import codes, config, db, journal, mandate, ui
 from bank.codes import Code
 from scripts import demo_scenarios as ds
 
@@ -235,3 +235,47 @@ def test_full_custom_run_in_sim_completes_and_resets_sellers(client, sim):
     assert "The bank approved the payment" in texts and "locked in escrow" in texts and "Delivery checked" in texts
     page = client.get("/story").text
     assert "Your deal: the bank approved the payment" in page and f"/deals/{view['deal_id']}" in page
+
+
+def test_mandate_edit_makes_a_version_that_pay_enforces(client, sim):
+    m0 = mandate.current(mandate.DEMO_MANDATE_ID)
+    form = {"per_deal_max": "3", "confirm_above": "2,50", "budget": "30", "task_budget_max": "",
+            "asset_EURC": "1", "asset_tCZK": "1", "who": "human:alfa"}
+    r = client.post("/mandate/edit", data={**form, "who": "agent:buyer"})
+    assert "Only a person can change the mandate" in r.text
+    r = client.post("/mandate/edit", data={**form, "confirm_above": "3"})
+    assert "must be below the per-deal limit" in r.text
+    assert mandate.current(mandate.DEMO_MANDATE_ID)["version"] == m0["version"]
+    r = client.post("/mandate/edit", data=form)
+    m1 = mandate.current(mandate.DEMO_MANDATE_ID)
+    assert "Version 2 is in force" in r.text and m1["version"] == 2 and m1["policy_hash"] != m0["policy_hash"]
+    assert m1["approved_by"] == "human:alfa" and m1["policy"]["per_deal_max"]["value"] == "300"
+    assert "Nothing changed" in client.post("/mandate/edit", data=form).text
+    out = ds.run_safe("custom", ds.custom_params({**FORM, "seller": "s-gama"}))
+    assert out["outcome"] == Code.AMOUNT_ABOVE_LIMIT  # the agent's 5 € deal is above the new 3 € limit
+    dec = db.one("SELECT * FROM decisions WHERE kind='pay' ORDER BY id DESC LIMIT 1")
+    assert "per_deal_max" in dec["evidence_json"] and "3.00 €" in dec["evidence_json"]
+
+
+def test_limits_form_validation_messages(client):
+    cur = mandate.current(mandate.DEMO_MANDATE_ID)
+    ok = {"per_deal_max": "10", "confirm_above": "6", "budget": "30", "task_budget_max": "5", "asset_EURC": "1"}
+    ch = ui.limits_from_form(ok, cur)
+    assert ch == {"assets_allowed": ["EURC"], "task_budget_max": {"value": "500", "currency": "EUR"}}
+    for bad, msg in (({"per_deal_max": "ten"}, "number of euros"), ({"budget": ""}, "is required"),
+                     ({"per_deal_max": "40"}, "must not exceed the monthly limit"),
+                     ({"task_budget_max": "31"}, "task budget cap must not exceed"),
+                     ({"asset_EURC": ""}, "at least one asset"), ({"confirm_above": "-1"}, "between")):
+        with pytest.raises(ValueError, match=msg):
+            ui.limits_from_form({**ok, **bad}, cur)
+
+
+def test_task_budget_cap_refuses_in_decide(client):
+    from tests.unit.test_mandate import decide, screening
+    m = mandate.DEMO_MANDATE_ID
+    assert decide(m, screening(), price="4.00", seller="s-gama")["status"] == "ok"
+    mandate.amend(m, {"task_budget_max": {"value": "300", "currency": "EUR"}}, "human:alfa")
+    d = decide(m, screening(), price="4.00", seller="s-gama")
+    assert d["code"] == Code.AMOUNT_ABOVE_LIMIT and d["reasons"][0]["code"] == "task_budget_max"
+    assert decide(m, screening(), price="2.50", seller="s-gama")["status"] == "ok"
+    assert config.MOCK
