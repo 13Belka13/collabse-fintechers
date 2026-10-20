@@ -358,6 +358,23 @@ def select_rereview(claim_id: int, now: float | None = None) -> list[str]:
     return chosen
 
 
+def replace_late_rereview(claim_id: int, now: float | None = None) -> list[str] | None:
+    """Re-review deciders who missed the 48 h are replaced by the reserve provider (§7C.8), with a fresh 48 h; the
+    money stays put. Returns the new list of deciders, or None when nobody is late."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    rr = case.get("rereview") or {}
+    if not rr.get("deciders") or rr["decided_at"] or now <= deadline({"sample_round": rr["selection_round"]}):
+        return None
+    on_time = [d for d in rr["deciders"] if d in rr["verdicts"]]
+    late = len(rr["deciders"]) - len(on_time)
+    rr.update(deciders=on_time + [RESERVE_PROVIDER["id"]] * (RESERVE_PROVIDER["id"] not in on_time),
+              selection_round=first_round_after(now))
+    rr["verdicts"] = {d: v for d, v in rr["verdicts"].items() if d in rr["deciders"]}
+    _save(case)
+    journal.append("bank", "decider.rereview_late", {"claim_id": claim_id, "late": late}, deal_id=case["deal_id"])
+    return rr["deciders"]
+
+
 def decide_rereview(claim_id: int, decider_id: str, verdicts: dict, now: float | None = None) -> dict | None:
     """One new decider's conclusion on the same sampled items. When all are in: the majority of three per item
     (the reserve provider alone decides when the pool was too small). Returns the final result or None."""

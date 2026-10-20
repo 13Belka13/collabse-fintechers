@@ -382,6 +382,7 @@ def tick(deal_id: str, now: float | None = None) -> None:
     elif c["state"] == "rereview":
         try:
             deciders.select_rereview(c["id"], now)
+            deciders.replace_late_rereview(c["id"], now)
         except deciders.DeciderError as e:
             if e.status != 425:
                 raise

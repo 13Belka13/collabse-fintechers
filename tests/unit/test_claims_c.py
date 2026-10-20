@@ -414,3 +414,23 @@ def test_deal_page_shows_a_queued_claim_and_a_rereview(w):
     claims_c.decide(deal_id, case["decider"], {str(i): "seller" for i in case["sample"]}, now=after + 1)
     claims_c.request_rereview(deal_id, "buyer", "agent:buyer", now=after + 2)
     assert "Re-review paid by the buyer" in client.get(f"/deals/{deal_id}").text
+
+
+def test_a_late_rereview_decider_is_replaced_by_the_reserve_provider(w, monkeypatch):
+    monkeypatch.setattr(deciders, "pool", _pool(5))
+    deal_id, _ = c_deal(w)
+    c, case, now = _decided(w, deal_id)
+    sig = escrow.buyer_signature(claims_c.rereview_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    c = claims_c.request_rereview(deal_id, "seller", "seller", signature=sig.hex(), now=now)
+    rr = deciders.get(c["id"])["rereview"]
+    t = deciders.round_time(rr["selection_round"]) + 1
+    deadlines.tick(now=t)
+    first, late = deciders.get(c["id"])["rereview"]["deciders"]
+    claims_c.decide(deal_id, first, {str(i): "seller" for i in case["sample"]}, now=t + 1)
+    t2 = deciders.deadline({"sample_round": rr["selection_round"]}) + 1
+    deadlines.tick(now=t2)
+    assert deciders.get(c["id"])["rereview"]["deciders"] == [first, "reserve"]
+    with pytest.raises(deciders.DeciderError):
+        claims_c.decide(deal_id, late, {str(i): "seller" for i in case["sample"]}, now=t2 + 1)
+    c = claims_c.decide(deal_id, "reserve", {str(i): "seller" for i in case["sample"]}, now=t2 + 2)
+    assert c["state"] == "decided" and c["data"]["buyer_share_pct"] == 0  # majority of three: first + two "seller"
