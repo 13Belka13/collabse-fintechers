@@ -472,6 +472,14 @@ def test_decider_page_takes_the_decider_from_its_token_not_the_form(w):
     assert "Unknown decider token" in r.text and claims_c.get(deal_id)["state"] == "decider"
     r = client.post(f"/deciders/{deal_id}", data={**verdicts, "token": tokens[other], "decider": case["decider"]})
     assert "only the assigned decider" in r.text and claims_c.get(deal_id)["state"] == "decider"
+    from bank import api
+    api_app = FastAPI()
+    api_app.include_router(api.router)
+    body = {"decider": case["decider"], "verdicts": {str(i): "seller" for i in case["sample"]}}
+    for token, status in ((config.DECIDER_TOKEN, 401), (tokens[other], 403)):  # the shared secret names nobody
+        r = TestClient(api_app).post(f"/api/deals/{deal_id}/claims/c/decision", json=body,
+                                     headers={"x-decider-token": token})
+        assert r.status_code == status and claims_c.get(deal_id)["state"] == "decider"
     r = client.post(f"/deciders/{deal_id}", data={**verdicts, "token": tokens[case["decider"]], "decider": other})
     assert "decided" in r.text and claims_c.get(deal_id)["state"] == "decided"
     assert [e["actor"] for e in journal.entries(deal_id) if e["event"] == "decider.decided"] == \
