@@ -257,6 +257,8 @@ def accept_items(deal_id: str, body: ItemsIn):
     s = disputes.get(deal_id)
     if s is None or s["voided"] or s["closed_at"]:
         raise HTTPException(409, "the deal is settled")
+    if s["split_n"] is not None:  # P is fixed once D is split off for a C claim (§8.2)
+        raise HTTPException(409, "the window is over and the disputed sum is split off")
     try:
         n = receipts.waive(deal_id, [tuple(k) for k in body.items], f"human:{body.by}", int(deal["terms"]["count"]))
     except receipts.Refused as e:

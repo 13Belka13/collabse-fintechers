@@ -24,12 +24,15 @@
 #     beneficial owner, EvSM). Negotiation and fees run from filing; only the decider stage waits ("queued", FIFO
 #     by the time both fees came in). A queued claim is an open C claim: D stays held.
 # Money: D stays in escrow (split off at window end, §8.2); the schedule in bank/disputes.py reads held().
+import functools
 import time
 
 from bank import config, db, deals, deciders, escrow, evsm, journal, money, snapshots, verifier
 
 NEGOTIATION_BD, FEE_BD, REREVIEW_BD, EXECUTE_BD = 2, 3, 5, 10
 PAIR_LIMIT, SELLER_MIN, SELLER_PCT = 2, 3, 5
+CLEAR_TRIES = 60  # failed timer sends of one clearing transfer (about 5 min at 5 s) before it waits for a person
+FEE_PI_MARGIN_S = 60  # a fee PaymentInfo this close to its preApprovalExpiry is rebuilt before anyone signs it
 OPEN = ("negotiation", "buyer_fee", "seller_fee", "queued", "decider", "decided", "rereview")
 
 
@@ -68,12 +71,25 @@ def get(deal_id: str) -> dict | None:
     return next(iter(disputes.claims(deal_id, "C")), None)
 
 
+def _deal_locked(fn):
+    """The claim's API actions and the timer run under the deal's lock (disputes._locks) and read the claim inside
+    it: a fee in flight and a deadline never act on the same claim at once."""
+    @functools.wraps(fn)
+    def run(deal_id, *a, **kw):
+        from bank import disputes
+        with disputes._locks[deal_id]:
+            return fn(deal_id, *a, **kw)
+    return run
+
+
 def _set(claim: dict, state: str, actor: str, event: str, **data):
+    """Compare-and-set: the claim moves only from the state it was read in (never over a newer state)."""
     merged = {**claim["data"], **data}
     with db.immediate():
-        db.run("UPDATE claims SET state=?, data_json=?, closed_at=? WHERE id=?",
-               (state, db.dumps(merged), time.time() if state in ("executed", "refund", "withdrawn") else None,
-                claim["id"]))
+        if db.run("UPDATE claims SET state=?, data_json=?, closed_at=? WHERE id=? AND state=?",
+                  (state, db.dumps(merged), time.time() if state in ("executed", "refund", "withdrawn") else None,
+                   claim["id"], claim["state"])).rowcount != 1:
+            raise ClaimError(409, f"the claim is no longer {claim['state']}")
         journal.append(actor, f"claim_c.{event}", {"state": state, **data}, deal_id=claim["deal_id"])
 
 
@@ -158,6 +174,7 @@ def _fee_budget(deal: dict, f: int):
 
 # ---- 3–4. negotiation and fees ----
 
+@_deal_locked
 def agree(deal_id: str, by: str, now: float | None = None) -> dict:
     """The seller agrees in negotiation: D back to the buyer, no fees (by the §8.2 schedule)."""
     c = _claim(deal_id)
@@ -167,20 +184,33 @@ def agree(deal_id: str, by: str, now: float | None = None) -> dict:
     return get(deal_id)
 
 
+@_deal_locked
 def fee_terms(deal_id: str, role: str) -> dict:
     """The fee PaymentInfo a party authorizes (the seller signs its ERC-3009 authorization itself)."""
     from bank import core
     c, deal = _claim(deal_id), deals.get(deal_id)
     payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
         core.seller(deal["seller_id"])["wallet_address"]
-    pi = c["data"].get(f"fee_pi_{role}")
+    return _fee_pi(c, f"fee_pi_{role}", role, c["data"]["fee"], payer)
+
+
+def _fee_pi(c: dict, key: str, role: str, amount: int, payer: str) -> dict:
+    """The stored fee PaymentInfo, or a new one (next salt) once it is near its preApprovalExpiry and its authorize
+    was never sent: an expired one can never lock, and that side would lose by default."""
+    deal_id, pi = c["deal_id"], c["data"].get(key)
+    if pi is not None and time.time() >= int(pi["preApprovalExpiry"]) - FEE_PI_MARGIN_S and db.one(
+            "SELECT 1 FROM onchain_txs WHERE idem_key=? AND status IN ('signed','mined')",
+            (f"{deal_id}:{escrow.payment_hash(pi)[2:10]}:fee-authorize",)) is None:
+        pi = None
     if pi is None:
-        pi = escrow.fee_payment_info(deal_id, role, c["data"]["fee"], payer)
-        c["data"][f"fee_pi_{role}"] = pi
+        k = db.one("SELECT COUNT(*) n FROM payment_infos WHERE deal_id=? AND purpose=?", (deal_id, f"fee_{role}"))["n"]
+        pi = escrow.fee_payment_info(deal_id, role, amount, payer, k=k)
+        c["data"][key] = pi
         db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
     return pi
 
 
+@_deal_locked
 def pay_fee(deal_id: str, role: str, by: str, signature: str | None = None, now: float | None = None) -> dict:
     from bank import core
     now = time.time() if now is None else now
@@ -189,6 +219,7 @@ def pay_fee(deal_id: str, role: str, by: str, signature: str | None = None, now:
     if c["state"] != want:
         raise ClaimError(409, f"the {role}'s fee is not due now (claim is {c['state']})")
     pi = fee_terms(deal_id, role)
+    c = _claim(deal_id)  # with the fee PaymentInfo fee_terms stored (or rebuilt)
     if role == "buyer":  # the bank holds the buyer's key; the fee comes from the claim-fee budget reserved at pay
         signature = escrow.buyer_signature(pi, deal["asset"], core.wallet_key(deal["buyer_id"]))
     elif escrow.receive_signer(pi, deal["asset"], signature or "") != pi["payer"]:
@@ -261,6 +292,7 @@ def start_review(c: dict, now: float) -> bool:
     return True
 
 
+@_deal_locked
 def court(deal_id: str, by: str) -> dict:
     """A side confirms it filed a court claim: D stays in escrow until the court or an agreement (§7C.9)."""
     c = _claim(deal_id)
@@ -279,6 +311,7 @@ def _claim(deal_id: str) -> dict:
 
 # ---- 5. the decision ----
 
+@_deal_locked
 def decide(deal_id: str, decider_id: str, verdicts: dict, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     c = _claim(deal_id)
@@ -304,22 +337,19 @@ def loser(c: dict) -> str | None:
     return None if pct is None or pct == 50 else ("buyer" if pct < 50 else "seller")
 
 
+@_deal_locked
 def rereview_terms(deal_id: str, role: str) -> dict:
     """The F3 PaymentInfo the loser authorizes (the seller signs it itself), stored before anything is signed."""
     from bank import core
     c, deal = _claim(deal_id), deals.get(deal_id)
     if role != loser(c):
         raise ClaimError(403, "only the side that lost may request a re-review")
-    pi = c["data"].get("fee_pi_rereview")
-    if pi is None:
-        payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
-            core.seller(deal["seller_id"])["wallet_address"]
-        pi = escrow.fee_payment_info(deal_id, f"rereview_{role}", rereview_fee(deal["asset"]), payer)
-        c["data"]["fee_pi_rereview"] = pi
-        db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
-    return pi
+    payer = core.company(deal["buyer_id"])["wallet_address"] if role == "buyer" else \
+        core.seller(deal["seller_id"])["wallet_address"]
+    return _fee_pi(c, "fee_pi_rereview", f"rereview_{role}", rereview_fee(deal["asset"]), payer)
 
 
+@_deal_locked
 def request_rereview(deal_id: str, role: str, by: str, signature: str | None = None,
                      now: float | None = None) -> dict:
     """The loser pays F3 within 5 business days of the decision; the case goes to two new deciders."""
@@ -343,6 +373,7 @@ def request_rereview(deal_id: str, role: str, by: str, signature: str | None = N
     return get(deal_id)
 
 
+@_deal_locked
 def decide_rereview(deal_id: str, decider_id: str, verdicts: dict, now: float) -> dict:
     c = _claim(deal_id)
     final = deciders.decide_rereview(c["id"], decider_id, verdicts, now)
@@ -354,6 +385,7 @@ def decide_rereview(deal_id: str, decider_id: str, verdicts: dict, now: float) -
     return get(deal_id)
 
 
+@_deal_locked
 def tick(deal_id: str, now: float | None = None) -> None:
     """Deadlines: negotiation end, the buyer's and the seller's fee, the draw and sample, a late decider, and the
     execution 10 business days after the decision."""
@@ -367,8 +399,9 @@ def tick(deal_id: str, now: float | None = None) -> None:
     elif c["state"] == "buyer_fee" and now >= d["buyer_fee_until"]:
         _set(c, "withdrawn", "timer", "withdrawn", outcome="buyer_fee_not_paid", buyer_share_pct=0)
     elif c["state"] == "seller_fee" and now >= d["seller_fee_until"]:
-        _set(c, "refund", "timer", "seller_fee_not_paid", outcome="for_buyer_without_decider", buyer_share_pct=100)
-        _fees_back(deals.get(deal_id), get(deal_id), buyer_back=d["fee"], seller_back=0, decider_gets=0)
+        _set(c, "refund", "timer", "seller_fee_not_paid", outcome="for_buyer_without_decider", buyer_share_pct=100,
+             transfers=_fees_back(deals.get(deal_id), c, buyer_back=d["fee"], seller_back=0, decider_gets=0))
+        send_transfers(deal_id)
     elif c["state"] == "queued":
         start_review(c, now)
     elif c["state"] == "decider":
@@ -407,25 +440,52 @@ def _execute(deal: dict, c: dict, now: float):
             decider_gets -= refund
             to = core.company(deal["buyer_id"]) if d["rereview"] == "buyer" else core.seller(deal["seller_id"])
             extra.append((to["wallet_address"], refund, "rereview_fee_back"))
-    _set(c, "executed", "timer", "executed", buyer_refund=c["amount"] * pct // 100)
-    _fees_back(deal, get(deal["deal_id"]), buyer_back=buyer_back, seller_back=seller_back,
-               decider_gets=decider_gets, extra=extra)
+    _set(c, "executed", "timer", "executed", buyer_refund=c["amount"] * pct // 100,
+         transfers=_fees_back(deal, c, buyer_back=buyer_back, seller_back=seller_back, decider_gets=decider_gets,
+                              extra=extra))
+    send_transfers(deal["deal_id"])
 
 
-def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int, extra: list = ()):
-    """Transfers from the clearing address: the winning shares of the fees back, the rest to the decider."""
+def _fees_back(deal: dict, c: dict, buyer_back: int, seller_back: int, decider_gets: int, extra: list = ()) -> list:
+    """The transfers from the clearing address: the winning shares of the fees back, the rest to the decider. Written
+    down with the state that owes them, before anything is sent (send_transfers)."""
     from bank import core
     case = deciders.get(c["id"]) or {}
     decider = next((x for x in deciders.pool() + [deciders.RESERVE_PROVIDER] if x["id"] == case.get("decider")), None)
-    for to, amount, what in ((core.company(deal["buyer_id"])["wallet_address"], buyer_back, "fee_back_buyer"),
-                             (core.seller(deal["seller_id"])["wallet_address"], seller_back, "fee_back_seller"),
-                             (decider and decider["address"], decider_gets, "decider_fee"), *extra):
-        if to and amount > 0:
-            try:
-                escrow.transfer_from_clearing(deal["deal_id"], deal["asset"], to, amount, what)
-            except Exception as e:  # noqa: BLE001 — journalled; the timer does not move the escrow because of it
-                journal.append("bank", "clearing_transfer_failed", {"what": what, "error": repr(e)[:200]},
-                               deal_id=deal["deal_id"])
+    return [{"to": to, "amount": int(amount), "what": what, "done": False, "tries": 0}
+            for to, amount, what in ((core.company(deal["buyer_id"])["wallet_address"], buyer_back, "fee_back_buyer"),
+                                     (core.seller(deal["seller_id"])["wallet_address"], seller_back, "fee_back_seller"),
+                                     (decider and decider["address"], decider_gets, "decider_fee"), *extra)
+            if to and amount > 0]
+
+
+@_deal_locked
+def send_transfers(deal_id: str) -> None:
+    """Send the written-down transfers not done yet. The timer calls it again (retry_transfers), also after the
+    settlement closed; the idem key {deal_id}:clearing:{what} makes a resend safe. Given up after CLEAR_TRIES
+    failures with a journalled alarm (e.g. a token that refuses the clearing address: a person must act)."""
+    c, deal = get(deal_id), deals.get(deal_id)
+    for t in (c["data"].get("transfers") or []):
+        if t["done"] or t["tries"] >= CLEAR_TRIES:
+            continue
+        try:
+            escrow.transfer_from_clearing(deal_id, deal["asset"], t["to"], t["amount"], t["what"])
+            t["done"] = True
+        except Exception as e:  # noqa: BLE001 — journalled and retried; the timer does not move the escrow for it
+            t["tries"] += 1
+            if t["tries"] in (1, CLEAR_TRIES):  # the first failure and the give-up, not every timer pass
+                journal.append("bank", "clearing_transfer_failed" if t["tries"] == 1 else "clearing_transfer.stuck",
+                               {"what": t["what"], "to": t["to"], "amount": t["amount"], "tries": t["tries"],
+                                "error": repr(e)[:200]}, deal_id=deal_id)
+        db.run("UPDATE claims SET data_json=? WHERE id=?", (db.dumps(c["data"]), c["id"]))
+
+
+def retry_transfers() -> None:
+    """The timer: transfers owed by executed or refunded claims that failed are sent again."""
+    for r in db.rows("SELECT deal_id FROM claims WHERE rule='C' AND state IN ('executed','refund') AND EXISTS"
+                     " (SELECT 1 FROM json_each(data_json, '$.transfers') WHERE json_extract(value, '$.done')=0"
+                     " AND json_extract(value, '$.tries') < ?)", (CLEAR_TRIES,)):
+        send_transfers(r["deal_id"])
 
 
 # ---- the schedule's view ----

@@ -20,6 +20,7 @@
 #   contract with the bank); the parties' outcome does not change.
 # drand: quicknet (3 s rounds). Live rounds from api.drand.sh; recorded rounds in fixtures/drand/quicknet.json;
 # in MOCK a round that is not recorded gets a labelled deterministic stand-in (never presented as the real beacon).
+import functools
 import hashlib
 import hmac
 import json
@@ -194,6 +195,18 @@ def commitment(ids: list[str], nonce: str) -> str:
     return receipts.hex32(receipts.sha256(receipts.jcs({"deciders": list(ids), "nonce": str(nonce)})))
 
 
+def _deal_locked(fn):
+    """A side's or an auditor's write to the case runs under the deal's lock (disputes._locks), like the timer's draw
+    (claims_c.tick): the case JSON is read and saved whole, so two writers would drop each other's part."""
+    @functools.wraps(fn)
+    def run(claim_id, *a, **kw):
+        from bank import disputes
+        with disputes._locks[_case(claim_id)["deal_id"]]:
+            return fn(claim_id, *a, **kw)
+    return run
+
+
+@_deal_locked
 def commit(claim_id: int, party: str, h: str, now: float | None = None) -> dict:
     now, case = time.time() if now is None else now, _case(claim_id)
     if party not in ("buyer", "seller") or now > case["t1"]:
@@ -204,6 +217,7 @@ def commit(claim_id: int, party: str, h: str, now: float | None = None) -> dict:
     return public(case)
 
 
+@_deal_locked
 def reveal(claim_id: int, party: str, ids: list[str], nonce: str, now: float | None = None) -> dict:
     now, case = time.time() if now is None else now, _case(claim_id)
     c = case["challenges"].get(party) or {}
@@ -321,6 +335,7 @@ def audit_due(case: dict) -> bool:
     return draw(case["sample_beacon"]["randomness"], case["salt"], b"audit") % 100 < AUDIT_PCT
 
 
+@_deal_locked
 def audit(claim_id: int, decider_id: str, verdicts: dict, now: float | None = None) -> dict:
     """The auditing decider's check of a decision: the items where it differs are journalled; money is untouched."""
     now, case = time.time() if now is None else now, _case(claim_id)

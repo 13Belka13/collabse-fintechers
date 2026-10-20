@@ -87,7 +87,7 @@ def delivered(deal_id: str, now: float | None = None):
     now = _now(now)
     with db.immediate():
         s = get(deal_id)
-        if s and s["window_s"] and not s["voided"]:
+        if s and s["window_s"] and not s["voided"] and s["split_n"] is None:  # D split off: the window is over
             db.run("UPDATE settlements SET window_end_at=?, step='window' WHERE deal_id=?",
                    (now + s["window_s"], deal_id))
 
@@ -138,7 +138,10 @@ def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
         return P * (100 - x) // 100, False, f"rule B: {100 - x} % at acceptance"
     d, open_c = held_c(deal, s)
     if window_over:  # C: nothing before the window ends, then everything not refunded and not in dispute
-        return max(0, P - refunded_b(deal["deal_id"]) - d), not open_c, "rule C: window over"
+        target = max(0, P - refunded_b(deal["deal_id"]) - d)
+        if open_c and s["split_n"] is not None:  # D is split off: nothing leaves the split lock before the decision
+            target = min(target, s["captured"])
+        return target, not open_c, "rule C: window over"
     from bank import claims_c
     c = claims_c.get(deal["deal_id"])
     if c and c["state"] == "withdrawn":  # the buyer did not pay its fee: D goes to the seller at once (§7C.3)
@@ -149,6 +152,8 @@ def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
 def needs_split(deal: dict, s: dict, now: float) -> bool:
     """§8.2: at window end with an open C claim, D is split off once (the undisputed part is captured first)."""
     if s["rule"] != "C" or s["split_n"] is not None or s["window_end_at"] is None or now < s["window_end_at"]:
+        return False
+    if receipts.counts(deal["deal_id"])["pending_items"]:  # the window is not over while items wait (as in due())
         return False
     d, open_c = held_c(deal, s)
     return open_c and d > 0
@@ -167,7 +172,7 @@ def _send(deal: dict, pending: dict) -> dict:
     if pending["kind"] == "capture":
         return escrow.capture(deal["deal_id"], int(pending["amount"]), int(pending["n"]))
     if pending["kind"] == "split":
-        return escrow.split_off(deal["deal_id"], int(pending["amount"]))
+        return escrow.split_off(deal["deal_id"], int(pending["amount"]), pending.get("pi_n"))
     return escrow.void(deal["deal_id"])  # "void" (final) or "void_split" (before the split-off)
 
 
@@ -259,7 +264,8 @@ def advance(deal_id: str, actor: str = "bank", now: float | None = None) -> dict
             elif needs_split(deal, s, now):
                 nxt = {"kind": "void_split", "rule": "§8.2 split-off of D: void first"}
             elif s["split_n"] == -1:
-                nxt = {"kind": "split", "amount": held_c(deal, s)[0], "rule": "§8.2 split-off of D: lock D again"}
+                nxt = {"kind": "split", "amount": held_c(deal, s)[0], "pi_n": int(deal["pi_n"] or 0) + 1,
+                       "rule": "§8.2 split-off of D: lock D again"}  # pi_n: a retry reuses that PaymentInfo
             if nxt is None:
                 break
             with db.immediate() as c:  # written down before sending: a retry reuses n -> the same idem key
@@ -364,6 +370,10 @@ def file_b(deal_id: str, items: list, reason: str, by: str, now: float | None = 
         if claims(deal_id, "B"):
             raise DisputeError(409, "one B claim per deal")
         keys = _accepted_keys(deal_id, items)
+        in_c = {(int(it["version"]), int(it["index"])) for c in claims(deal_id, "C") for it in c["items"]}
+        for v, i in keys:  # items of a C claim (any state) are not part of a B refund (§7C.0)
+            if (v, i) in in_c:
+                raise DisputeError(409, f"item {v}/{i} is in the C claim")
         cap = payable(deal) * s["b_pct"] // 100
         amount = min(item_value(deal, len(keys)), cap)
         with db.immediate():

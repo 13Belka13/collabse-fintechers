@@ -288,12 +288,21 @@ def _store_pi(deal_id: str, n: int, purpose: str, pi: dict) -> str:
     return h
 
 
-def split_off(deal_id: str, amount: int, now: int | None = None) -> dict:
+def split_off(deal_id: str, amount: int, n: int | None = None, now: int | None = None) -> dict:
     """§8.2 at window end with an open C claim, after the undisputed part was captured and the old PaymentInfo
     voided: a new PaymentInfo on D only (salt keccak(deal_id ‖ n+1), the §8.3 terms from now), persisted before
     the authorize. Between the void and this authorize D sits in the buyer's wallet under the bank's key with the
-    mandate's reservation kept, so neither the buyer nor its agent can spend it."""
+    mandate's reservation kept, so neither the buyer nor its agent can spend it.
+    n: the split PaymentInfo's number written down with the pending split. Once it is stored, a retry authorizes
+    that same PaymentInfo (same idem key, a late-landed lock is found), never a second lock of D; a new one is built
+    only when it is past preApprovalExpiry and never locked."""
     deal = _deal(deal_id)
+    if n is not None and int(deal["pi_n"] or 0) >= n:
+        try:
+            return authorize(deal_id)
+        except EscrowError:  # authorize checked the chain: past preApprovalExpiry and nothing locked -> new PaymentInfo
+            if int(time.time()) < int(db.loads(deal["payment_info_json"])["preApprovalExpiry"]):
+                raise
     now = int(time.time()) if now is None else now
     old, terms = db.loads(deal["payment_info_json"]), db.loads(deal["terms_json"]) or {}
     n = int(deal["pi_n"] or 0) + 1

@@ -386,6 +386,17 @@ def test_items_refunded_under_b_cannot_go_into_a_c_claim(w):
         {"version": 1, "index": 0, "field": "founded", "why": "not an accepted item without a claim"}]
 
 
+def test_items_of_a_c_claim_cannot_be_refunded_under_b(w):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, [[1, i] for i in range(5)], {f"1/{i}": "founded" for i in range(5)}, "agent:buyer",
+                  now=T0 + 3)
+    with pytest.raises(disputes.DisputeError, match="C claim") as e:
+        disputes.file_b(deal_id, [[1, 0]], "wrong_data", "agent:buyer", now=T0 + 5)
+    assert e.value.status == 409 and disputes.claims(deal_id, "B") == []
+    out = disputes.file_b(deal_id, [[1, 7]], "wrong_data", "agent:buyer", now=T0 + 6)  # an undisputed item is fine
+    assert out["amount"] == 800_000
+
+
 def test_task_id_is_part_of_the_hashed_terms():
     task = {"terms": {"count": 5, "predicates": [{"op": "required", "field": "ico"}]}}
     a, b = deals.task_terms({**task, "task_id": "t-1"}), deals.task_terms({**task, "task_id": "t-2"})
@@ -492,3 +503,210 @@ def test_lost_c_claims_count_back_over_the_demo_scaled_30_days():
                " data_json) VALUES ('d', 'C', 'alfa', 's-beta', '[]', 1, 'executed', ?, ?)",
                (filed, db.dumps({"buyer_share_pct": 40})))
     assert claims_c.lost_c("alfa", T0) == 1
+
+
+def _both_fees_paid(w, deal_id, t):
+    BD = config.BUSINESS_DAY_S
+    deadlines.tick(now=t + 2 * BD + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=t + 2 * BD + 2)
+    sig = escrow.buyer_signature(claims_c.fee_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=t + 2 * BD + 3)
+
+
+def test_no_split_off_while_items_are_pending_and_nothing_leaves_the_split_lock_before_the_decision(w, monkeypatch):
+    items = company_items(10, "misdated")
+    down, real = {str(items[8]["ico"]).strip(), str(items[9]["ico"]).strip()}, snapshots._mock_body
+    ares = {"down": True}
+
+    def body(template, key):  # ARES is out for two items: their snapshot (and so the item) waits
+        if ares["down"] and key in down:
+            raise snapshots.Wait("ARES 503")
+        return real(template, key)
+    monkeypatch.setattr(snapshots, "_mock_body", body)
+    deal_id = k.make_deal(w, rule="C", deal_id="d-c", count=10, predicates=C_PREDICATES, amount=PRICE_C,
+                          window_s=config.WINDOW_S["T2"][0], deadline_s=300, now=T0, task_hash="d-c")
+    assert k.deliver(w, deal_id, mode="misdated", count=10, now=T0 + 1, items=items)["pending_items"] == 2
+    out = claims_c.file(deal_id, [[1, i] for i in range(5)], {f"1/{i}": "founded" for i in range(5)}, "agent:buyer",
+                        now=T0 + 5)
+    assert out["D"] == 4_000_000
+    _both_fees_paid(w, deal_id, T0 + 5)
+    deal_txs = lambda: [(fn, a) for fn, a, key, _ in w.sender.sent if ":fee-" not in key]  # noqa: E731
+
+    end = disputes.get(deal_id)["window_end_at"]
+    deadlines.tick(now=end + 1)  # items still pending: the window is not over, so no split-off yet
+    assert deal_txs() == [] and disputes.get(deal_id)["split_n"] is None
+
+    ares["down"] = False
+    deadlines.tick(now=end + 200)  # the two items are accepted now: their window starts now
+    end2 = disputes.get(deal_id)["window_end_at"]
+    deadlines.tick(now=end2 + 1)  # the undisputed half is captured first, then D is split off
+    assert deal_txs() == [("capture", 4_000_000), ("void", None), ("authorize", 4_000_000)]
+    s = disputes.get(deal_id)
+    assert s["split_n"] == 1 and s["captured"] == 4_000_000 and escrow.locked_amount(deal_id) == 8_000_000
+    disputes.delivered(deal_id, now=end2 + 50)  # never reopens the window after the split-off
+    assert disputes.get(deal_id)["window_end_at"] == end2
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import api
+    app = FastAPI()
+    app.include_router(api.router)
+    r = TestClient(app, headers={"x-human-token": config.HUMAN_TOKEN}).post(
+        f"/api/deals/{deal_id}/accept-items", json={"items": [[1, 0]], "by": "anna"})
+    assert r.status_code == 409 and "split off" in r.json()["detail"]  # no "accept anyway" after the split-off
+    monkeypatch.setattr(disputes, "payable", lambda deal: PRICE_C * 2)  # even if P grew, D stays held
+    deadlines.tick(now=end2 + 100)
+    assert deal_txs()[3:] == [] and claims_c.get(deal_id)["state"] in claims_c.OPEN
+
+
+def _to_split(w, monkeypatch, first_error, attr="fail_next"):
+    """A C claim on all items with both fees paid; the first authorize of the split-off fails with first_error."""
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    _both_fees_paid(w, deal_id, T0 + 5)
+    end = max(T0 + 1 + window + 1, deciders.get(claims_c.get(deal_id)["id"])["opened_at"] + 1)
+    real = escrow.split_off
+
+    def first_fails(*a, **kw):
+        if not hasattr(first_fails, "done"):
+            first_fails.done = True
+            setattr(w.sender, attr, first_error)
+        return real(*a, **kw)
+    monkeypatch.setattr(escrow, "split_off", first_fails)
+    deadlines.tick(now=end)
+    assert disputes.get(deal_id)["pending"]["kind"] == "split" and deals.get(deal_id)["pi_n"] == 1
+    return deal_id, end
+
+
+def _deal_pis(deal_id):
+    return [(r["n"], r["max_amount"], r["authorized"]) for r in db.rows(
+        "SELECT n, max_amount, authorized FROM payment_infos WHERE deal_id=? AND purpose='deal' ORDER BY n",
+        (deal_id,))]
+
+
+def test_a_retried_split_off_authorizes_the_stored_payment_info_never_a_second_lock(w, monkeypatch):
+    deal_id, end = _to_split(w, monkeypatch, TimeoutError("receipt wait timed out"))  # the tx went out, answer lost
+    deadlines.tick(now=end + 1)
+    auths = [a for fn, a, key, _ in w.sender.sent if fn == "authorize" and ":fee-" not in key]
+    assert auths == [PRICE_C]  # ONE split lock of D (the retry resent the same idem key)
+    assert deals.get(deal_id)["pi_n"] == 1 and disputes.get(deal_id)["split_n"] == 1
+    assert _deal_pis(deal_id)[1:] == [(1, PRICE_C, 1)] and escrow.locked_amount(deal_id) == PRICE_C
+
+
+def test_a_split_payment_info_that_never_locked_is_rebuilt_after_pre_approval_expiry(w, monkeypatch):
+    deal_id, end = _to_split(w, monkeypatch, ValueError("gas estimation reverted"), attr="fail_always")
+    w.sender.fail_always = None
+    later = time.time() + escrow.PRE_APPROVAL_S + 1
+    monkeypatch.setattr(escrow.time, "time", lambda: later)
+    deadlines.tick(now=end + 1)
+    auths = [a for fn, a, key, _ in w.sender.sent if fn == "authorize" and ":fee-" not in key]
+    assert auths == [PRICE_C] and deals.get(deal_id)["pi_n"] == 2 and disputes.get(deal_id)["split_n"] == 2
+    assert _deal_pis(deal_id)[1:] == [(1, PRICE_C, 0), (2, PRICE_C, 1)]
+
+
+def _timer_fires_during_the_fee(monkeypatch, timer_now):
+    """The timer thread fires while the fee's authorize and capture are in flight (the API runs in a threadpool)."""
+    import threading
+    real, timer = escrow.pay_fee, {}
+
+    def slow_pay_fee(deal_id, pi, sig):
+        tx = real(deal_id, pi, sig)
+        timer["t"] = threading.Thread(target=lambda: deadlines.tick(now=timer_now))
+        timer["t"].start()
+        time.sleep(0.3)  # the timer reaches the claim before pay_fee books the fee
+        return tx
+    monkeypatch.setattr(escrow, "pay_fee", slow_pay_fee)
+    return timer
+
+
+def test_a_fee_paid_at_its_deadline_and_the_timer_never_both_act_on_the_claim(w, monkeypatch):
+    bd = config.BUSINESS_DAY_S
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    until = claims_c.get(deal_id)["data"]["buyer_fee_until"]
+    timer = _timer_fires_during_the_fee(monkeypatch, until + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=until - 1)
+    timer["t"].join(timeout=20)
+    assert claims_c.get(deal_id)["state"] == "seller_fee"  # the fee came in time: not withdrawn under it
+    assert k.captures(w) == [] and deal_id in disputes.open_ids()  # D did not go to the seller
+
+    until = claims_c.get(deal_id)["data"]["seller_fee_until"]
+    sig = escrow.buyer_signature(claims_c.fee_terms(deal_id, "seller"), "EURC", w.seller_wallet.key.hex())
+    timer = _timer_fires_during_the_fee(monkeypatch, until + 1)
+    claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=until - 1)
+    timer["t"].join(timeout=20)
+    c = claims_c.get(deal_id)
+    assert c["state"] == "decider" and c["data"].get("outcome") is None and deal_id in disputes.open_ids()
+    assert not [key for fn, _, key, _ in w.sender.sent if fn == "transfer"]  # no fee back: the seller paid in time
+
+
+def test_a_claim_read_before_another_writer_moved_it_is_not_overwritten(w):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    stale = claims_c.get(deal_id)
+    claims_c.agree(deal_id, "seller", now=T0 + 6)  # another writer moved it to refund
+    with pytest.raises(claims_c.ClaimError) as e:
+        claims_c._set(stale, "buyer_fee", "timer", "negotiation_over", buyer_fee_until=T0 + 7)
+    assert e.value.status == 409 and claims_c.get(deal_id)["state"] == "refund"
+
+
+def test_a_fee_payment_info_past_pre_approval_expiry_and_never_sent_is_rebuilt(w, monkeypatch):
+    bd = config.BUSINESS_DAY_S
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    w.sender.fail_always = ValueError("gas estimation reverted")  # refused before anything was signed
+    with pytest.raises(ValueError):
+        claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    w.sender.fail_always = None
+    first = claims_c.get(deal_id)["data"]["fee_pi_buyer"]
+    later = time.time() + escrow.PRE_APPROVAL_S + 1  # the retry comes more than 10 minutes later
+    monkeypatch.setattr(escrow.time, "time", lambda: later)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 3)
+    pi = claims_c.get(deal_id)["data"]["fee_pi_buyer"]
+    assert claims_c.get(deal_id)["state"] == "seller_fee" and pi["salt"] != first["salt"]
+    assert int(pi["preApprovalExpiry"]) > later  # signed and authorized before it expires
+    keys = [key for fn, _, key, _ in w.sender.sent if fn == "authorize" and ":fee-" in key]
+    assert keys == [f"{deal_id}:{escrow.payment_hash(pi)[2:10]}:fee-authorize"]
+
+
+def test_a_failed_fee_transfer_is_written_down_and_resent_by_the_timer_after_the_deal_closed(w, monkeypatch):
+    deal_id, window = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    real, gas = escrow.transfer_from_clearing, {"none": True}
+
+    def transfer(*a, **kw):  # the clearing address has no gas yet: the node refuses the transfer
+        if gas["none"]:
+            raise ValueError("insufficient funds for gas")
+        return real(*a, **kw)
+    monkeypatch.setattr(escrow, "transfer_from_clearing", transfer)
+    deadlines.tick(now=T0 + 5 + 5 * bd + 3)  # the seller did not pay: the buyer's fee is owed back
+    deadlines.tick(now=T0 + 1 + window + 10)  # window end: the settlement closes all the same
+    gas["none"] = False
+    owed = claims_c.get(deal_id)["data"]["transfers"]
+    assert k.state(deal_id) == "settled" and deal_id not in disputes.open_ids()
+    assert [(t["what"], t["amount"], t["done"]) for t in owed] == [("fee_back_buyer", 800_000, False)]
+    deadlines.tick(now=T0 + 1 + window + 20)  # gas arrived: the timer resends it under the same idem key
+    deadlines.tick(now=T0 + 1 + window + 30)
+    transfers = [(amount, key) for fn, amount, key, _ in w.sender.sent if fn == "transfer"]
+    assert transfers == [(800_000, f"{deal_id}:clearing:fee_back_buyer")]  # once
+    assert claims_c.get(deal_id)["data"]["transfers"][0]["done"] is True
+
+
+def test_a_clearing_transfer_that_keeps_failing_is_journalled_once_and_then_waits_for_a_person(w, monkeypatch):
+    deal_id, _ = c_deal(w)
+    claims_c.file(deal_id, *all_items(), "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    calls = []
+    monkeypatch.setattr(escrow, "transfer_from_clearing", lambda *a, **kw: calls.append(a) or 1 / 0)
+    for i in range(claims_c.CLEAR_TRIES + 5):
+        deadlines.tick(now=T0 + 5 + 5 * bd + 3 + i)
+    events = [e["event"] for e in journal.entries(deal_id, limit=2000) if e["event"].startswith("clearing_transfer")]
+    assert len(calls) == claims_c.CLEAR_TRIES and sorted(events) == ["clearing_transfer.stuck", "clearing_transfer_failed"]
