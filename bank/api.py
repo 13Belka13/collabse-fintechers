@@ -2,7 +2,7 @@
 # Every Decision leaves through codes.client_view (non-public reasons never reach the client, SPEC §6.7).
 # Three callers, three shared secrets (prototype auth; config.*_TOKEN):
 #   agent  (x-agent-token)  -> acts for exactly one company: buyer_id comes from the token, never from the body;
-#   seller (x-seller-token) -> may only post deliveries;
+#   seller (x-seller-token) -> may only register its manifest key and post deliveries;
 #   human  (x-human-token)  -> bank UI: confirmations above the threshold, VAT-risk acknowledgements.
 import hmac
 
@@ -48,8 +48,25 @@ class MessageIn(BaseModel):
 
 
 class DeliveryIn(BaseModel):
-    offer_id: str | None = None
-    items: list[dict]
+    manifest: dict
+    signature: str
+    items: list
+
+
+class KeyIn(BaseModel):
+    address: str
+
+
+class ClaimIn(BaseModel):
+    rule: str
+    items: list[list[int]]
+    reason: str = "other"
+    fields: dict[str, str] | None = None  # C: item "version/index" -> the field whose source value differs
+
+
+class ItemsIn(BaseModel):
+    items: list[list[int]]
+    by: str
 
 
 class HumanIn(BaseModel):
@@ -63,9 +80,10 @@ class VatAckIn(BaseModel):
 
 
 def _call(fn, *args):
+    from bank import disputes
     try:
         return fn(*args)
-    except deals.DealError as e:
+    except (deals.DealError, disputes.DisputeError) as e:
         raise HTTPException(e.status, str(e)) from e
 
 
@@ -131,12 +149,68 @@ def statement(mandate_id: str, company_id: str = Depends(agent_company)):
     return deals.statement(mandate_id)
 
 
+@router.post("/sellers/{seller_id}/keys", dependencies=[Depends(seller_caller)])
+def register_key(seller_id: str, body: KeyIn):
+    from bank import receipts
+    if core.seller(seller_id) is None:
+        raise HTTPException(404, "unknown seller")
+    try:
+        row = receipts.register_key(seller_id, body.address, by=f"seller:{seller_id}")
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"seller_id": seller_id, "address": row["address"], "registered_at": row["registered_at"],
+            "revoked_at": row["revoked_at"]}
+
+
 @router.post("/deals/{deal_id}/delivery", dependencies=[Depends(seller_caller)])
 def delivery(deal_id: str, body: DeliveryIn, background: BackgroundTasks):
     out = _call(deals.record_delivery, deal_id, body.model_dump())
-    if not out.get("duplicate"):
-        background.add_task(deals.auto_settle, deal_id)  # verifier + capture/void after the seller is answered
+    if out.get("accepted"):
+        background.add_task(deals.auto_settle, deal_id)  # the rule's schedule, after the seller is answered
     return out
+
+
+@router.get("/deals/{deal_id}/delivery")
+def fetch_delivery(deal_id: str, company_id: str = Depends(agent_company)):
+    _own_deal(deal_id, company_id)
+    return _call(deals.fetch_delivery, deal_id)
+
+
+@router.post("/deals/{deal_id}/claims")
+def file_claim(deal_id: str, body: ClaimIn, company_id: str = Depends(agent_company)):
+    """The buyer's agent files a claim by ids (§1): B without investigation, C with the field per item."""
+    from bank import disputes
+    _own_deal(deal_id, company_id)
+    if body.rule == "B":
+        return _call(disputes.file_b, deal_id, body.items, body.reason, "agent:buyer")
+    if body.rule == "C":
+        from bank import claims_c
+        return _call(claims_c.file, deal_id, body.items, body.fields or {}, "agent:buyer")
+    raise HTTPException(400, "rule must be B or C")
+
+
+@router.post("/deals/{deal_id}/accept", dependencies=[Depends(human_caller)])
+def accept(deal_id: str, body: HumanIn):
+    from bank import disputes
+    return _call(disputes.accept, deal_id, f"human:{body.by}")
+
+
+@router.post("/deals/{deal_id}/accept-items", dependencies=[Depends(human_caller)])
+def accept_items(deal_id: str, body: ItemsIn):
+    """'Accept anyway': a person of the buyer takes rejected items within the lock (§5.2 p. 7)."""
+    from bank import disputes, receipts
+    deal = deals.get(deal_id)
+    if deal is None or not deal.get("terms"):
+        raise HTTPException(404, f"unknown deal {deal_id}")
+    s = disputes.get(deal_id)
+    if s is None or s["voided"] or s["closed_at"]:
+        raise HTTPException(409, "the deal is settled")
+    try:
+        n = receipts.waive(deal_id, [tuple(k) for k in body.items], f"human:{body.by}", int(deal["terms"]["count"]))
+    except receipts.Refused as e:
+        raise HTTPException(e.status, str(e)) from e
+    disputes.advance(deal_id, actor=f"human:{body.by}")
+    return {"deal_id": deal_id, "accepted": n}
 
 
 @router.post("/deals/{deal_id}/confirm", dependencies=[Depends(human_caller)])

@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS deals (
   deal_id TEXT PRIMARY KEY, buyer_id TEXT NOT NULL, seller_id TEXT NOT NULL, mandate_id TEXT,
   task_json TEXT, offer_json TEXT, quote_json TEXT, criteria_json TEXT, asset TEXT,
   amount INTEGER, payment_info_json TEXT, payment_hash TEXT, state TEXT NOT NULL,
-  idem_key TEXT UNIQUE, created_at REAL NOT NULL, updated_at REAL, confirmed_by TEXT);
+  idem_key TEXT UNIQUE, created_at REAL NOT NULL, updated_at REAL, confirmed_by TEXT, terms_json TEXT,
+  pi_n INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS screenings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, source TEXT NOT NULL,
   result_json TEXT NOT NULL, fetched_at REAL NOT NULL);
@@ -40,15 +41,30 @@ CREATE TABLE IF NOT EXISTS decisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT, kind TEXT NOT NULL, outcome TEXT NOT NULL,
   codes_json TEXT, evidence_json TEXT, explanation_client TEXT, explanation_compliance TEXT,
   ms REAL, created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS deliveries (
-  deal_id TEXT PRIMARY KEY, items_json TEXT, rule_results_json TEXT, judge_flags_json TEXT,
-  created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS disputes (
-  deal_id TEXT PRIMARY KEY, items_json TEXT, rejection_criteria_json TEXT, seller_statement TEXT,
-  step TEXT, step_deadline_at REAL, decision TEXT, decided_by TEXT, default_rule TEXT,
-  decided_at REAL, terms_json TEXT, captured INTEGER NOT NULL DEFAULT 0, capture_n INTEGER NOT NULL DEFAULT 0,
-  holdback INTEGER NOT NULL DEFAULT 0, holdback_until REAL, holdback_released INTEGER NOT NULL DEFAULT 0,
-  voided INTEGER NOT NULL DEFAULT 0, pending_json TEXT, opened_at REAL, closed_at REAL);
+CREATE TABLE IF NOT EXISTS delivery_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT NOT NULL, version INTEGER, received_at REAL NOT NULL,
+  code TEXT, detail TEXT, manifest_json TEXT, signature TEXT, signer TEXT, bank_root TEXT, accepted INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS delivery_attempts_deal ON delivery_attempts(deal_id);
+CREATE TABLE IF NOT EXISTS items (
+  deal_id TEXT NOT NULL, version INTEGER NOT NULL, idx INTEGER NOT NULL, item_json TEXT, leaf TEXT NOT NULL,
+  unique_key TEXT, status TEXT NOT NULL, code TEXT, predicate_json TEXT, detail TEXT, task_hash TEXT,
+  seller_id TEXT, received_at REAL NOT NULL, decided_at REAL, refunded TEXT, waived_by TEXT,
+  PRIMARY KEY (deal_id, version, idx));
+CREATE INDEX IF NOT EXISTS items_task ON items(task_hash, unique_key);
+CREATE TABLE IF NOT EXISTS settlements (
+  deal_id TEXT PRIMARY KEY, rule TEXT NOT NULL, b_pct INTEGER NOT NULL DEFAULT 0, tier TEXT NOT NULL,
+  window_s REAL NOT NULL, deadline_at REAL NOT NULL, window_end_at REAL, accepted_at REAL, accepted_by TEXT,
+  captured INTEGER NOT NULL DEFAULT 0, capture_n INTEGER NOT NULL DEFAULT 0, pending_json TEXT,
+  voided INTEGER NOT NULL DEFAULT 0, step TEXT, closed_at REAL, outcome TEXT);
+CREATE TABLE IF NOT EXISTS claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT NOT NULL, rule TEXT NOT NULL, buyer_id TEXT NOT NULL,
+  seller_id TEXT NOT NULL, items_json TEXT NOT NULL, reason TEXT, amount INTEGER NOT NULL, state TEXT NOT NULL,
+  filed_at REAL NOT NULL, by TEXT, data_json TEXT, closed_at REAL);
+CREATE INDEX IF NOT EXISTS claims_pair ON claims(buyer_id, seller_id, filed_at);
+CREATE TABLE IF NOT EXISTS payment_infos (
+  payment_hash TEXT PRIMARY KEY, deal_id TEXT NOT NULL, n INTEGER NOT NULL, purpose TEXT NOT NULL,
+  receiver TEXT NOT NULL, max_amount INTEGER NOT NULL, pi_json TEXT NOT NULL, captured INTEGER NOT NULL DEFAULT 0,
+  voided INTEGER NOT NULL DEFAULT 0, authorized INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS onchain_txs (
   tx_hash TEXT PRIMARY KEY, kind TEXT NOT NULL, deal_id TEXT, status TEXT NOT NULL,
   idem_key TEXT UNIQUE, sender TEXT, nonce INTEGER, raw_tx TEXT, block_number INTEGER, gas_used INTEGER,

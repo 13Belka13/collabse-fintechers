@@ -1,7 +1,7 @@
 # Bank UI (SPEC §13): server-rendered Jinja2 + HTMX, no JS build. The bank's decision and where the money is
-# are the hero. Reads tables + the journal; writes only through module functions (bank.disputes for human
-# dispute steps). Client texts always pass codes.client_view; AI-generated text carries the AI Act Art. 50 label.
-# The router's lifespan starts the dispute timer (bank/deadlines.py) inside the bank process.
+# are the hero. Reads tables + the journal; writes only through module functions (bank.disputes, bank.receipts for
+# the buyer's human actions). Client texts always pass codes.client_view; AI-generated text carries the AI Act
+# Art. 50 label. The router's lifespan starts the deal timer (bank/deadlines.py) inside the bank process.
 import os
 import threading
 import time
@@ -13,18 +13,18 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from bank import codes, db, deadlines, deals, disputes, escrow, explain, journal, money, timing
+from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, receipts, timing
 
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
 TRANSFER_EVENTS = {"escrow_authorized": "Locked in escrow", "escrow_captured": "Paid to the seller",
                    "escrow_voided": "Returned to the buyer", "x402_settled": "x402 payment settled"}
-INFO_EVENTS = {"dispute.opened", "dispute.default_applied", "dispute.buyer_review", "dispute.seller_objection",
-               "dispute.decision", "dispute.holdback_released", "dispute.closed", "dispute.capture_impossible",
-               "dispute.tx_failed", "escrow_expiry_alarm", "timer_error", "x402_refused", "demo.scenario"}
-BAD_EVENTS = {"escrow_expiry_alarm", "timer_error", "dispute.tx_failed", "dispute.capture_impossible", "x402_refused"}
-STEP_TEXT = {"review": "Buyer reviews the flagged item", "objection": "Seller may object to the rejection",
-             "decision": "Bank / arbiter decides", "done": "Decided"}
+INFO_EVENTS = {"settlement.opened", "delivery.autocodes", "delivery.refused", "delivery.accepted_anyway",
+               "claim_b.filed", "settlement.accepted", "settlement.closed", "settlement.tx_failed",
+               "escrow_expiry_alarm", "timer_error", "x402_refused", "demo.scenario"}
+BAD_EVENTS = {"escrow_expiry_alarm", "timer_error", "settlement.tx_failed", "x402_refused", "delivery.refused"}
+STEP_TEXT = {"delivery": "Waiting for the delivery", "window": "Claim window open", "settling": "Settling",
+             "dispute_c": "C dispute: only the disputed sum stays in escrow", "closed": "Settled"}
 
 
 @asynccontextmanager
@@ -99,17 +99,19 @@ def explain_row(row: dict, view: str) -> dict:
 
 
 def ledger(deal: dict) -> dict:
-    """Where a deal's money is, from the journal's escrow_* events: valid with or without a dispute."""
+    """Where a deal's money is: the settlement record when there is one, else the journal's escrow_* events."""
     total = int(deal.get("amount") or 0)
     ev = journal.entries(deal["deal_id"], limit=1000)
     locked = any(e["event"] == "escrow_authorized" for e in ev)
+    s = disputes.get(deal["deal_id"])
+    if s is not None:
+        mv = disputes.money_view(deal, s)
+        return {"total": total, "locked": locked, "captured": mv["captured"], "returned": mv["returned"],
+                "in_escrow": mv["in_escrow"] if locked else 0}
     captured = sum(int(e["payload"].get("amount", 0)) for e in ev if e["event"] == "escrow_captured")
     returned = total - captured if any(e["event"] == "escrow_voided" for e in ev) else 0
-    d = disputes.get(deal["deal_id"])
-    running = d is not None and not d["holdback_released"]
     return {"total": total, "locked": locked, "captured": captured, "returned": returned,
-            "in_escrow": (total - captured - returned) if locked else 0,
-            "holdback": d["holdback"] if running else 0, "holdback_until": d["holdback_until"] if running else None}
+            "in_escrow": (total - captured - returned) if locked else 0}
 
 
 def feed(view: str, limit: int = 60) -> list[dict]:
@@ -122,7 +124,7 @@ def feed(view: str, limit: int = 60) -> list[dict]:
     entries = journal.entries(limit=600)
     asset_of = {r["deal_id"]: r["asset"] for r in db.rows("SELECT deal_id, asset FROM deals")}
     by_tx = {e["payload"].get("tx_hash"): (e["actor"], e["payload"].get("rule"))
-             for e in entries if e["event"] in ("dispute.capture", "dispute.void")}
+             for e in entries if e["event"] in ("settlement.capture", "settlement.void")}
     names = {r["id"]: r["name"] for r in db.rows("SELECT id, name FROM companies")}
     for e in entries:
         p = e["payload"]
@@ -162,7 +164,7 @@ def alarms(now: float | None = None) -> list[dict]:
     now = time.time() if now is None else now
     out = []
     for d in db.rows("SELECT deal_id, state, payment_info_json FROM deals WHERE payment_info_json IS NOT NULL"
-                     " AND state IN ('authorized','delivered','verified','disputed','settled')"):
+                     " AND state IN ('authorized','delivered','dispute_c')"):
         exp = int((db.loads(d["payment_info_json"]) or {}).get("authorizationExpiry") or 0)
         if exp and exp - now < deadlines.ALARM_S:
             out.append({"deal_id": d["deal_id"], "state": d["state"], "left": max(0, int(exp - now)), "expiry": exp})
@@ -186,10 +188,26 @@ def _names() -> dict:
         "SELECT s.seller_id, c.name FROM sellers s JOIN companies c ON c.id = s.company_id")}
 
 
-def _items(deal_id: str) -> tuple[list[dict], dict]:
-    delivery = db.one("SELECT * FROM deliveries WHERE deal_id=?", (deal_id,)) or {}
-    raw = {i.get("placeId"): i for i in (db.loads(delivery.get("items_json")) or [])}
-    return db.loads(delivery.get("rule_results_json")) or [], raw
+def mask(value) -> str:
+    """A rejected item's field as the buyer's person sees it (§5.2 p. 7): enough to recognise, not the data."""
+    if value is None:
+        return "—"
+    text = str(value)
+    return text if len(text) <= 4 else f"{text[:3]}…({len(text)} chars)"
+
+
+def _items(deal: dict) -> list[dict]:
+    """Every delivered item with its autocode, the violated predicate in words and the masked field value."""
+    from bank import verifier
+    out = []
+    for r in receipts.items_of(deal["deal_id"]):
+        p = r["predicate"]
+        field = p and (p.get("field") or p.get("ico_field") or p.get("key_field"))
+        item = r["item"] if isinstance(r["item"], dict) else {}
+        out.append({**r, "label": item.get("name") or item.get("title") or item.get("placeId") or f"#{r['idx']}",
+                    "key": item.get("ico") or item.get("placeId"), "rule_text": verifier.describe(p) if p else "",
+                    "masked": mask(verifier.get_field(item, field)[1]) if field else ""})
+    return out
 
 
 # ---- the story of one deal, for people watching the demo (/story) ----
@@ -201,6 +219,7 @@ PLAIN = {  # decision codes in words for the audience; the code itself stays vis
     "BUDGET_EXCEEDED": "the monthly budget would be exceeded", "QUOTE_MISMATCH": "the payment request differs from the deal",
     "VELOCITY_EXCEEDED": "too many payments too fast", "CONFIRMATION_REQUIRED": "a person must confirm this amount",
     "VAT_LIABILITY_RISK": "Czech VAT liability risk (§109)", "UNDER_REVIEW": "the payment is under review at the bank",
+    "TERMS_MISMATCH": "the offer's terms fall short of the confirmed task terms",
 }
 
 
@@ -297,42 +316,49 @@ def story(deal_id: str | None = None) -> dict | None:
                            f"{_fmt_money(lock['payload'].get('amount'), asset)} locked on chain; neither side can take "
                            "it alone. The seller checked the safe before delivering.", ts=lock["ts"],
                            tx=lock["payload"].get("tx_hash")))
-    # 5. the delivery checked by code rules (the AI judge only flags)
-    check = first("verifier.settlement")
-    if check:
-        c = check["payload"]
-        parts = [f"{c.get('accepted', 0)} of {c.get('ordered', 0)} items accepted by the code rules"]
-        if c.get("rejected"):
-            parts.append(f"{c['rejected']} rejected")
-        if c.get("held"):
-            parts.append(f"{c['held']} flagged by the AI judge for a person")
-        steps.append(_step("verify", f"{c.get('delivered', 0)} items delivered and checked", "done",
-                           ", ".join(parts) + ".", ts=check["ts"]))
-    # 6. payouts, the dispute, the holdback
+    # 5. the delivery through the bank, checked by the confirmed predicates (code, no model)
+    checks = every("delivery.autocodes")
+    if checks:
+        c = checks[-1]["payload"]
+        ordered = (deal.get("terms") or {}).get("count", 0)
+        parts = [f"{c.get('accepted_items', 0)} of {ordered} items passed the agreed conditions"]
+        if c.get("rejected_items"):
+            parts.append(f"{c['rejected_items']} rejected (never handed to the buyer)")
+        if c.get("pending_items"):
+            parts.append(f"{c['pending_items']} wait for a registry or source answer")
+        steps.append(_step("verify", f"The seller delivered through the bank ({len(checks)} version"
+                           f"{'s' if len(checks) != 1 else ''})", "done", ", ".join(parts) + ".", ts=checks[-1]["ts"]))
+    # 6. payouts by the deal's rule, the final void
     lg = ledger(deal) if lock else None
     caps = every("escrow_captured")
-    d = disputes.get(did)
+    s_ = disputes.get(did)
     if caps:
-        open_items = [it for it in (d or {}).get("items", []) if not it.get("outcome")]
-        text = f"{_fmt_money(lg['captured'], asset)} paid to {_name(seller['name'])}."
-        if open_items:
-            text += f" {len(open_items)} item(s) in dispute wait in the safe, with deadlines."
-        if lg["holdback"]:
-            text += f" A {_fmt_money(lg['holdback'], asset)} holdback (5 %) stays in the safe for the warranty period."
-        steps.append(_step("pay", "The seller was paid for what it delivered", "now" if open_items else "done",
+        open_ = s_ is not None and not s_["closed_at"]
+        text = f"{_fmt_money(lg['captured'], asset)} paid to {_name(seller['name'])}"
+        if s_ is not None:
+            text += f" under rule {s_['rule']}" + (f" ({s_['b_pct']} % guarantee)" if s_["b_pct"] else "")
+        text += "."
+        if open_ and s_["window_end_at"]:
+            text += " The rest waits in the safe until the claim window ends."
+        steps.append(_step("pay", "The seller was paid for accepted items", "now" if open_ else "done",
                            text, ts=caps[-1]["ts"], tx=caps[-1]["payload"].get("tx_hash"),
-                           deadline=lg["holdback_until"], dispute=bool(open_items)))
+                           deadline=s_["window_end_at"] if open_ and s_ else None))
+    for cl in (s_ or {}).get("claims", []):
+        steps.append(_step("claim", f"The buyer filed a {cl['rule']} claim", "done",
+                           f"{len(cl['items'])} item(s), {_fmt_money(cl['amount'], asset)} back to the buyer "
+                           "without investigation (rule B)." if cl["rule"] == "B" else f"{len(cl['items'])} item(s).",
+                           ts=cl["filed_at"]))
     void = first("escrow_voided")
     if void:
         steps.append(_step("return", "The rest went back to the buyer", "done",
-                           f"{_fmt_money(lg['returned'], asset)} returned to {_name(buyer['name'])}.", ts=void["ts"],
-                           tx=void["payload"].get("tx_hash")))
+                           f"{_fmt_money(lg['returned'], asset)} returned to {_name(buyer['name'])} in one final void.",
+                           ts=void["ts"], tx=void["payload"].get("tx_hash")))
     if stopped and not lock:
         steps.append(_step("money", "No money moved", "skipped",
                            "The bank stopped this before anything was signed: balances are unchanged on chain."))
 
     money_now = ({"buyer_out": lg["total"], "in_escrow": lg["in_escrow"], "to_seller": lg["captured"],
-                  "returned": lg["returned"], "holdback": lg["holdback"]} if lg else None)
+                  "returned": lg["returned"]} if lg else None)
     if stopped and not lock:
         headline, tone = f"Refused — {PLAIN.get(stopped['code'], stopped['code'])}. No money moved.", "bad"
     elif money_now and money_now["in_escrow"] == 0:
@@ -432,21 +458,65 @@ def mandate_action(deal_id: str, action: str, who: str = Form(...)):
 def deals_page(request: Request):
     rows = db.rows("SELECT * FROM deals ORDER BY created_at DESC LIMIT 100")
     for r in rows:
-        r["ledger"], r["dispute"] = ledger(r), disputes.get(r["deal_id"])
+        r["ledger"], r["settlement"] = ledger(r), disputes.get(r["deal_id"])
     return page(request, "deals.html", rows=rows, names=_names())
 
 
 @router.get("/deals/{deal_id}", response_class=HTMLResponse)
-def deal_page(request: Request, deal_id: str):
+def deal_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
+    """The deal page a human can follow (§11): the conditions in words and who confirmed them, what came, what
+    failed and why, where the money went, what happens if nobody acts and until when."""
     from bank import verifier
     deal = _deal_or_404(deal_id)
-    items, raw = _items(deal_id)
     decisions = [{"client": explain_row(r, "client"), "compliance": explain_row(r, "compliance"), "row": r}
                  for r in db.rows("SELECT * FROM decisions WHERE deal_id=? ORDER BY id", (deal_id,))]
+    task, terms = deal.get("criteria") or {}, deal.get("terms") or {}
+    confirmed = {receipts.jcs(p) for p in task.get("predicates") or []}
+    conditions = [{"text": verifier.describe(p), "by_seller": receipts.jcs(p) not in confirmed}
+                  for p in (terms.get("predicates") or (deal.get("offer") or {}).get("predicates")
+                            or task.get("predicates") or [])]
+    s = disputes.get(deal_id)
     return page(request, "deal.html", deal=deal, seller=_seller(deal["seller_id"]), ledger=ledger(deal),
-                items=items, raw=raw, criteria=verifier.criteria_of(deal["criteria"]) if deal["criteria"] else None,
+                items=_items(deal), conditions=conditions, terms=terms, task=task, s=s,
+                silence=disputes.silence_text(deal, s) if s else "", scale=disputes.config_note(),
+                business_days=_business_days(s), step_text=STEP_TEXT, error=error, ok=ok,
+                attempts=db.rows("SELECT * FROM delivery_attempts WHERE deal_id=? ORDER BY id", (deal_id,)),
                 txs=db.rows("SELECT * FROM onchain_txs WHERE deal_id=? ORDER BY created_at", (deal_id,)),
-                decisions=decisions, dispute=disputes.get(deal_id), events=journal.entries(deal_id, limit=80))
+                decisions=decisions, events=journal.entries(deal_id, limit=80))
+
+
+def _business_days(s: dict | None) -> int | None:
+    """'Up to N business days' for every deal (§8.4: an AML hold must not stand out)."""
+    if s is None or s["closed_at"]:
+        return None
+    end = max(x for x in (s["deadline_at"], s["window_end_at"] or 0))
+    return max(1, int((end - time.time()) // config.BUSINESS_DAY_S) + 1)
+
+
+@router.post("/deals/{deal_id}/accept")
+def accept_deal(deal_id: str, who: str = Form(...)):
+    """Rule A: a person of the buyer confirms acceptance before the delivery deadline."""
+    _deal_or_404(deal_id)
+    try:
+        disputes.accept(deal_id, who)
+    except disputes.DisputeError as e:
+        return RedirectResponse(f"/deals/{deal_id}?error={e}", status_code=303)
+    return RedirectResponse(f"/deals/{deal_id}?ok=accepted", status_code=303)
+
+
+@router.post("/deals/{deal_id}/accept-item/{version}/{idx}")
+def accept_item(deal_id: str, version: int, idx: int, who: str = Form(...)):
+    """'Accept anyway' for one rejected item: only a person, within the lock, before the final void."""
+    deal = _deal_or_404(deal_id)
+    s = disputes.get(deal_id)
+    try:
+        if s is None or s["voided"] or s["closed_at"]:
+            raise receipts.Refused(409, "the deal is settled")
+        receipts.waive(deal_id, [(version, idx)], who, int(deal["terms"]["count"]))
+    except receipts.Refused as e:
+        return RedirectResponse(f"/deals/{deal_id}?error={e}", status_code=303)
+    disputes.advance(deal_id, actor=who)
+    return RedirectResponse(f"/deals/{deal_id}?ok=item accepted", status_code=303)
 
 
 @router.post("/deals/{deal_id}/retry-delivery")
@@ -473,56 +543,6 @@ def escrow_state(request: Request, deal_id: str):
         err = f"{type(e).__name__}: {str(e)[:120]}"
     return templates.TemplateResponse(request, "_escrow_state.html",
                                       {"deal": deal, "st": st, "err": err, "ledger": ledger(deal)})
-
-
-@router.get("/deals/{deal_id}/dispute", response_class=HTMLResponse)
-def dispute_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
-    deal = _deal_or_404(deal_id)
-    _, raw = _items(deal_id)
-    seller = _seller(deal["seller_id"])
-    return page(request, "dispute.html", deal=deal, d=disputes.get(deal_id), raw=raw, ledger=ledger(deal),
-                error=error, ok=ok, criteria=disputes.allowed_criteria(deal), silence=disputes.silence_text,
-                crit_text=criteria_text(deal),
-                seller=seller, buyer_actor=f"human:{deal['buyer_id']}", seller_actor=f"human:{seller['id']}",
-                officer=BANK_OFFICER,
-                events=[e for e in journal.entries(deal_id, limit=200) if e["event"].startswith("dispute.")])
-
-
-def criteria_text(deal: dict) -> dict:
-    """Rule code -> what was agreed, so the card says which criterion an item violates."""
-    from bank import verifier
-    c = verifier.criteria_of(deal.get("criteria"))
-    out = {"city": f"agreed: {c['city']} (postcode {c['postcode_prefix']}xx xx)",
-           "min_rating": f"agreed: rating > {c['min_rating']}", "category": "agreed: " + ", ".join(c["category_keywords"]),
-           "permanently_closed": "agreed: the place is open", "duplicate": "agreed: each place once",
-           "over_quantity": f"agreed: {c['count']} items"}
-    out.update({f"has_{f}": f"agreed: the item has a {f}" for f in c["required_fields"]})
-    return out
-
-
-def _dispute_action(deal_id: str, fn, *args):
-    try:
-        fn(deal_id, *args)
-    except disputes.DisputeError as e:
-        return RedirectResponse(f"/deals/{deal_id}/dispute?error={e}", status_code=303)
-    return RedirectResponse(f"/deals/{deal_id}/dispute?ok=1", status_code=303)
-
-
-@router.post("/deals/{deal_id}/dispute/{place_id}/review")
-def dispute_review(deal_id: str, place_id: str, action: str = Form(...), who: str = Form(...),
-                   criterion: str = Form(""), evidence: str = Form("")):
-    return _dispute_action(deal_id, disputes.buyer_review, place_id, action, who, criterion or None, evidence)
-
-
-@router.post("/deals/{deal_id}/dispute/{place_id}/objection")
-def dispute_objection(deal_id: str, place_id: str, who: str = Form(...), statement: str = Form("")):
-    return _dispute_action(deal_id, disputes.seller_objection, place_id, statement, who)
-
-
-@router.post("/deals/{deal_id}/dispute/{place_id}/decide")
-def dispute_decide(deal_id: str, place_id: str, verdict: str = Form(...), who: str = Form(BANK_OFFICER),
-                   note: str = Form("")):
-    return _dispute_action(deal_id, disputes.decide, place_id, verdict, who, note)
 
 
 @router.get("/statement", response_class=HTMLResponse)

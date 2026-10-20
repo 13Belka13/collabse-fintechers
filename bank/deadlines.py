@@ -1,7 +1,8 @@
-# Dispute timer (SPEC §9.6): a background thread in the bank process, every 5 s. It applies the silence
-# defaults from dispute_terms (bank.disputes.apply_defaults), releases the holdback when its window is over,
-# retries a pending capture/void under the same idem key, and raises an alarm in the /bank feed when an open
-# deal is less than 1 h from authorizationExpiry. Every step is journalled with actor "timer" and the rule.
+# Deal timer (MODEL_V2 §8.2): a background thread in the bank process, every 5 s. For every open settlement it
+# rechecks items waiting for a registry or a snapshot and lets the money follow the rule's schedule
+# (bank.disputes.tick: capture at acceptance / deadline / window end, the final void), retries a pending
+# capture/void under the same idem key, and raises an alarm in the /bank feed when an open deal is less than 1 h
+# from authorizationExpiry. Every step is journalled with actor "timer" and the rule.
 # tick(now) takes the clock as a parameter, so tests drive it with a fake clock.
 import threading
 import time
@@ -10,7 +11,7 @@ from bank import db, disputes, journal
 
 INTERVAL_S = 5
 ALARM_S = 3600
-LOCKED_STATES = ("authorized", "delivered", "verified", "disputed", "settled")
+LOCKED_STATES = ("authorized", "delivered", "dispute_c")
 _thread: threading.Thread | None = None
 _stop = threading.Event()
 _tick_lock = threading.Lock()
@@ -21,14 +22,12 @@ def tick(now: float | None = None) -> list[dict]:
     now = time.time() if now is None else now
     done = []
     with _tick_lock:
-        # a deal deals.settle left 'verified' (items held for a human) gets its dispute card and deadlines
-        for r in db.rows("SELECT deal_id FROM deals WHERE state='verified'"
-                         " AND deal_id NOT IN (SELECT deal_id FROM disputes)"):
-            disputes.open_(r["deal_id"], now=now)
-            done.append({"deal_id": r["deal_id"], "opened": True})
         for deal_id in disputes.open_ids():
-            for a in disputes.apply_defaults(deal_id, now=now):
-                done.append({"deal_id": deal_id, **a})
+            before = journal.entries(deal_id, limit=1)
+            disputes.tick(deal_id, now=now)
+            after = journal.entries(deal_id, limit=1)
+            if after and (not before or after[0]["id"] != before[0]["id"]):
+                done.append({"deal_id": deal_id, "event": after[0]["event"]})
         done += alarms(now)
     return done
 

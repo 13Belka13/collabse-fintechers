@@ -21,6 +21,7 @@ HEADLINES = {
     Code.BUDGET_EXCEEDED: "The mandate budget would be exceeded",
     Code.QUOTE_MISMATCH: "The payment request does not match the agreed offer",
     Code.VELOCITY_EXCEEDED: "Too many payments in a short time",
+    Code.TERMS_MISMATCH: "The offer's terms do not meet the confirmed task terms or the mandate",
     Code.CONFIRMATION_REQUIRED: "A human must confirm this payment",
     Code.VAT_LIABILITY_RISK: "VAT liability risk (Czech VAT Act §109)",
     Code.UNDER_REVIEW: "The payment is under review at the bank",
@@ -29,6 +30,7 @@ NEXT_STEP = {
     "amend_mandate": "Next: a human can amend the mandate.",
     "ask_human": "Next: a human decides.",
     "retry_later": "Next: try again later.",
+    "negotiate": "Next: the agent negotiates terms that meet the task and the mandate.",
     "confirm": "Next: a human confirms the payment.",
     "confirm_or_pay_in_tczk": "Next: a human acknowledges the VAT risk once, or the deal is paid in tCZK.",
 }

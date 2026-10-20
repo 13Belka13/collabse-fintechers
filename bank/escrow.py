@@ -105,8 +105,12 @@ def payment_info(deal: dict, now: int | None = None) -> dict:
           "minFeeBps": 0, "maxFeeBps": 0, "feeReceiver": ZERO, "salt": str(secrets.randbits(256))}
     pi = {k: (Web3.to_checksum_address(v) if k in ADDRESS_FIELDS else v) for k, v in pi.items()}
     h = payment_hash(pi)
-    db.run("UPDATE deals SET payment_info_json=?, payment_hash=?, updated_at=? WHERE deal_id=?",
-           (db.dumps(pi), h, time.time(), deal["deal_id"]))
+    with db.immediate():
+        db.run("UPDATE deals SET payment_info_json=?, payment_hash=?, updated_at=? WHERE deal_id=?",
+               (db.dumps(pi), h, time.time(), deal["deal_id"]))
+        db.run("INSERT OR IGNORE INTO payment_infos (payment_hash, deal_id, n, purpose, receiver, max_amount, pi_json,"
+               " created_at) VALUES (?,?,?,?,?,?,?,?)", (h, deal["deal_id"], int(deal.get("pi_n") or 0), "deal",
+                                                         pi["receiver"], int(pi["maxAmount"]), db.dumps(pi), time.time()))
     journal.append("bank", "payment_info_stored", {"payment_hash": h, "payment_info": pi}, deal_id=deal["deal_id"])
     return pi
 
@@ -151,6 +155,7 @@ def authorize(deal_id: str) -> dict:
     pi = db.loads(deal["payment_info_json"]) or payment_info(deal)
     done = authorized_tx(deal_id)
     if done:  # it already landed (an earlier call only lost the answer): report it, even after preApprovalExpiry
+        db.run("UPDATE payment_infos SET authorized=1 WHERE payment_hash=?", (payment_hash(pi),))
         return {"tx_hash": done["tx_hash"], "status": "mined", "block_number": done["block_number"],
                 "gas_used": done["gas_used"], "link": chain.tx_link(done["tx_hash"]), "reused": True}
     if int(time.time()) >= int(pi["preApprovalExpiry"]):
@@ -159,6 +164,7 @@ def authorize(deal_id: str) -> dict:
             prior = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (idem_key(deal_id, "authorize"),)) or {}
             if prior.get("tx_hash"):
                 db.run("UPDATE onchain_txs SET status='mined' WHERE tx_hash=?", (prior["tx_hash"],))
+            db.run("UPDATE payment_infos SET authorized=1 WHERE payment_hash=?", (payment_hash(pi),))
             journal.append("bank", "escrow_authorized_late", {"capturable": landed["capturable"]}, deal_id=deal_id)
             return {"tx_hash": prior.get("tx_hash"), "status": "mined",
                     "link": chain.tx_link(prior["tx_hash"]) if prior.get("tx_hash") else None, "reused": True}
@@ -169,6 +175,7 @@ def authorize(deal_id: str) -> dict:
     with timing.timed("escrow_authorize", deal_id):
         tx = chain.sender(config.BANK_OPERATOR_PK).send(call, kind="authorize", deal_id=deal_id,
                                                         idem_key=idem_key(deal_id, "authorize"))
+    db.run("UPDATE payment_infos SET authorized=1 WHERE payment_hash=?", (payment_hash(pi),))
     journal.append("bank", "escrow_authorized", {"amount": int(pi["maxAmount"]), "tx_hash": tx["tx_hash"],
                                                  "link": tx["link"]}, deal_id=deal_id)
     return tx
@@ -213,6 +220,16 @@ def finish(deal_id: str, to_seller: int) -> dict:
     if to_seller < int(pi["maxAmount"]):
         out["void"] = void(deal_id)
     return out
+
+
+def locked_amount(deal_id: str) -> int:
+    """What can ever reach the seller from this deal's locks: captured on PaymentInfos already voided, plus the
+    whole maxAmount of the open ones. Only authorized deal PaymentInfos count (not fee authorizations)."""
+    rows = db.rows("SELECT max_amount, captured, voided FROM payment_infos WHERE deal_id=? AND purpose='deal'"
+                   " AND authorized=1", (deal_id,))
+    if not rows:
+        return int(_deal(deal_id)["amount"] or 0)
+    return sum(r["captured"] if r["voided"] else r["max_amount"] for r in rows)
 
 
 def read_state(h: str) -> dict:

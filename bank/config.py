@@ -78,6 +78,29 @@ def reload():
     derived = Account.from_key(g["BANK_OPERATOR_PK"]).address if g["BANK_OPERATOR_PK"] else ""
     g["BANK_OPERATOR_ADDR"] = _env("BANK_OPERATOR_ADDR", derived or "0x0469ceC178789072bc61435835D0BB38214D4e53")
 
+    # MODEL_V2 §14 demo scale: on the testnet every euro threshold and fee is divided by DEMO_MONEY_DIVISOR and
+    # every window / business day by DEMO_TIME_DIVISOR (30 min -> 20 s). Said on the deal page and on stage.
+    g["MONEY_DIVISOR"] = int(_env("DEMO_MONEY_DIVISOR", "100"))
+    g["TIME_DIVISOR"] = float(_env("DEMO_TIME_DIVISOR", "90"))
+    g["DEMO_SCALE"] = g["MONEY_DIVISOR"] != 1 or g["TIME_DIVISOR"] != 1
+    # tiers by tier_sum in euro cents (production: <= 20 €, (20; 500], > 500), §4
+    g["TIER_T0_MAX"], g["TIER_T1_MAX"] = 2000 // g["MONEY_DIVISOR"], 50_000 // g["MONEY_DIVISOR"]
+    # bank fee per (tier, rule), basis points, taken at capture (feeReceiver = clearing address, §10); T0 is
+    # billed monthly from the seller's account, so nothing at capture
+    g["TARIFF_BPS"] = {("T0", "A"): 0, ("T1", "A"): 80, ("T1", "B"): 120,
+                       ("T2", "A"): 150, ("T2", "B"): 150, ("T2", "C"): 150}
+    # claim windows per tier in seconds (production: T1 30 min – 24 h, T2 72 h – 14 days), scaled
+    g["WINDOW_S"] = {"T1": (1800 / g["TIME_DIVISOR"], 86400 / g["TIME_DIVISOR"]),
+                     "T2": (72 * 3600 / g["TIME_DIVISOR"], 14 * 86400 / g["TIME_DIVISOR"])}
+    g["BUSINESS_DAY_S"] = 86400 / g["TIME_DIVISOR"]  # demo: a business day is this many seconds, no calendar
+    # escrow terms §8.3 (not scaled: a long lock is safe, the bank closes the deal itself)
+    g["ESCROW_EXTRA_DAYS"] = {"T0": 30, "T1": 30, "T2": 120}
+    g["REFUND_EXTRA_DAYS"] = 30
+    # the bank's clearing address: fee receiver at capture and receiver of C dispute fees (§8.2, §10)
+    g["BANK_CLEARING_PK"] = _env("BANK_CLEARING_PK")
+    derived_clearing = Account.from_key(g["BANK_CLEARING_PK"]).address if g["BANK_CLEARING_PK"] else ""
+    g["BANK_CLEARING_ADDR"] = _env("BANK_CLEARING_ADDR", derived_clearing or "0xC1ea41a6C0000000000000000000000000000bA4")
+
     # Assets the bank handles. Amounts are always integers in atomic units.
     g["ASSETS"] = {
         "EURC": {"address": g["EURC"], "decimals": 6, "name": "EURC", "version": "2"},

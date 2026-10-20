@@ -2,11 +2,49 @@
 {% block title %}Deal {{ deal.deal_id }} · Collabse bank{% endblock %}
 {% block main %}
 <div class="flex"><h1>Deal <code>{{ deal.deal_id }}</code></h1>{% with r = deal %}{% include "_state.html" %}{% endwith %}
-  <span class="muted">{{ seller.name }} (IČO {{ seller.ico }}) · {{ deal.asset }}</span>
-  {% if dispute %}<a class="btn right" href="/deals/{{ deal.deal_id }}/dispute">Dispute card →</a>{% endif %}</div>
+  <span class="muted">{{ seller.name }} (IČO {{ seller.ico }}) · {{ deal.asset }}</span></div>
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}{% if ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
 {% include "_money.html" %}
 {% set marks = [] %}{% for e in events %}{% for m in (e.payload.marks or []) %}{% if m not in marks %}{% set _ = marks.append(m) %}{% endif %}{% endfor %}{% endfor %}
 {% if marks %}<div class="flex">{% for m in marks %}<span class="badge b-warn">{{ m }}</span>{% endfor %}</div>{% endif %}
+
+{% if s %}
+<div class="card">
+  <div class="flex"><strong>Rule {{ s.rule }}{% if s.b_pct %} · guarantee {{ s.b_pct }} %{% endif %}</strong>
+    <span class="badge b-info">{{ s.tier }}</span><span class="badge b-muted">{{ step_text.get(s.step, s.step) }}</span>
+    {% if business_days %}<span class="right small">settles in up to {{ business_days }} business day{{ 's' if business_days != 1 }}</span>{% endif %}</div>
+  {% if silence %}<div class="small"><strong>If nobody acts:</strong> {{ silence }}</div>{% endif %}
+  <div class="small muted">delivery by {{ s.deadline_at|ts }}{% if s.window_end_at %} · claim window until <span class="countdown" data-deadline="{{ s.window_end_at }}"></span>{% endif %}{% if terms.fee_bps %} · bank fee {{ terms.fee_bps / 100 }} % taken at capture{% endif %}</div>
+  {% if scale %}<div class="small muted">{{ scale }}</div>{% endif %}
+  {% if s.rule == 'A' and not s.closed_at and not s.accepted_at %}<form method="post" action="/deals/{{ deal.deal_id }}/accept" class="flex" style="margin-top:6px">
+    <input type="hidden" name="who" value="human:{{ deal.buyer_id }}"><button type="submit" class="ghost">Confirm acceptance now (a person of the buyer)</button></form>{% endif %}
+</div>
+{% endif %}
+
+<div class="cols">
+<div class="card">
+  <h2 style="margin-top:0">Conditions</h2>
+  {% if task.hash %}<div class="small muted">task terms <code>{{ task.hash[:18] }}…</code>{% if deal.confirmed_by %} · confirmed by {{ deal.confirmed_by }}{% endif %}</div>{% endif %}
+  <ul class="small">{% for c in conditions %}<li>{{ c.text }}{% if c.by_seller %} <span class="badge b-warn">added by the seller</span>{% endif %}</li>{% else %}<li class="muted">No conditions yet.</li>{% endfor %}</ul>
+  <div class="small muted">All conditions must hold (AND); the seller may add conditions, never remove one.</div>
+  {% if deal.offer %}<h3>Offer</h3><div>{{ deal.offer.items_spec }}</div>
+  <div class="small muted">offer <code>{{ deal.offer.offer_id }}</code> · delivery within {{ deal.offer.deadline_s }} s</div>{% endif %}
+  {% if deal.quote %}<div style="margin-top:8px"><strong>402 quote:</strong> {{ deal.quote.amount|money(deal.asset) }} to <code>{{ deal.quote.pay_to }}</code> on {{ deal.quote.network }}</div>{% endif %}
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Escrow</h2>
+  {% if deal.payment_hash %}
+  <div class="small">payment hash <code>{{ deal.payment_hash }}</code></div>
+  {% set pi = deal.payment_info %}<div class="small">receiver <code>{{ pi.receiver }}</code>{% if pi.maxFeeBps %} · fee ≤ {{ pi.maxFeeBps / 100 }} % to the bank's clearing address{% endif %}</div>
+  <div class="small">authorization expires {{ pi.authorizationExpiry|ts }} · refunds until {{ pi.refundExpiry|ts }}</div>
+  <table class="small" style="margin-top:8px"><tr><th>Tx</th><th>Kind</th><th>Status</th></tr>
+  {% for t in txs %}{% set x = t.tx_hash|tx %}<tr><td>{% if x.url %}<a class="mono" href="{{ x.url }}" target="_blank" rel="noopener">{{ x.short }}</a>{% else %}<span class="mono">{{ x.short }}</span> <span class="muted">simulated</span>{% endif %}</td><td>{{ t.kind }}</td><td>{{ t.status }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No transactions.</td></tr>{% endfor %}</table>
+  <div style="margin-top:10px"><button class="ghost" hx-get="/deals/{{ deal.deal_id }}/escrow-state" hx-target="#escrow-state" hx-swap="innerHTML">Read escrow state from the chain</button></div>
+  <div id="escrow-state" style="margin-top:8px"></div>
+  {% else %}<div class="muted">Nothing locked for this deal.</div>{% endif %}
+</div>
+</div>
 
 <h2>Bank decisions</h2>
 {% for x in decisions %}
@@ -18,50 +56,30 @@
 </div></div>
 {% else %}<div class="card muted">No decision yet.</div>{% endfor %}
 
-<div class="cols">
-<div class="card">
-  <h2 style="margin-top:0">Offer and quote</h2>
-  {% if deal.offer %}<div>{{ deal.offer.items_spec }}</div>
-  <div class="small muted">offer <code>{{ deal.offer.offer_id }}</code> · delivery within {{ deal.offer.deadline_s }} s</div>{% endif %}
-  {% if deal.quote %}<div style="margin-top:8px"><strong>402 quote:</strong> {{ deal.quote.amount|money(deal.asset) }} to <code>{{ deal.quote.pay_to }}</code> on {{ deal.quote.network }}</div>{% endif %}
-  {% if criteria %}<h3>Acceptance criteria</h3>
-  <table class="small"><tr><td>Items</td><td>{{ criteria.count }}</td></tr><tr><td>City</td><td>{{ criteria.city }} (or postcode {{ criteria.postcode_prefix }}xx xx)</td></tr>
-    <tr><td>Rating</td><td>&gt; {{ criteria.min_rating }}</td></tr><tr><td>Category keywords</td><td>{{ criteria.category_keywords|join(', ') }}</td></tr>
-    <tr><td>Required fields</td><td>{{ criteria.required_fields|join(', ') }}</td></tr></table>{% endif %}
-  {% if deal.offer and deal.offer.dispute_terms %}{% set t = deal.offer.dispute_terms %}<h3>Dispute terms (agreed in the offer)</h3>
-  <div class="small">review {{ t.review_window_s }} s · objection {{ t.objection_window_s }} s · decision {{ t.decision_sla_s }} s · holdback {{ t.holdback_bps / 100 }} % for {{ t.holdback_s }} s<br>
-  buyer silent → {{ t.on_buyer_silence }} · seller silent → {{ t.on_seller_silence }} · no decision → {{ t.on_decision_timeout }}</div>{% endif %}
-</div>
-<div class="card">
-  <h2 style="margin-top:0">Escrow</h2>
-  {% if deal.payment_hash %}
-  <div class="small">payment hash <code>{{ deal.payment_hash }}</code></div>
-  {% set pi = deal.payment_info %}<div class="small">receiver <code>{{ pi.receiver }}</code></div>
-  <div class="small">authorization expires in <span class="countdown" data-deadline="{{ pi.authorizationExpiry }}"></span> · refunds until {{ pi.refundExpiry|ts }}</div>
-  <table class="small" style="margin-top:8px"><tr><th>Tx</th><th>Kind</th><th>Status</th></tr>
-  {% for t in txs %}{% set x = t.tx_hash|tx %}<tr><td>{% if x.url %}<a class="mono" href="{{ x.url }}" target="_blank" rel="noopener">{{ x.short }}</a>{% else %}<span class="mono">{{ x.short }}</span> <span class="muted">simulated</span>{% endif %}</td><td>{{ t.kind }}</td><td>{{ t.status }}</td></tr>
-  {% else %}<tr><td colspan="3" class="muted">No transactions.</td></tr>{% endfor %}</table>
-  <div style="margin-top:10px"><button class="ghost" hx-get="/deals/{{ deal.deal_id }}/escrow-state" hx-target="#escrow-state" hx-swap="innerHTML">Read escrow state from the chain</button></div>
-  <div id="escrow-state" style="margin-top:8px"></div>
-  {% else %}<div class="muted">Nothing locked for this deal.</div>{% endif %}
-</div>
-</div>
-
-<h2>Delivered items</h2>
+<h2>Delivery through the bank</h2>
+{% for a in attempts %}<div class="small">{% if a.accepted %}<span class="badge b-ok">version {{ a.version }} received</span>{% else %}<span class="badge b-bad">{{ a.code }}</span>{% endif %}
+  {{ a.received_at|ts }} · {{ a.detail }}{% if a.bank_root %} · root <code>{{ a.bank_root[:14] }}…</code>{% endif %}{% if a.signer %} · signed by <code>{{ a.signer[:10] }}…</code>{% endif %}</div>{% endfor %}
 {% if items %}
 <table class="small">
-  <tr><th>#</th><th>Item</th><th>Verdict</th><th>Failed rules</th><th>Judge</th></tr>
-  {% for it in items %}{% set src = raw.get(it.placeId, {}) %}
-  <tr><td>{{ loop.index }}</td><td>{{ it.title }}<div class="muted"><code>{{ it.placeId }}</code>{% if src.city %} · {{ src.city }}{% endif %}{% if src.totalScore %} · ★ {{ src.totalScore }}{% endif %}</div></td>
-    <td><span class="badge {{ {'accepted': 'b-ok', 'held': 'b-warn', 'rejected': 'b-bad'}.get(it.status, 'b-muted') }}">{{ it.status }}</span></td>
-    <td>{% for f in it.failed %}<code>{{ f }}</code> {% else %}—{% endfor %}</td>
-    <td>{% if it.judge %}{{ it.judge.reason }} {% if it.judge.ai_generated %}<span class="ai">{{ AI_LABEL }}</span>{% endif %}{% else %}—{% endif %}</td></tr>
+  <tr><th>#</th><th>Item</th><th>Result</th><th>Why</th><th>Value</th><th></th></tr>
+  {% for it in items %}
+  <tr><td>{{ it.version }}/{{ it.idx }}</td><td>{{ it.label }}{% if it.key %}<div class="muted"><code>{{ it.key }}</code></div>{% endif %}</td>
+    <td><span class="badge {{ {'accepted': 'b-ok', 'pending': 'b-warn', 'rejected': 'b-bad'}.get(it.status, 'b-muted') }}">{{ it.code or it.status }}</span>{% if it.refunded %} <span class="badge b-warn">refunded ({{ it.refunded }})</span>{% endif %}{% if it.waived_by %} <span class="badge b-warn">accepted anyway by {{ it.waived_by }}</span>{% endif %}</td>
+    <td>{% if it.rule_text %}violated: {{ it.rule_text }}{% endif %}{% if it.detail and it.status != 'accepted' %}<div class="muted">{{ it.detail }}</div>{% endif %}</td>
+    <td class="mono">{{ it.masked }}</td>
+    <td>{% if it.status == 'rejected' and s and not s.voided and not s.closed_at %}<form method="post" action="/deals/{{ deal.deal_id }}/accept-item/{{ it.version }}/{{ it.idx }}">
+      <input type="hidden" name="who" value="human:{{ deal.buyer_id }}"><button type="submit" class="ghost">Accept anyway</button></form>{% endif %}</td></tr>
   {% endfor %}
 </table>
+<div class="small muted">The buyer receives only accepted items; each comes with a proof against the root the seller signed.</div>
 {% else %}<div class="card flex"><span class="muted">No delivery yet.</span>
   {% if deal.state == 'authorized' %}<form method="post" action="/deals/{{ deal.deal_id }}/retry-delivery" class="right">
     <button type="submit" class="ghost">Remind the seller to deliver</button></form>
   <span class="small muted">resends the escrow notice; the money stays locked, nothing is paid twice</span>{% endif %}</div>{% endif %}
+
+{% if s and s.claims %}<h2>Claims</h2>
+{% for c in s.claims %}<div class="card small"><strong>{{ c.rule }}</strong> · {{ c['items']|length }} item(s) · {{ c.amount|money(deal.asset) }} · {{ c.state }}{% if c.reason %} · reason <code>{{ c.reason }}</code>{% endif %} · filed {{ c.filed_at|ts }} by <code>{{ c.by }}</code></div>{% endfor %}
+{% endif %}
 
 <h2>Journal</h2>
 <table class="small">

@@ -13,6 +13,7 @@ class Code(StrEnum):
     BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
     QUOTE_MISMATCH = "QUOTE_MISMATCH"
     VELOCITY_EXCEEDED = "VELOCITY_EXCEEDED"
+    TERMS_MISMATCH = "TERMS_MISMATCH"  # MODEL_V2 §3: predicates not verbatim, rule/tier/window below the mandate
     CONFIRMATION_REQUIRED = "CONFIRMATION_REQUIRED"
     VAT_LIABILITY_RISK = "VAT_LIABILITY_RISK"
     UNDER_REVIEW = "UNDER_REVIEW"  # fail-closed: a registry did not answer in time (§19.4), or a hidden AML reason
@@ -29,6 +30,7 @@ SPEC = {
     Code.BUDGET_EXCEEDED: ("refused", "amend_mandate"),
     Code.QUOTE_MISMATCH: ("refused", "ask_human"),
     Code.VELOCITY_EXCEEDED: ("refused", "retry_later"),
+    Code.TERMS_MISMATCH: ("refused", "negotiate"),
     Code.CONFIRMATION_REQUIRED: ("requires_user_action", "confirm"),
     Code.VAT_LIABILITY_RISK: ("requires_user_action", "confirm_or_pay_in_tczk"),
     Code.UNDER_REVIEW: ("refused", "retry_later"),

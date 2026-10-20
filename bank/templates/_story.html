@@ -16,7 +16,7 @@
   <div class="flow-box"><div class="k">Left the buyer</div><div class="v">{{ s.money.buyer_out|money(a) }}</div><div class="small muted">{{ s.buyer.name }}</div></div>
   <div class="flow-arrow">→</div>
   <div class="flow-box safe"><div class="k">In the escrow safe now</div><div class="v">{{ s.money.in_escrow|money(a) }}</div>
-    <div class="small muted">{% if s.money.holdback %}incl. {{ s.money.holdback|money(a) }} holdback{% else %}on chain, nobody can take it alone{% endif %}</div></div>
+    <div class="small muted">on chain, nobody can take it alone</div></div>
   <div class="flow-arrow">→</div>
   <div class="flow-box paid"><div class="k">Paid to the seller</div><div class="v">{{ s.money.to_seller|money(a) }}</div><div class="small muted">{{ s.seller.name }}</div></div>
   {% if s.money.returned %}<div class="flow-box back"><div class="k">Back to the buyer</div><div class="v">{{ s.money.returned|money(a) }}</div><div class="small muted">not earned</div></div>{% endif %}
@@ -48,8 +48,7 @@
         </div>
       {% endif %}
       {% if st.tx %}{% set t = st.tx|tx %}<div class="small">{% if t.url %}<a class="mono" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.short }} on the explorer</a>{% else %}<span class="mono muted">{{ t.short }} (simulated)</span>{% endif %}</div>{% endif %}
-      {% if st.dispute %}<div class="small"><a href="/deals/{{ s.deal.deal_id }}/dispute">Open the dispute card →</a></div>{% endif %}
-      {% if st.deadline %}<div class="small muted">Holdback released to the seller in <span class="countdown" data-deadline="{{ st.deadline }}"></span> if nobody complains.</div>{% endif %}
+      {% if st.deadline %}<div class="small muted">The claim window ends in <span class="countdown" data-deadline="{{ st.deadline }}"></span>; then the rest is settled by the rule.</div>{% endif %}
     </div>
   </li>
 {% endfor %}

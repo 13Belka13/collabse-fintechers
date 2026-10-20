@@ -1,261 +1,168 @@
-# Disputes + the timer with a fake clock (SPEC §9, layer L5). The real verifier (MOCK judge) decides the items,
-# the real escrow.capture/void build the calls, a fake chain sender records them (idempotent per idem key like
-# chain.Sender). N13 buyer silent -> capture, N14 seller silent -> void of that part, holdback released after
-# its window, capture of everything owed before the final void, no double capture on repeated ticks.
-import json
+# Rules A and B and the payment schedule (MODEL_V2 §7, §8.2) with a fake clock and a fake chain sender: the real
+# delivery through the bank (signed manifest, predicate engine on synthetic ARES fixtures), the real escrow calls,
+# one final void, B claims without investigation and their limits, no void on a failed capture (§8.4).
 import time
-import types
 
 import pytest
 
-from bank import chain, db, deadlines, disputes, escrow, journal, llm, mandate
-from bank import verifier  # noqa: F401  (imported first, so its judge mock does not replace the test's)
-from seller.app import DEMO_DISPUTE_TERMS, make_items
+from bank import db, deadlines, deals, disputes, journal, receipts
+from tests.unit import dealkit as k
 
-ADDR = "0x491BeCCB4E26E1c5781E1E44c48Ad474D04d2140"
-BETA = "0x70E8B0ed46DC4FD558ee05bCEba06e5AAf00EBd1"
-EURC = "0x808456652fdb597867f38412077A9182bf77359F"
-T0 = float(int(time.time()))  # the fake clock starts now (escrow expiry is real time + 24 h); tests move it
-
-
-class FakeSender:
-    """Same idem key -> same tx, nothing new on chain (what chain.Sender guarantees)."""
-
-    def __init__(self):
-        self.sent, self.by_key, self.fail_next = [], {}, None
-
-    def send(self, call, **kw):
-        key = kw["idem_key"]
-        if key in self.by_key:
-            return self.by_key[key]
-        self.sent.append((call.fn_name, call.args[1] if call.fn_name == "capture" else None, key))
-        tx = {"tx_hash": "0x%064x" % len(self.sent), "link": chain.tx_link("0x%064x" % len(self.sent)), "status": "mined"}
-        self.by_key[key] = tx
-        if self.fail_next:  # the tx went out but the answer was lost (RPC timeout)
-            err, self.fail_next = self.fail_next, None
-            raise err
-        return tx
+T0 = float(int(time.time()))
 
 
 @pytest.fixture
-def world(monkeypatch, seeded):
-    sender = FakeSender()
-    monkeypatch.setattr(chain, "sender", lambda pk: sender)
-    flagged: set[str] = set()
-
-    def judge(messages, tools):  # MOCK judge: everything plausible except the ids the test flags
-        batch = json.loads(messages[0]["content"].split("<items>", 1)[1].split("</items>", 1)[0])
-        return {"text": json.dumps([{"placeId": it["placeId"], "plausible_warehouse": it["placeId"] not in flagged,
-                                     "reason": "Looks like a café, not storage." if it["placeId"] in flagged
-                                     else "Storage business."} for it in batch])}
-    monkeypatch.setitem(llm.MOCKS, "judge", judge)
-    mandate.ensure_demo()
-    return types.SimpleNamespace(sender=sender, flagged=flagged)
+def w(monkeypatch, seeded):
+    return k.world(monkeypatch)
 
 
-def make_deal(mode="honest", deal_id="d-test", expiry_in=86400, state="delivered"):
-    offer = {"offer_id": "o-1", "count": 20, "prices": {"EURC": "5000000"}, "dispute_terms": DEMO_DISPUTE_TERMS,
-             "criteria": {"count": 20, "city": "Brno", "min_rating_exclusive": 4.0}}
-    now = int(time.time())
-    pi = {"operator": ADDR, "payer": ADDR, "receiver": BETA, "token": EURC, "maxAmount": 5_000_000,
-          "preApprovalExpiry": now + 600, "authorizationExpiry": now + expiry_in, "refundExpiry": now + 7 * 86400,
-          "minFeeBps": 0, "maxFeeBps": 0, "feeReceiver": "0x" + "0" * 40, "salt": "1"}
-    db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, mandate_id, offer_json, criteria_json, asset, amount,"
-           " payment_info_json, payment_hash, state, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-           (deal_id, "alfa", "s-beta", "m-alfa-1", db.dumps(offer), db.dumps(offer["criteria"]), "EURC", 5_000_000,
-            db.dumps(pi), escrow.payment_hash(pi), state, time.time()))
-    db.run("INSERT INTO deliveries (deal_id, items_json, created_at) VALUES (?,?,?)",
-           (deal_id, db.dumps(make_items(20, mode)), time.time()))
-    assert mandate.reserve("m-alfa-1", deal_id, 500)["status"] == "ok"
-    return deal_id
+def test_rule_b_captures_90_percent_at_acceptance_then_the_rest_at_window_end(w):
+    deal_id = k.make_deal(w, now=T0)
+    out = k.deliver(w, deal_id, now=T0 + 1)
+    assert out["accepted"] and out["accepted_items"] == 20
+    assert k.captures(w) == [4_500_000] and k.state(deal_id) == "delivered"
+    assert deadlines.tick(now=T0 + 20) == []  # window (20 s from acceptance) still open: nothing moves
+    deadlines.tick(now=T0 + 22)
+    assert k.captures(w) == [4_500_000, 500_000] and "void" not in k.fns(w)
+    assert k.state(deal_id) == "settled" and k.reservation(deal_id)["committed"] == 500
+    assert any(e["actor"] == "timer" and e["event"] == "settlement.capture" for e in journal.entries(deal_id))
 
 
-def captures(w):
-    # (amount, "capture:n"): the idem key's suffix, whatever prefix escrow puts before it
-    return [(amount, ":".join(key.split(":")[-2:])) for fn, amount, key in w.sender.sent if fn == "capture"]
+def test_rule_b_with_rejected_items_one_final_void(w):
+    deal_id = k.make_deal(w, now=T0)
+    out = k.deliver(w, deal_id, mode="fake_data", now=T0 + 1)
+    assert [i["code"] for i in out["items"] if i["status"] != "accepted"] == \
+        ["CRITERIA_FAIL", "CRITERIA_FAIL", "REGISTRY_CONTRADICTION"]  # no website, Praha, closed by ARES
+    assert k.captures(w) == [3_825_000]  # 90 % of P = 17/20 of 5 €
+    deadlines.tick(now=T0 + 30)
+    assert k.fns(w) == ["capture", "capture", "void"] and k.captures(w)[-1] == 425_000
+    view = disputes.money_view(deals.get(deal_id), disputes.get(deal_id))
+    assert view == {"total": 5_000_000, "captured": 4_250_000, "returned": 750_000, "in_escrow": 0}
+    r = k.reservation(deal_id)
+    assert r["committed"] == r["amount"] == 425 and r["state"] == "committed"  # the rest released
+    assert len(receipts.fetch(deal_id)["items"]) == 17  # rejected items never reach the buyer
 
 
-def fns(w):
-    return [fn for fn, _, _ in w.sender.sent]
+def test_b_claim_refunds_up_to_x_percent_without_investigation(w):
+    deal_id = k.make_deal(w, now=T0)
+    k.deliver(w, deal_id, mode="fake_data", now=T0 + 1)
+    out = disputes.file_b(deal_id, [[1, 0], [1, 1]], "wrong_data", "agent:buyer", now=T0 + 5)
+    assert out["amount"] == 425_000  # two items are worth 500 000, capped at 10 % of P = 4 250 000
+    deadlines.tick(now=T0 + 30)
+    assert k.fns(w) == ["capture", "void"]  # 90 % already paid = P minus the refund: nothing more to capture
+    view = disputes.money_view(deals.get(deal_id), disputes.get(deal_id))
+    assert view["captured"] == 3_825_000 and view["returned"] == 1_175_000
+    # the refunded items are blocked for this seller in this task (§5.2 p. 6)
+    blocked = db.rows("SELECT unique_key FROM items WHERE deal_id=? AND refunded='B'", (deal_id,))
+    assert len(blocked) == 2
+    deal2 = k.make_deal(w, deal_id="d-two", now=T0 + 40)
+    again = k.deliver(w, deal2, items=[r["item"] for r in receipts.items_of(deal_id)[:3]], now=T0 + 41)
+    assert [i["code"] for i in again["items"]] == ["DUPLICATE"] * 3
 
 
-def timer_events(deal_id):
-    return [e for e in journal.entries(deal_id, limit=1000) if e["actor"] == "timer"]
-
-
-def reservation(deal_id):
-    return db.one("SELECT * FROM reservations WHERE deal_id=?", (deal_id,))
-
-
-def state(deal_id):
-    return db.one("SELECT state FROM deals WHERE deal_id=?", (deal_id,))["state"]
-
-
-def test_honest_deal_pays_minus_holdback_then_releases_it(world):
-    deal_id = make_deal("honest")
-    d = disputes.settle(deal_id, now=T0)
-    assert d["items"] == [] and d["holdback"] == 250_000  # 5 % of 5,00 €
-    assert captures(world) == [(4_750_000, "capture:1")]
-    assert state(deal_id) == "settled"
-    assert deadlines.tick(now=T0 + 299) == []  # holdback window not over yet
-    deadlines.tick(now=T0 + 301)
-    assert captures(world)[-1] == (250_000, "capture:2")
-    assert "void" not in fns(world)  # everything went to the seller: nothing to return
-    assert state(deal_id) == "closed"
-    assert reservation(deal_id)["committed"] == 500
-    e = next(e for e in timer_events(deal_id) if e["event"] == "dispute.holdback_released")
-    assert "holdback_s" in e["payload"]["rule"]
-
-
-def test_n14_seller_silent_after_rejection_voids_that_part(world):
-    deal_id = make_deal("fake_data")  # 2 of 20 break the rules (no website, wrong city)
-    d = disputes.settle(deal_id, now=T0)
-    assert [it["origin"] for it in d["items"]] == ["rules", "rules"] and d["step"] == "objection"
-    assert d["holdback"] == 225_000 and captures(world) == [(4_275_000, "capture:1")]
-    assert state(deal_id) == "disputed"
-    deadlines.tick(now=T0 + 119)
-    assert len(world.sender.sent) == 1  # objection window still open
-    deadlines.tick(now=T0 + 121)  # seller silent -> rejection stands; holdback still running -> no void yet
-    d = disputes.get(deal_id)
-    assert all(it["outcome"] == "rejected" and it["decided_by"] == "timer" for it in d["items"])
-    assert fns(world) == ["capture"]
-    deadlines.tick(now=T0 + 301)  # holdback over: capture it, THEN void the rejected part
-    assert fns(world) == ["capture", "capture", "void"]
-    assert captures(world)[-1] == (225_000, "capture:2")
-    view = disputes.money_view({"amount": 5_000_000}, disputes.get(deal_id))
-    assert view == {"total": 5_000_000, "captured": 4_500_000, "returned": 500_000, "in_escrow": 0, "holdback": 0}
-    rules = [e["payload"]["rule"] for e in timer_events(deal_id) if e["event"] == "dispute.default_applied"]
-    assert rules == ["on_seller_silence: rejection_stands"] * 2
-    assert reservation(deal_id)["committed"] == 450 and reservation(deal_id)["amount"] == 450  # rest released
-    assert state(deal_id) == "closed"
-
-
-def test_n13_buyer_silent_on_flagged_items_captures_them(world):
-    world.flagged.update({"demo-place-03", "demo-place-04"})
-    deal_id = make_deal("honest")
-    d = disputes.settle(deal_id, now=T0)
-    assert [(it["origin"], it["step"]) for it in d["items"]] == [("judge", "review")] * 2
-    assert d["items"][0]["judge"]["ai_generated"] is True
-    assert captures(world) == [(4_275_000, "capture:1")]  # 18 accepted minus 5 % holdback
-    deadlines.tick(now=T0 + 61)  # buyer silent -> accepted -> paid at once
-    assert captures(world)[-1] == (500_000, "capture:2")
-    e = [e for e in timer_events(deal_id) if e["event"] == "dispute.default_applied"]
-    assert {x["payload"]["rule"] for x in e} == {"on_buyer_silence: accept"}
-    assert any(x["event"] == "dispute.capture" and x["actor"] == "timer" for x in timer_events(deal_id))
-    deadlines.tick(now=T0 + 301)
-    assert captures(world)[-1] == (225_000, "capture:3") and "void" not in fns(world)
-    assert sum(a for a, _ in captures(world)) == 5_000_000
-
-
-def test_two_ticks_never_capture_twice_and_a_lost_answer_resends_the_same_key(world):
-    world.flagged.add("demo-place-05")
-    deal_id = make_deal("honest")
-    disputes.settle(deal_id, now=T0)
-    world.sender.fail_next = TimeoutError("rpc timeout")
-    deadlines.tick(now=T0 + 61)  # tx went out, answer lost: pending kept, not booked
-    d = disputes.get(deal_id)
-    assert d["pending"] == {"kind": "capture", "amount": 250_000, "n": 2} and d["captured"] == 4_512_500
-    deadlines.tick(now=T0 + 62)
-    deadlines.tick(now=T0 + 62)
-    assert captures(world) == [(4_512_500, "capture:1"), (250_000, "capture:2")]
-    assert disputes.get(deal_id)["captured"] == 4_762_500 and disputes.get(deal_id)["pending"] is None
-    assert reservation(deal_id)["committed"] == 477  # 4,7625 € rounded up once, never more than reserved
-
-
-def test_buyer_rejection_needs_a_criterion_and_evidence_then_seller_objects_and_bank_decides(world):
-    world.flagged.update({"demo-place-03", "demo-place-04"})
-    deal_id = make_deal("honest")
-    disputes.settle(deal_id, now=T0)
+@pytest.mark.parametrize("change,status", [
+    ({"reason": "i_dont_like_it"}, 400), ({"items": [[1, 19]]}, 409), ({"items": []}, 400),
+    ({"now": T0 + 25}, 409)])
+def test_b_claim_checks(w, change, status):
+    deal_id = k.make_deal(w, now=T0)
+    k.deliver(w, deal_id, mode="fake_data", now=T0 + 1)  # item 1/19 is the closed company: rejected
+    args = {"items": [[1, 0]], "reason": "closed", "now": T0 + 5, **change}
     with pytest.raises(disputes.DisputeError) as e:
-        disputes.buyer_review(deal_id, "demo-place-03", "reject", "human:alfa", criterion="i_dont_like_it",
-                              evidence="ugly", now=T0 + 5)
-    assert e.value.status == 400
+        disputes.file_b(deal_id, args["items"], args["reason"], "agent:buyer", now=args["now"])
+    assert e.value.status == status
+
+
+def test_one_b_claim_per_deal_and_none_without_a_slot(w):
+    deal_id = k.make_deal(w, now=T0)
+    k.deliver(w, deal_id, now=T0 + 1)
+    disputes.file_b(deal_id, [[1, 0]], "closed", "agent:buyer", now=T0 + 2)
     with pytest.raises(disputes.DisputeError):
-        disputes.buyer_review(deal_id, "demo-place-03", "reject", "human:alfa", criterion="category", evidence="",
-                              now=T0 + 5)
-    d = disputes.buyer_review(deal_id, "demo-place-03", "reject", "human:alfa", criterion="category",
-                              evidence="The place is a café: https://maps.example/place/demo-place-03", now=T0 + 5)
-    it = next(i for i in d["items"] if i["placeId"] == "demo-place-03")
-    assert it["step"] == "objection" and it["rejection"]["by"] == "human:alfa"
-    assert it["deadline_at"] == T0 + 5 + DEMO_DISPUTE_TERMS["objection_window_s"]
-    disputes.buyer_review(deal_id, "demo-place-04", "accept", "human:alfa", now=T0 + 6)
-    assert captures(world)[-1] == (250_000, "capture:2")  # accepted item paid at once
-    disputes.seller_objection(deal_id, "demo-place-03", "It is a storage hall, see the photos.", "human:beta",
-                              now=T0 + 10)
-    assert disputes.get(deal_id)["seller_statement"].startswith("It is a storage hall")
-    with pytest.raises(disputes.DisputeError) as e:  # wrong step: the bank decides only after the objection
-        disputes.buyer_review(deal_id, "demo-place-03", "accept", "human:alfa", now=T0 + 11)
-    assert e.value.status == 409
-    disputes.decide(deal_id, "demo-place-03", "accept", "human:bank-officer", note="Photos convince.", now=T0 + 20)
-    assert captures(world)[-1] == (250_000, "capture:3")
-    actors = {e["actor"] for e in journal.entries(deal_id, limit=1000) if e["event"].startswith("dispute.")}
-    assert {"human:alfa", "human:beta", "human:bank-officer"} <= actors
+        disputes.file_b(deal_id, [[1, 1]], "closed", "agent:buyer", now=T0 + 3)
+    no_slot = k.make_deal(w, deal_id="d-noslot", now=T0, b_slot=0)
+    k.deliver(w, no_slot, now=T0 + 1)
+    with pytest.raises(disputes.DisputeError, match="without claims"):
+        disputes.file_b(no_slot, [[1, 0]], "closed", "agent:buyer", now=T0 + 2)
+
+
+def test_b_slots_are_reserved_at_pay_new_buyer_gets_two(w):
+    """15 parallel deals of a new buyer do not give 15 refunds: open B deals hold slots (§7B)."""
+    assert disputes.b_availability("alfa", "s-beta", now=T0)["available"]
+    k.make_deal(w, deal_id="d-b1", now=T0)
+    assert disputes.b_availability("alfa", "s-gama", now=T0)["available"]
+    k.make_deal(w, deal_id="d-b2", now=T0)
+    a = disputes.b_availability("alfa", "s-gama", now=T0)
+    assert not a["available"] and a["reason"] == "b_pair_limit" or a["reason"] == "b_new_buyer_limit"
+    assert not disputes.b_availability("alfa", "s-beta", now=T0)["available"]
+
+
+def test_rule_a_pays_at_the_deadline_or_when_a_person_accepts(w):
+    deal_id = k.make_deal(w, rule="A", now=T0)
+    k.deliver(w, deal_id, mode="fake_data", now=T0 + 1)
+    assert k.captures(w) == []  # nothing at acceptance under rule A
+    with pytest.raises(disputes.DisputeError):
+        disputes.accept(deal_id, "agent:buyer", now=T0 + 2)  # only a person
+    disputes.accept(deal_id, "human:anna", now=T0 + 2)
+    assert k.fns(w) == ["capture", "void"] and k.captures(w) == [4_250_000]
+    other = k.make_deal(w, rule="A", deal_id="d-a2", now=T0, task_hash="t-2")  # same items, another task
+    k.deliver(w, other, now=T0 + 1)
+    deadlines.tick(now=T0 + 299)
+    assert len(k.captures(w)) == 1
+    deadlines.tick(now=T0 + 301)  # the delivery deadline
+    assert k.captures(w)[-1] == 5_000_000 and k.state(other) == "settled"
+
+
+def test_no_delivery_by_the_deadline_returns_everything(w):
+    deal_id = k.make_deal(w, now=T0)
     deadlines.tick(now=T0 + 301)
-    assert sum(a for a, _ in captures(world)) == 5_000_000 and "void" not in fns(world)
+    assert k.fns(w) == ["void"] and disputes.get(deal_id)["outcome"] == "no_delivery"
+    assert any(e["event"] == "autocode" and e["payload"]["code"] == "NO_DELIVERY" for e in journal.entries(deal_id))
+    assert k.reservation(deal_id)["state"] == "released"
 
 
-def test_decision_timeout_applies_the_rules_verdict(world):
-    deal_id = make_deal("fake_data")
-    disputes.settle(deal_id, now=T0)
-    for pid in ("demo-place-19", "demo-place-20"):
-        disputes.seller_objection(deal_id, pid, "The item meets the order.", "human:beta", now=T0 + 10)
-    deadlines.tick(now=T0 + 10 + 121)  # nobody decided: the rules say both broke the agreed criteria
-    d = disputes.get(deal_id)
-    assert [it["rule"] for it in d["items"]] == ["on_decision_timeout: rules_verdict"] * 2
-    assert all(it["outcome"] == "rejected" for it in d["items"])
+def test_a_failed_capture_is_retried_never_voided(w):
+    from bank import chain
+    deal_id = k.make_deal(w, now=T0)
+    w.sender.fail_always = chain.TxWouldRevert("execution reverted: NotAllowlisted")
+    k.deliver(w, deal_id, now=T0 + 1)
+    deadlines.tick(now=T0 + 30)
+    deadlines.tick(now=T0 + 31)
+    assert w.sender.sent == [] and disputes.get(deal_id)["pending"]["kind"] == "capture"
+    assert k.state(deal_id) == "delivered"  # still locked for the seller, not returned
+    w.sender.fail_always = None
+    deadlines.tick(now=T0 + 32)
+    assert k.captures(w) == [4_500_000, 500_000]
 
 
-def test_deadlines_never_pass_authorization_expiry_minus_guard(world):
-    deal_id = make_deal("fake_data", expiry_in=200)  # escrow expires in 200 s; holdback window is 300 s
-    d = disputes.settle(deal_id, now=time.time())
-    expiry = disputes.deals.get(deal_id)["payment_info"]["authorizationExpiry"]
-    assert all(it["deadline_at"] <= expiry - 30 for it in d["items"])
-    assert d["holdback_until"] <= expiry - 30
+def test_a_lost_answer_resends_the_same_key_and_books_once(w):
+    deal_id = k.make_deal(w, now=T0)
+    w.sender.fail_next = TimeoutError("rpc timeout")
+    k.deliver(w, deal_id, now=T0 + 1)  # the capture went out, its answer was lost
+    s = disputes.get(deal_id)
+    assert s["pending"]["n"] == 1 and s["captured"] == 0
+    deadlines.tick(now=T0 + 2)
+    deadlines.tick(now=T0 + 2)
+    assert k.captures(w) == [4_500_000] and disputes.get(deal_id)["captured"] == 4_500_000
+    assert k.reservation(deal_id)["committed"] == 450
 
 
-def test_alarm_once_when_an_open_deal_is_near_authorization_expiry(world):
-    deal_id = make_deal("honest", expiry_in=1800)
-    disputes.settle(deal_id, now=time.time())
+def test_no_new_version_after_the_final_void_or_the_deadline(w):
+    deal_id = k.make_deal(w, now=T0)
+    k.deliver(w, deal_id, mode="fake_data", now=T0 + 1)
+    deadlines.tick(now=T0 + 30)
+    with pytest.raises(deals.DealError):
+        k.deliver(w, deal_id, count=3, version=2, now=T0 + 31)
+    late = k.make_deal(w, deal_id="d-late", now=T0)
+    with pytest.raises(deals.DealError, match="deadline"):
+        k.deliver(w, late, now=T0 + 301)
+
+
+def test_alarm_once_when_an_open_deal_is_near_authorization_expiry(w):
+    deal_id = k.make_deal(w, now=time.time())
+    pi = deals.get(deal_id)["payment_info"]
+    pi["authorizationExpiry"] = int(time.time()) + 1800
+    db.run("UPDATE deals SET payment_info_json=? WHERE deal_id=?", (db.dumps(pi), deal_id))
     first = deadlines.alarms(time.time())
     assert first and first[0]["deal_id"] == deal_id
     assert deadlines.alarms(time.time()) == []
     e = next(e for e in journal.entries(deal_id) if e["event"] == "escrow_expiry_alarm")
     assert e["actor"] == "timer" and "1 h" in e["payload"]["rule"]
-
-
-def test_timer_adopts_a_deal_that_deals_settle_left_verified(world):
-    world.flagged.add("demo-place-07")
-    deal_id = make_deal("honest")
-    from bank import verifier
-    plan = verifier.settlement(deal_id)
-    escrow.capture(deal_id, plan["capture_now"], 1)  # what deals.settle does today when held > 0
-    db.run("UPDATE deals SET state='verified' WHERE deal_id=?", (deal_id,))
-    done = deadlines.tick(now=T0)
-    assert {"deal_id": deal_id, "opened": True} in done
-    d = disputes.get(deal_id)
-    assert d["captured"] == 4_750_000 and d["capture_n"] == 1 and d["holdback"] == 0
-    deadlines.tick(now=T0 + 61)
-    assert captures(world)[-1] == (250_000, "capture:2")
-    assert state(deal_id) == "closed"
-
-
-def test_human_actor_is_required(world):
-    world.flagged.add("demo-place-02")
-    deal_id = make_deal("honest")
-    disputes.settle(deal_id, now=T0)
-    with pytest.raises(disputes.DisputeError):
-        disputes.buyer_review(deal_id, "demo-place-02", "accept", "agent:buyer", now=T0 + 1)
-
-
-def test_a_reverted_capture_returns_the_whole_lock_and_releases_the_budget(world):
-    world.flagged.add("demo-place-06")
-    deal_id = make_deal("honest")
-    disputes.settle(deal_id, now=T0)  # 19 accepted paid now (minus holdback), the flagged item waits
-    world.sender.fail_next = chain.TxReverted("seller frozen", None)  # e.g. the payee was delisted meanwhile
-    deadlines.tick(now=T0 + 61)
-    assert fns(world)[-2:] == ["capture", "void"]
-    e = next(e for e in journal.entries(deal_id) if e["event"] == "dispute.capture_impossible")
-    assert e["actor"] == "timer" and "frozen" in e["payload"]["error"]
-    assert state(deal_id) == "closed" and disputes.get(deal_id)["voided"] == 1
-    r = reservation(deal_id)
-    assert r["amount"] == r["committed"] == 452  # only the first capture (4,5125 € rounded up) stays spent

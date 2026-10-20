@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from x402.http.clients.httpx import x402AsyncTransport
 from x402.schemas import SettleResponse, SupportedKind, SupportedResponse, VerifyResponse
 
-from bank import config, x402_buyer
+from bank import config, x402_buyer, receipts
 from seller import app as seller_mod
 
 TCZK = "0x6a99C9e95DD220172d07D5f730f2e82B466D4B67"
@@ -127,9 +127,10 @@ def test_spend_controls_are_atomic_caps(monkeypatch):
     assert caps == {config.EURC: "10000000", TCZK: "25000"}
 
 
-def test_fake_data_breaks_two_items():
+def test_fake_data_breaks_three_items():
     items = seller_mod.make_items(20, "fake_data")
-    assert sum(1 for i in items if not i["website"] or i["city"] != "Brno") == 2
+    assert sum(1 for i in items if not i["website"] or i["city"] != "Brno") == 2  # + one company closed by ARES
+    assert all(i["ico"] and i["name"] for i in items)
     assert not any("phone" in k for i in items for k in i)
 
 
@@ -164,7 +165,11 @@ def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, captu
     r = client.post(f"/order/{o['offer_id']}/escrow", json=body, headers={"x-bank-token": config.BANK_TO_SELLER_TOKEN})
     if reason is None:
         assert r.status_code == 200
-        assert posted[0][0] == "/api/deals/d-1/delivery" and len(posted[0][1]["items"]) == 20
+        assert posted[0][0] == "/api/sellers/s-beta/keys"  # the manifest key first, then the signed delivery
+        path, payload = posted[-1]
+        assert path == "/api/deals/d-1/delivery" and len(payload["items"]) == 20
+        assert payload["manifest"]["merkle_root"] == receipts.merkle_root(payload["items"])
+        assert receipts.manifest_signer(payload["manifest"], payload["signature"]) == posted[0][1]["address"]
     else:
         assert r.status_code == 409 and r.json()["detail"] == reason
         assert posted == []

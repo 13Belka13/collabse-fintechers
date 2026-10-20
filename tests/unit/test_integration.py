@@ -1,6 +1,6 @@
 # End to end through the real modules of every stream: agent API (P) -> seller x402 quote (P) -> screening
 # with recorded registry fixtures (S) -> mandate decision + reservation (A) -> escrow (P) -> seller checks the
-# escrow and delivers -> verifier (S) -> capture/void -> budget. Only the chain is faked (sender + escrow state),
+# escrow and delivers through the bank (signed manifest) -> predicate engine -> the rule's schedule -> budget. Only the chain is faked (sender + escrow state),
 # so every assertion on money is about what the bank *sent*; the anvil-fork tests cover the contracts themselves.
 import time
 import types
@@ -10,7 +10,8 @@ from eth_account import Account
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from bank import api, chain, codes, config, db, deadlines, deals, escrow, explain, journal, llm, mandate, money, screening, tczk
+from bank import (api, chain, codes, config, db, deadlines, deals, disputes, escrow, explain, journal, llm, mandate,
+                  money, receipts, screening, tczk)
 from seller import app as seller_mod
 from tests.unit.test_seller_x402 import TCZK, FakeFacilitator
 
@@ -116,11 +117,14 @@ def test_honest_eurc_vat_risk_then_human_ack_then_full_payment(bank):
     assert bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}).status_code == 401  # the agent can't
     view = bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}, headers=HUMAN).json()
     assert view["status"] == "ok" and any(m.startswith("VAT risk acknowledged") for m in view["marks"])
-    # 20/20 accepted: 95 % now, the 5 % holdback stays in escrow until its window ends (SPEC §9.3)
-    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_750_000)]
-    assert deals.get(deal_id)["state"] == "settled" and bank.locked["capturable"] == 250_000
-    deadlines.tick(now=time.time() + 3600)  # holdback window over, no claim: the timer pays it to the seller
-    assert bank.sender.money()[-1] == ("capture", 250_000) and bank.locked["capturable"] == 0
+    # rule B 10 %: 20/20 accepted, 90 % captured at acceptance, 10 % waits in escrow until the window ends
+    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_500_000)]
+    assert deals.get(deal_id)["state"] == "delivered" and bank.locked["capturable"] == 500_000
+    got = bank.api.get(f"/api/deals/{deal_id}/delivery").json()
+    assert len(got["items"]) == 20 and all(i["proof"] is not None for i in got["items"])
+    deadlines.tick(now=time.time() + 3600)  # window over, no claim: the rest to the seller, nothing to return
+    assert bank.sender.money()[-1] == ("capture", 500_000) and bank.locked["capturable"] == 0
+    assert "void" not in [m[0] for m in bank.sender.money()] and deals.get(deal_id)["state"] == "settled"
     b = budget()
     assert b["committed_eur_cents"] == 500 and b["remaining_eur_cents"] == 2500 and b["reserved_eur_cents"] == 0
     # the next deal with the same seller and asset: acknowledged once, no question again
@@ -137,19 +141,22 @@ def test_same_deal_in_tczk_passes_without_vat_question(bank):
     assert bank.sender.money()[0] == ("authorize", 12_500)
 
 
-def test_gama_fake_data_18_of_20(bank):
+def test_gama_fake_data_17_of_20(bank):
     deal_id, _ = deal(bank, seller_id="s-gama", mode="fake_data")
     view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
     if view["code"] == "VAT_LIABILITY_RISK":  # Gama's recorded VAT status decides; acknowledge if needed
         view = bank.api.post(f"/api/deals/{deal_id}/ack-vat", json={"by": "anna"}, headers=HUMAN).json()
     assert view["status"] == "ok"
-    # 18 accepted minus the 5 % holdback now; the 2 rejected items wait for the seller's objection window
-    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 4_275_000)]
-    assert deals.get(deal_id)["state"] == "disputed"
-    deadlines.tick(now=time.time() + 3600)  # seller silent, holdback over: capture the holdback, then return the rest
-    assert bank.sender.money()[2:] == [("capture", 225_000), ("void", None)] and bank.locked["voided"] == 500_000
+    # 17 accepted (P = 4,25 €): 90 % at acceptance; the 3 rejected items are never delivered to the buyer
+    assert bank.sender.money() == [("authorize", 5_000_000), ("capture", 3_825_000)]
+    got = bank.api.get(f"/api/deals/{deal_id}/delivery").json()
+    assert len(got["items"]) == 17 and got["rejected_items"] == 3
+    codes_ = sorted(r["code"] for r in receipts.items_of(deal_id, "rejected"))
+    assert codes_ == ["CRITERIA_FAIL", "CRITERIA_FAIL", "REGISTRY_CONTRADICTION"]
+    deadlines.tick(now=time.time() + 3600)  # window over: the rest for 17 items, then one final void for 3
+    assert bank.sender.money()[2:] == [("capture", 425_000), ("void", None)] and bank.locked["voided"] == 750_000
     b = budget()
-    assert b["committed_eur_cents"] == 450 and b["remaining_eur_cents"] == 2550
+    assert b["committed_eur_cents"] == 425 and b["remaining_eur_cents"] == 2575
 
 
 def test_delta_blocked_before_payment(bank):
@@ -181,10 +188,8 @@ def test_confirmation_above_threshold_needs_a_human(bank):
 
 # ---- the review findings, each pinned ------------------------------------------------------------------
 
-def test_seller_criteria_are_ignored_the_buyers_decide_the_payment(bank, monkeypatch):
-    """A seller offering junk criteria (no website, any city, rating 0) would grade its own fake items as good."""
-    junk = {"count": 20, "min_rating": 0, "min_rating_exclusive": 0, "require_website": False, "city": "Anywhere",
-            "postcode_prefix": "0"}
+def test_seller_cannot_weaken_the_confirmed_predicates(bank, monkeypatch):
+    """A seller dropping or loosening a confirmed predicate would grade its own items: the bank refuses to pay."""
     real = deals.seller_http
 
     class EvilSeller:
@@ -201,7 +206,7 @@ def test_seller_criteria_are_ignored_the_buyers_decide_the_payment(bank, monkeyp
             r = self.c.post(path, json=json, **kw)
             if path == "/negotiate":
                 body = r.json()
-                body["offer"]["criteria"] = junk
+                body["offer"]["predicates"] = [p for p in body["offer"]["predicates"] if p["op"] != "registry_active"]
                 return types.SimpleNamespace(json=lambda: body, raise_for_status=lambda: None, status_code=200)
             return r
 
@@ -209,11 +214,10 @@ def test_seller_criteria_are_ignored_the_buyers_decide_the_payment(bank, monkeyp
             return self.c.get(*a, **kw)
 
     monkeypatch.setattr(deals, "seller_http", lambda base: EvilSeller(real(base)))
-    deal_id, offer = deal(bank, asset="tCZK", mode="fake_data")
-    assert deals.get(deal_id)["criteria"]["city"] == "Brno" and offer["criteria"]["require_website"] is True
-    bank.api.post(f"/api/deals/{deal_id}/pay")
-    # 18 of 20 by the buyer's rules (95 % now: 10 688 of 11 250 haléřů), not 20 of 20 by the seller's
-    assert ("capture", 10_688) in bank.sender.money()
+    deal_id, _ = deal(bank, asset="tCZK", mode="fake_data")
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "TERMS_MISMATCH" and view["reasons"][0]["code"] == "predicates_not_verbatim"
+    assert bank.sender.sent == []
 
 
 def test_invalid_buyer_criteria_fall_back_to_defaults():
@@ -232,17 +236,28 @@ def test_mandate_of_another_company_is_refused(bank):
                                                          "task": TASK}).status_code == 401
 
 
-def test_delivery_needs_the_seller_token_and_drops_phones(bank, monkeypatch):
+def test_delivery_needs_the_seller_token_a_signed_manifest_and_never_stores_phones(bank, monkeypatch):
+    from bank import receipts as r
     monkeypatch.setattr(deals, "auto_settle", lambda deal_id: None)  # storage only; settlement is covered above
-    deal_id, _ = deal(bank, asset="tCZK")
-    db.run("UPDATE deals SET state='authorized' WHERE deal_id=?", (deal_id,))
-    item = {"placeId": "p1", "title": "Sklad", "phone": "+420 000 000 000", "reviews": [{"name": "Reviewer"}]}
-    assert bank.api.post(f"/api/deals/{deal_id}/delivery", json={"items": [item]}).status_code == 401
-    r = bank.api.post(f"/api/deals/{deal_id}/delivery", json={"items": [item]},
-                      headers={"x-seller-token": config.SELLER_TOKEN})
-    assert r.status_code == 200
-    stored = db.one("SELECT items_json FROM deliveries WHERE deal_id=?", (deal_id,))["items_json"]
-    assert "phone" not in stored and "Reviewer" not in stored
+    monkeypatch.setattr(deals, "notify_seller", lambda deal_id: True)  # the test delivers by hand
+    deal_id, offer = deal(bank, asset="tCZK")
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
+    seller_app = bank.seller.app
+    payload = seller_app.state.signed_delivery(offer["offer_id"], "honest")
+    seller = {"x-seller-token": config.SELLER_TOKEN}
+    assert bank.api.post(f"/api/deals/{deal_id}/delivery", json=payload).status_code == 401
+    out = bank.api.post(f"/api/deals/{deal_id}/delivery", json=payload, headers=seller).json()
+    assert out["accepted"] is False and out["code"] == "BAD_SIGNATURE"  # the key is not registered yet
+    bank.api.post(f"/api/sellers/s-beta/keys", json={"address": seller_app.state.signing_key.address}, headers=seller)
+    items = payload["items"]
+    items[0] = {**items[0], "phone": "+420 000 000 000"}
+    m = {**payload["manifest"], "merkle_root": r.merkle_root(items), "nonce": "0x" + "22" * 32}
+    signed = {"manifest": m, "signature": r.sign_manifest(m, seller_app.state.signing_key.key.hex()), "items": items}
+    out = bank.api.post(f"/api/deals/{deal_id}/delivery", json=signed, headers=seller).json()
+    assert out["accepted"] and out["items"][0]["code"] == "SCHEMA_FAIL" and out["accepted_items"] == 19
+    stored = db.one("SELECT item_json FROM items WHERE deal_id=? AND idx=0", (deal_id,))["item_json"]
+    assert "phone" not in stored and "+420" not in stored
+    assert "+420" not in str(bank.api.get(f"/api/deals/{deal_id}/delivery").json())
 
 
 def test_frozen_buyer_is_stopped_before_anything_is_reserved(bank):
@@ -254,12 +269,18 @@ def test_frozen_buyer_is_stopped_before_anything_is_reserved(bank):
     assert bank.sender.sent == [] and db.rows("SELECT * FROM reservations WHERE deal_id=?", (deal_id,)) == []
 
 
-def test_failed_capture_returns_the_lock_and_frees_the_budget(bank):
+def test_a_failed_capture_is_retried_and_never_turns_into_a_void(bank):
+    """MODEL_V2 §8.4: the lock is long; a capture that fails is retried with the same idem key, the buyer's money
+    stays in escrow (not returned by a void, which would end the seller's claim)."""
     bank.locked["fail_capture"] = True
     deal_id, _ = deal(bank, asset="tCZK")
-    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"  # locked; settlement failed after
-    assert deals.get(deal_id)["state"] == "closed" and [s[0] for s in bank.sender.sent] == ["authorize", "void"]
-    assert budget()["remaining_eur_cents"] == 3000
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").json()["status"] == "ok"
+    assert [s[0] for s in bank.sender.sent] == ["authorize"] and deals.get(deal_id)["state"] == "delivered"
+    assert disputes.get(deal_id)["pending"]["kind"] == "capture"
+    assert any(e["event"] == "settlement.tx_failed" for e in journal.entries(deal_id))
+    bank.locked.pop("fail_capture")
+    deadlines.tick()
+    assert bank.sender.money() == [("authorize", 12_500), ("capture", 11_250)]
 
 
 def test_expired_payment_info_is_rebuilt_with_new_keys(bank, monkeypatch):
@@ -319,12 +340,13 @@ def test_buyer_agent_cannot_reach_another_companys_deal(bank):
 
 # ---- second review round ------------------------------------------------------------------------------
 
-def test_capture_refused_at_gas_estimation_still_returns_the_lock(bank):
+def test_capture_refused_at_gas_estimation_waits_in_escrow(bank):
     bank.locked["fail_capture"] = "estimate"
     deal_id, _ = deal(bank, asset="tCZK")
     bank.api.post(f"/api/deals/{deal_id}/pay")
-    assert deals.get(deal_id)["state"] == "closed" and [s[0] for s in bank.sender.sent] == ["authorize", "void"]
-    assert budget()["remaining_eur_cents"] == 3000
+    deadlines.tick(now=time.time() + 3600)
+    assert [s[0] for s in bank.sender.sent] == ["authorize"] and bank.locked["capturable"] == 12_500
+    assert budget()["reserved_eur_cents"] == 500  # the budget stays reserved while the money is locked
 
 
 def test_a_new_offer_needs_a_new_human_confirmation(bank, monkeypatch):
@@ -340,17 +362,18 @@ def test_a_new_offer_needs_a_new_human_confirmation(bank, monkeypatch):
     assert bank.sender.sent == []
 
 
-def test_settle_can_be_retried_after_a_failed_void(bank, monkeypatch):
-    monkeypatch.setattr(deals, "auto_settle", lambda deal_id: None)
+def test_final_void_is_retried_after_a_lost_answer(bank):
     deal_id, _ = deal(bank, asset="tCZK", seller_id="s-gama", mode="fake_data")
     bank.api.post(f"/api/deals/{deal_id}/pay")
     bank.locked["fail_void_once"] = True
-    with pytest.raises(TimeoutError):
-        deals.settle(deal_id)
-    out = deals.settle(deal_id)  # the retry: same capture (idem key), no second commit, then the void
-    assert out["state"] == "settled" and [s[0] for s in bank.sender.sent] == ["authorize", "capture", "void"]
+    later = time.time() + 3600
+    deadlines.tick(now=later)  # window over: capture the rest, the void's answer is lost
+    assert disputes.get(deal_id)["pending"] == {"kind": "void", "rule": "rule B: window over"}
+    deadlines.tick(now=later + 5)  # the retry: same idem key, booked once
+    assert [s[0] for s in bank.sender.sent] == ["authorize", "capture", "capture", "void"]
     b = budget()
-    assert b["committed_eur_cents"] == 450 and b["remaining_eur_cents"] == 2550
+    assert b["committed_eur_cents"] == 425 and b["remaining_eur_cents"] == 2575
+    assert deals.get(deal_id)["state"] == "settled"
 
 
 def test_late_authorize_after_expiry_is_recognised_as_the_lock(bank, monkeypatch):
@@ -390,7 +413,7 @@ def test_pay_again_resends_a_lost_seller_notice(bank, monkeypatch):
     assert deals.get(deal_id)["state"] == "authorized"
     monkeypatch.setattr(deals, "notify_seller", real)
     again = bank.api.post(f"/api/deals/{deal_id}/pay").json()
-    assert "asked again" in again["explanation"] and deals.get(deal_id)["state"] == "settled"
+    assert "asked again" in again["explanation"] and deals.get(deal_id)["state"] == "delivered"
     assert [s[0] for s in bank.sender.sent].count("authorize") == 1
 
 
@@ -405,20 +428,19 @@ def test_ai_text_with_any_foreign_link_is_dropped(monkeypatch, text):
 
 def test_one_capture_booked_once_when_two_processes_send_it(bank):
     """D7: the bank's timer thread and another process both send the same pending capture. The chain moves it
-    once (same idempotency key); the dispute record and the budget must count it once too."""
-    from bank import disputes
+    once (same idempotency key); the settlement record and the budget must count it once too."""
     deal_id, _ = deal(bank, asset="tCZK", seller_id="s-gama", mode="fake_data")
     bank.api.post(f"/api/deals/{deal_id}/pay")
-    d = disputes.get(deal_id)
-    before, committed = d["captured"], budget()["committed_eur_cents"]
-    pending = {"kind": "capture", "amount": 250, "n": d["capture_n"] + 1}
-    db.run("UPDATE disputes SET pending_json=? WHERE deal_id=?", (db.dumps(pending), deal_id))
+    s = disputes.get(deal_id)
+    before, committed = s["captured"], budget()["committed_eur_cents"]
+    pending = {"kind": "capture", "amount": 250, "n": s["capture_n"] + 1, "rule": "test"}
+    db.run("UPDATE settlements SET pending_json=? WHERE deal_id=?", (db.dumps(pending), deal_id))
     disputes._execute(deals.get(deal_id), pending, "timer", "test")   # the timer thread
     disputes._execute(deals.get(deal_id), pending, "runner", "test")  # another process with a stale view
     assert disputes.get(deal_id)["captured"] == before + 250
     assert [s for s in bank.sender.money() if s == ("capture", 250)] == [("capture", 250)]
     assert budget()["committed_eur_cents"] - committed == money.to_eur_cents("tCZK", before + 250) - money.to_eur_cents("tCZK", before)
-    assert any(e["event"] == "dispute.already_booked" for e in journal.entries(deal_id))
+    assert any(e["event"] == "settlement.already_booked" for e in journal.entries(deal_id))
 
 
 # ---- L7: the AI seller negotiates, code owns the price ------------------------------------------------
@@ -465,19 +487,17 @@ def test_buyer_agent_haggles_with_the_ai_seller_through_the_bank(bank, monkeypat
 
 
 def test_seller_can_deliver_real_apify_places(bank, monkeypatch):
-    """SELLER_DATA=maps: 20 real Brno places from the Apify recording — 17 pass the rules, 3 borderline ones
-    (no 'sklad' keyword) are held for a human; no personal fields reach the bank."""
+    """SELLER_DATA=maps: 20 real Brno places from the Apify recording. Places have no IČO, so the task's terms
+    carry no registry predicate (§6); 17 pass, 3 borderline ones (no warehouse keyword) are rejected and never
+    reach the buyer; no personal fields reach the bank."""
     import json as _json
     monkeypatch.setenv("SELLER_DATA", "maps")
     items = seller_mod.make_items(20, "honest")
     recorded = {it["placeId"] for it in _json.loads(seller_mod.RECORDED_MAPS.read_text())["items"]}
     assert len(items) == 20 and all(it["placeId"] in recorded for it in items)
     assert not any(k in it for it in items for k in ("phone", "phoneUnformatted", "reviews"))
-    deal_id, _ = deal(bank, asset="tCZK")
+    task = {**TASK, "criteria": {**TASK["criteria"], "registry_check": False}}
+    deal_id, _ = deal(bank, asset="tCZK", task=task)
     bank.api.post(f"/api/deals/{deal_id}/pay")
-    from bank import disputes
-    d = disputes.get(deal_id)
-    held = [i for i in d["items"] if i["origin"] == "judge"]
-    assert len(held) == 3 and deals.get(deal_id)["state"] == "disputed"
-    assert ("authorize", 12_500) in bank.sender.money()  # 17 accepted, minus the 5 % holdback, captured at once
-    assert bank.sender.money()[1] == ("capture", 12_500 * 17 // 20 - 12_500 * 17 // 20 * 500 // 10_000)
+    assert receipts.counts(deal_id) == {"accepted_items": 17, "rejected_items": 3, "pending_items": 0}
+    assert bank.sender.money()[1] == ("capture", 12_500 * 17 // 20 * 90 // 100)  # rule B: 90 % of P at acceptance

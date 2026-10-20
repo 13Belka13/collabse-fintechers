@@ -1,7 +1,7 @@
 # FAULTS injection at unit level (SPEC §19.2); the same faults run end to end on a chain in scripts/scenarios.py
 # (F01-F05). settle_fail_once is covered on anvil in test_facilitator_chain.py; webhook_duplicate and
 # webhook_bad_hmac in test_webhooks.py.
-from bank import codes, config, db, screening, verifier
+from bank import codes, config, db, screening
 from bank.codes import Code
 
 GAMA_ICO = "59093994"
@@ -32,14 +32,13 @@ def test_stale_screening_cache_fails_closed(seeded, clock):
     assert screening.cached(GAMA_ICO) is None
 
 
-def test_llm_bad_json_flags_everything_to_a_human_and_captures_nothing(seeded, monkeypatch):
-    from seller.app import make_items
+def test_llm_bad_json_cannot_reach_the_money_path(seeded, monkeypatch):
+    """MODEL_V2 §6: no model decides an item. With every model answer broken, the delivery is checked and paid
+    exactly as without the fault, and no model is called at all."""
+    from tests.unit import dealkit as k
     _faults(monkeypatch, "llm_bad_json")
-    db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, criteria_json, asset, amount, state, created_at)"
-           " VALUES ('d-badjson','alfa','s-gama',NULL,'EURC',5000000,'delivered',0)")
-    verifier.record_delivery("d-badjson", make_items(20, "honest"))
-    plan = verifier.settlement("d-badjson")
-    assert plan["capture_now"] == 0 and plan["void"] == 0 and plan["held"] == 5_000_000  # all waits in escrow
-    assert all(it["status"] == "held" and it["judge"]["reason"] == "judge_invalid_json" for it in plan["items"])
-    calls = db.one("SELECT COUNT(*) n FROM timings WHERE stage='judge' AND model IS NOT NULL")["n"]
-    assert calls == 2  # one retry, then the safe default
+    w = k.world(monkeypatch)
+    deal_id = k.make_deal(w)
+    out = k.deliver(w, deal_id, mode="fake_data")
+    assert out["accepted_items"] == 17 and k.captures(w) == [3_825_000]
+    assert db.one("SELECT COUNT(*) n FROM timings WHERE model IS NOT NULL")["n"] == 0

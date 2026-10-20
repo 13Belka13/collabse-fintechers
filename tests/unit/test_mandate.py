@@ -112,11 +112,16 @@ CASES = {
 }
 
 
+# TERMS_MISMATCH is decided before the mandate, by deals._fix_terms (offer vs confirmed task terms): its cases are
+# in tests/unit/test_deals.py
+MANDATE_CODES = [c for c in Code if c != Code.TERMS_MISMATCH]
+
+
 def test_every_code_of_the_closed_list_has_a_case():
-    assert set(CASES) == set(Code)
+    assert set(CASES) == set(MANDATE_CODES)
 
 
-@pytest.mark.parametrize("code", list(Code), ids=str)
+@pytest.mark.parametrize("code", MANDATE_CODES, ids=str)
 def test_each_refusal_code_is_reproduced(m, code):
     d = CASES[code](m)
     assert d["code"] == code

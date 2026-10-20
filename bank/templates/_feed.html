@@ -5,7 +5,7 @@
   <div class="stat info"><div class="k">Last decision</div><div class="v">{{ '%.1f'|format(panel.last_ms) if panel.last_ms is not none else '—' }} ms</div></div>
   <div class="stat info"><div class="k">Decision p95 · {{ panel.decision.n }} runs</div><div class="v">{{ '%.1f'|format(panel.decision.p95) if panel.decision.p95 is not none else '—' }} ms</div><div class="small muted">target ≤ 50 ms</div></div>
   <div class="stat info"><div class="k">Model cost, total</div><div class="v">${{ '%.4f'|format(panel.llm.cost_usd or 0) }}</div><div class="small muted">{{ panel.llm.calls }} calls · {{ panel.llm.input_tokens }} in / {{ panel.llm.output_tokens }} out tokens</div></div>
-  <div class="stat {{ 'ok' if panel.timer else 'warn' }}"><div class="k">Dispute timer</div><div class="v">{{ 'running' if panel.timer else 'stopped' }}</div><div class="small muted">every 5 s, applies silence defaults</div></div>
+  <div class="stat {{ 'ok' if panel.timer else 'warn' }}"><div class="k">Deal timer</div><div class="v">{{ 'running' if panel.timer else 'stopped' }}</div><div class="small muted">every 5 s, runs each deal's schedule</div></div>
 </div>
 <h2>All transfers and decisions</h2>
 {% if not rows %}<div class="card muted">Nothing yet. Start a demo scenario above.</div>{% endif %}
@@ -35,19 +35,19 @@
   {% else %}
     {% set p = r.payload %}
     <div class="flex">
-      <span class="badge {{ 'b-bad' if r.tone == 'bad' else 'b-info' }}">{{ r.event.replace('dispute.', 'dispute · ').replace('_', ' ') }}</span>
+      <span class="badge {{ 'b-bad' if r.tone == 'bad' else 'b-info' }}">{{ r.event.replace('.', ' · ').replace('_', ' ') }}</span>
       <span>
-      {% if r.event == 'dispute.opened' %}{{ p['items'] }} item(s) in question; holdback {{ p.holdback|money(r.asset) }} stays in escrow
-      {% elif r.event == 'dispute.default_applied' %}<code>{{ p.placeId }}</code> → <strong>{{ p.outcome }}</strong>, nobody acted in time ({{ p.rule }})
-      {% elif r.event == 'dispute.buyer_review' %}<code>{{ p.placeId }}</code> buyer: <strong>{{ p.outcome.replace('_', ' ') }}</strong>{% if p.criterion %} — criterion <code>{{ p.criterion }}</code>{% endif %}
-      {% elif r.event == 'dispute.seller_objection' %}<code>{{ p.placeId }}</code> seller objects: “{{ p.statement }}” <span class="untrusted">written by the seller</span>
-      {% elif r.event == 'dispute.decision' %}<code>{{ p.placeId }}</code> decided: <strong>{{ p.outcome }}</strong>{% if p.note %} — {{ p.note }}{% endif %}
-      {% elif r.event == 'dispute.holdback_released' %}Holdback {{ p.holdback|money(r.asset) }} released to the seller ({{ p.rule }})
-      {% elif r.event == 'dispute.closed' %}Escrow settled: {{ p.captured|money(r.asset) }} to the seller{% if p.voided %}, the rest returned to the buyer{% endif %}
+      {% if r.event == 'settlement.opened' %}Rule <strong>{{ p.rule }}</strong>{% if p.b_pct %} ({{ p.b_pct }} % guarantee){% endif %}, {{ p.tier }}: delivery within {{ p.deadline_s }} s{% if p.window_s %}, claim window {{ p.window_s|round(0)|int }} s{% endif %}
+      {% elif r.event == 'delivery.autocodes' %}Version {{ p.version }} checked by the agreed conditions: {{ p.accepted_items }} accepted, {{ p.rejected_items }} rejected{% if p.pending_items %}, {{ p.pending_items }} waiting{% endif %}
+      {% elif r.event == 'delivery.refused' %}Delivery not taken: <code>{{ p.code }}</code> {{ p.detail }} <span class="untrusted">from the seller</span>
+      {% elif r.event == 'delivery.accepted_anyway' %}A person accepted {{ p['items']|length }} rejected item(s) anyway
+      {% elif r.event == 'claim_b.filed' %}B claim: {{ p['items'] }} item(s), {{ p.amount|money(r.asset) }} back to the buyer without investigation ({{ p.reason }})
+      {% elif r.event == 'settlement.accepted' %}A person confirmed acceptance (rule A)
+      {% elif r.event == 'settlement.closed' %}Escrow settled: {{ p.captured|money(r.asset) }} to the seller{% if p.voided %}, the rest returned to the buyer in one final void{% endif %}
       {% elif r.event == 'escrow_expiry_alarm' %}Escrow authorization expires in {{ p.seconds_left }} s and the deal is still open
       {% elif r.event == 'x402_refused' %}x402 transfer refused by the bank: <code>{{ p.code }}</code>
       {% elif r.event == 'demo.scenario' %}Demo scenario “{{ p.title }}”: {{ p.outcome or 'started' }}
-      {% elif r.event == 'dispute.tx_failed' %}Transaction failed, retried on the next tick with the same idempotency key: {{ p.error }}
+      {% elif r.event == 'settlement.tx_failed' %}Transaction failed, retried on the next tick with the same idempotency key: {{ p.error }}
       {% else %}{{ p }}{% endif %}
       </span>
       <span class="right small muted">by <code>{{ r.actor }}</code>{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>

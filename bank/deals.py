@@ -1,4 +1,5 @@
-# Deals (SPEC §5.4, §6): create -> negotiate (the bank proxies the seller) -> pay -> seller delivers -> settle.
+# Deals (SPEC §5.4, §6; MODEL_V2 §2–§5): create -> negotiate (the bank proxies the seller) -> pay -> the seller
+# delivers through the bank -> the schedule of the deal's quality rule (bank/disputes.py).
 # pay(deal_id) is the only way money leaves a client: the 402 from the seller is a quote, compared with the
 # stored offer and the seller's registered wallet; then cached screening + mandate (code, no LLM, no network),
 # an atomic budget reservation, the escrow lock, and the seller is told to check the escrow and deliver.
@@ -18,7 +19,8 @@ from bank import chain, codes, config, core, db, escrow, journal, money, timing
 from bank.codes import Code
 
 PAYABLE = ("offered", "quoted", "awaiting_human", "refused")
-PAID = ("authorized", "delivered", "verified", "disputed", "settled", "closed")
+PAID = ("authorized", "delivered", "dispute_c", "settled", "closed")
+DEFAULT_DEADLINE_S = 300  # delivery deadline of a task unless the task says otherwise
 _locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one pay() per deal at a time (one process)
 
 
@@ -40,7 +42,7 @@ def seller_http(base_url: str) -> httpx.Client:
 def get(deal_id: str) -> dict | None:
     deal = db.one("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
     if deal:
-        for k in ("task", "offer", "quote", "criteria", "payment_info"):
+        for k in ("task", "offer", "quote", "criteria", "payment_info", "terms"):
             deal[k] = db.loads(deal[f"{k}_json"])
     return deal
 
@@ -78,11 +80,15 @@ def create(buyer_id: str, seller_id: str, mandate_id: str, task, asset: str = "E
     if asset not in config.ASSETS or not config.ASSETS[asset]["address"]:
         raise DealError(400, f"asset {asset} is not available")
     task = task if isinstance(task, dict) else {"text": str(task)}
+    try:
+        terms = task_terms(task)
+    except (ValueError, ValidationError) as e:
+        raise DealError(400, f"task terms are not valid: {e}") from e
     deal_id = "d-" + secrets.token_hex(5)
     with db.immediate():
-        db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, mandate_id, task_json, asset, state, created_at)"
-               " VALUES (?,?,?,?,?,?,'negotiating',?)",
-               (deal_id, buyer_id, seller_id, mandate_id, db.dumps(task), asset, time.time()))
+        db.run("INSERT INTO deals (deal_id, buyer_id, seller_id, mandate_id, task_json, criteria_json, asset, state,"
+               " created_at) VALUES (?,?,?,?,?,?,?,'negotiating',?)",
+               (deal_id, buyer_id, seller_id, mandate_id, db.dumps(task), db.dumps(terms), asset, time.time()))
         journal.append("agent:buyer", "deal_created", {"seller_id": seller_id, "mandate_id": mandate_id,
                                                        "asset": asset, "task": task}, deal_id=deal_id)
     _prefetch(seller)  # counterparty check runs during negotiation, never on the money path
@@ -98,6 +104,7 @@ class Criteria(BaseModel):
     category_keywords: list[str] = Field(default_factory=lambda: ["sklad", "warehouse", "storage", "logist"],
                                          min_length=1, max_length=20)
     require_website: bool = True
+    registry_check: bool = True  # registry_active on IČO; False for data without IČO (Google Maps places)
 
 
 def buyer_criteria(task: dict | None) -> dict:
@@ -111,13 +118,32 @@ def buyer_criteria(task: dict | None) -> dict:
     return c
 
 
+def task_terms(task: dict) -> dict:
+    """The acceptance terms of the task (§2.1): predicates (AND only), count, category, delivery deadline, and the
+    hash a person of the buyer confirms. Explicit task["terms"] win; otherwise the agent's criteria are turned into
+    predicates by code (verifier.criteria_predicates)."""
+    from bank import receipts, verifier
+    raw = task.get("terms")
+    if raw:
+        terms = {"category": str(raw.get("category") or "data_purchase"), "count": int(raw["count"]),
+                 "predicates": verifier.validate(list(raw["predicates"])),
+                 "deadline_s": int(raw.get("deadline_s") or DEFAULT_DEADLINE_S)}
+    else:
+        c = buyer_criteria(task)
+        terms = {"category": "data_purchase", "count": c["count"], "predicates": verifier.criteria_predicates(c),
+                 "deadline_s": DEFAULT_DEADLINE_S}
+    if terms["count"] < 1 or terms["deadline_s"] < 1:
+        raise ValueError("count and deadline must be positive")
+    return {**terms, "hash": receipts.terms_hash(terms)}
+
+
 def offer_view(offer: dict, asset: str) -> dict:
     """What the buyer agent sees of an offer: ids and terms, no addresses."""
     return {"offer_id": offer["offer_id"], "items_spec": offer.get("items_spec"), "count": offer.get("count"),
             "asset": asset, "price": money.fmt(asset, int(offer["prices"][asset])),
             "price_eur_cents": money.to_eur_cents(asset, int(offer["prices"][asset])),  # to compare with the task budget
-            "deadline_s": offer.get("deadline_s"), "criteria": offer.get("criteria"),
-            "dispute_terms": offer.get("dispute_terms")}
+            "deadline_s": offer.get("deadline_s"), "rule": offer.get("rule"), "b_pct": offer.get("b_pct"),
+            "window_s": offer.get("window_s"), "predicates": offer.get("predicates")}
 
 
 def negotiate(deal_id: str, message: str) -> dict:
@@ -135,7 +161,8 @@ def _negotiate(deal_id: str, message: str) -> dict:
     with timing.timed("negotiate_proxy", deal_id):
         with seller_http(seller["base_url"]) as http:
             r = http.post("/negotiate", json={"deal_id": deal_id, "seller_id": deal["seller_id"],
-                                              "buyer_ico": buyer["ico"], "task": deal["task"], "message": message})
+                                              "buyer_ico": buyer["ico"], "task": deal["task"],
+                                              "terms": deal["criteria"], "message": message})
     r.raise_for_status()
     body = r.json()
     reply, offer = str(body.get("reply_text", "")), body.get("offer")
@@ -144,18 +171,18 @@ def _negotiate(deal_id: str, message: str) -> dict:
                    deal_id=deal_id)
     out = {"reply_text": reply, "offer": None}
     if offer and offer.get("offer_id") and deal["asset"] in (offer.get("prices") or {}):
-        # acceptance criteria come from the buyer's task, never from the seller (who would grade its own goods)
-        criteria = buyer_criteria(deal["task"])
-        if offer.get("count") is not None and int(offer["count"]) != criteria["count"]:
+        # acceptance terms come from the buyer's confirmed task; the seller may only add predicates (checked at pay)
+        terms = deal["criteria"]
+        if offer.get("count") is not None and int(offer["count"]) != terms["count"]:
             journal.append("bank", "offer_ignored", {"reason": "count_differs_from_task", "offer_count": offer["count"],
-                                                     "task_count": criteria["count"]}, deal_id=deal_id)
+                                                     "task_count": terms["count"]}, deal_id=deal_id)
             return out
         amount = int(offer["prices"][deal["asset"]])
         _set(deal_id, "offered", "offer_stored", {"offer_id": offer["offer_id"], "amount": amount,
-                                                  "source": "untrusted:seller"},
-             offer_json=db.dumps(offer), criteria_json=db.dumps(criteria), amount=amount,
+                                                  "rule": offer.get("rule"), "source": "untrusted:seller"},
+             offer_json=db.dumps(offer), amount=amount,
              confirmed_by=None)  # a human confirmed the previous offer, not this one
-        out["offer"] = {**offer_view(offer, deal["asset"]), "criteria": criteria}
+        out["offer"] = offer_view(offer, deal["asset"])
     _prefetch(seller)
     return out
 
@@ -293,7 +320,12 @@ def pay(deal_id: str) -> dict:
         deal = _require(deal_id)
         t0 = time.perf_counter()
         with timing.timed("decision", deal_id):
-            decision = _decide(deal, seller, quote)
+            decision = _fix_terms(deal, money.to_eur_cents(deal["asset"], quote["amount"]))
+            if decision["status"] == "ok":
+                marks = decision.get("marks", [])
+                deal = _require(deal_id)
+                decision = _decide(deal, seller, quote)
+                decision["marks"] = marks + decision.get("marks", [])
             if decision["status"] == "ok":
                 decision = _wallet_refusal(deal, seller) or decision
             if decision["status"] == "ok":
@@ -305,6 +337,72 @@ def pay(deal_id: str) -> dict:
         _refresh_payment_info(deal, quote)
         return _authorize_and_notify(_require(deal_id), seller, (time.perf_counter() - t0) * 1000,
                                      decision.get("marks", []))
+
+
+TIERS = ("T0", "T1", "T2")
+RULE_TIERS = {"A": "T0", "B": "T1", "C": "T2"}  # the lowest tier where a rule exists (§4)
+
+
+def tier_of(eur_cents: int) -> str:
+    return "T0" if eur_cents <= config.TIER_T0_MAX else "T1" if eur_cents <= config.TIER_T1_MAX else "T2"
+
+
+def _terms_refusal(reason: str, text: str, **evidence) -> dict:
+    return codes.refuse(Code.TERMS_MISMATCH, [codes.reason(reason, True, text, None, **evidence)])
+
+
+def _fix_terms(deal: dict, eur_cents: int) -> dict:
+    """Check the offer against the confirmed task terms (§2.1, §3) and fix the deal's terms for the escrow: the
+    confirmed predicates verbatim (JCS), a rule A < B < C allowed in the tier, a window within the tier's bounds,
+    a delivery deadline no later than the task's, the tariff, and the B claim slot reserved now (§7B). Written in
+    one transaction with the slot check, so parallel pays cannot take the same slot."""
+    from bank import disputes, verifier
+    offer, task = deal["offer"], deal["criteria"]
+    missing = verifier.verbatim_missing(task["predicates"], offer.get("predicates") or [])
+    if missing:
+        return _terms_refusal("predicates_not_verbatim", f"The offer drops or changes {len(missing)} of the confirmed "
+                              "acceptance predicates.", missing=missing)
+    try:
+        verifier.validate(offer.get("predicates") or [])
+    except verifier.PredicateError as e:
+        return _terms_refusal("offer_predicates_invalid", f"The seller's predicates are not valid: {e}")
+    rule = offer.get("rule")
+    if rule not in disputes.RULES:
+        return _terms_refusal("rule_unknown", "The offer names no quality rule A, B or C.")
+    b_pct = int(offer.get("b_pct") or 0) if rule in ("B", "C") else 0
+    if rule in ("B", "C") and b_pct not in disputes.B_PCTS:
+        return _terms_refusal("b_pct_unknown", "The B guarantee must be 5, 10 or 20 %.")
+    tier = max(tier_of(eur_cents), RULE_TIERS[rule], offer.get("tier") if offer.get("tier") in TIERS else "T0",
+               key=TIERS.index)
+    if rule == "C" and not any(p["op"] == "source" for p in task["predicates"]):
+        return _terms_refusal("c_needs_source", "Rule C needs a source template in the confirmed task terms.")
+    window = 0.0
+    if rule != "A":
+        lo, hi = config.WINDOW_S[tier]
+        window = float(offer.get("window_s") or 0)
+        if not lo <= window <= hi:
+            return _terms_refusal("window_out_of_bounds", f"The claim window must be {lo:g} to {hi:g} s in {tier}.")
+    deadline = int(offer.get("deadline_s") or 0)
+    if not 0 < deadline <= int(task["deadline_s"]):
+        return _terms_refusal("deadline_after_task", "The delivery deadline is later than the task's.")
+    terms = {"rule": rule, "b_pct": b_pct, "tier": tier, "window_s": window, "deadline_s": deadline,
+             "fee_bps": config.TARIFF_BPS[(tier, rule)], "count": int(task["count"]),
+             "predicates": offer["predicates"], "task_hash": task["hash"], "category": task["category"],
+             "b_slot": 0}
+    marks = []
+    with db.immediate():
+        if rule in ("B", "C"):
+            avail = disputes.b_availability(deal["buyer_id"], deal["seller_id"], except_deal=deal["deal_id"])
+            if avail["available"]:
+                terms["b_slot"] = 1
+            elif not deal.get("confirmed_by"):
+                return codes.refuse(Code.CONFIRMATION_REQUIRED, [codes.reason(
+                    avail["reason"], True, avail["text"] + " A person can confirm the deal as B without claims.")])
+            else:
+                marks.append("B without claims (confirmed by a person)")
+        db.run("UPDATE deals SET terms_json=?, updated_at=? WHERE deal_id=?",
+               (db.dumps(terms), time.time(), deal["deal_id"]))
+    return codes.ok(marks=marks)
 
 
 def _refresh_payment_info(deal: dict, quote: dict):
@@ -346,6 +444,7 @@ def _authorize_and_notify(deal: dict, seller: dict, decision_ms: float, marks: l
         raise DealError(503, "escrow authorize pending, call pay again (same idempotency key)") from e
     amount, asset = int(deal["amount"]), deal["asset"]
     _set(deal_id, "authorized", "escrow_locked", {"tx_hash": tx["tx_hash"], "link": tx["link"], "amount": amount})
+    _module("disputes").open_(deal_id, deal["terms"])
     marks = marks or []
     decision = codes.ok(deal_id=deal_id, marks=marks, explanation=(
         f"{money.fmt(asset, amount)} locked in escrow for {seller['name']}: {tx['link']}. "
@@ -373,14 +472,15 @@ def _already_paid(deal: dict) -> dict:
     """pay() again on a deal past the lock never locks twice. If the seller has not delivered yet (its notice was
     lost or it was down), the notice is sent again — that is the retry path for a stuck 'authorized' deal."""
     deal_id, state = deal["deal_id"], deal["state"]
-    if state == "authorized" and db.one("SELECT 1 FROM deliveries WHERE deal_id=?", (deal_id,)) is None:
+    if state == "authorized" and db.one("SELECT 1 FROM delivery_attempts WHERE deal_id=? AND accepted=1",
+                                        (deal_id,)) is None:
         ack = notify_seller(deal_id)
         if ack is False:
             return _return_lock(deal_id)
         return codes.ok(deal_id=deal_id, explanation="The funds are locked in escrow; the seller was asked again to "
                         "deliver." if ack else "The funds are locked in escrow; the seller is not reachable yet — "
                         "call pay again later.")
-    if state == "closed":
+    if state in ("closed", "settled"):
         return codes.ok(deal_id=deal_id, explanation="This deal is closed; its escrow lock was settled or returned.")
     return codes.ok(deal_id=deal_id, explanation=f"Already paid ({state}): the funds are in escrow for this deal.")
 
@@ -408,55 +508,57 @@ def notify_seller(deal_id: str) -> bool | None:
     return False if r.status_code in (404, 409) else None
 
 
-def record_delivery(deal_id: str, payload: dict) -> dict:
-    """Seller -> bank. Items are untrusted data for the verifier; stored once per deal."""
-    deal = _require(deal_id)
-    if deal["state"] not in ("authorized", "delivered"):
-        raise DealError(409, f"deal is {deal['state']}, not waiting for a delivery")
-    if payload.get("offer_id") and payload["offer_id"] != deal["offer"]["offer_id"]:
-        raise DealError(409, "delivery for another offer")
-    items = payload.get("items")
-    if not isinstance(items, list):
-        raise DealError(400, "items must be a list")
-    if deal["state"] == "delivered":
-        return {"ok": True, "items": len(items), "duplicate": True}
-    items = core.clean_delivery_items(items)  # only the Google Maps fields we use: no phones, no reviews
-    db.run("INSERT OR IGNORE INTO deliveries (deal_id, items_json, created_at) VALUES (?,?,?)",
-           (deal_id, db.dumps(items), time.time()))
-    _set(deal_id, "delivered", "delivery_received", {"items": len(items), "source": "untrusted:seller"},
-         actor="agent:seller")
-    return {"ok": True, "items": len(items)}
+def lookups() -> dict:
+    """Registry and source lookups for delivery autocodes (screening cache; snapshots for rule C)."""
+    from bank import snapshots, verifier
+    out = {"registry": verifier.registry_record, "snapshot": getattr(snapshots, "for_item", None)}
+    return {k: v for k, v in out.items() if v}
 
 
-def settle(deal_id: str, plan: dict | None = None) -> dict:
-    """After delivery: capture what the verifier accepted now; void the rest only when nothing is held for a
-    dispute (void returns everything left, so it must come after the last capture). The budget follows the
-    chain: committed = captured, the rest released. If the capture cannot happen (seller delisted/frozen, expiry),
-    the whole lock goes back to the buyer instead of staying stuck."""
-    deal = _require(deal_id)
-    if deal["state"] != "delivered":
-        raise DealError(409, f"deal is {deal['state']}")
-    plan = plan or _module("verifier").settlement(deal_id)
-    mandate, asset = _module("mandate"), deal["asset"]
-    if plan["capture_now"] > 0:
+def record_delivery(deal_id: str, payload: dict, now: float | None = None) -> dict:
+    """Seller -> bank: a signed manifest and its items (§5.2). The bank recomputes root and count, runs the
+    autocodes and answers the seller at once; the money follows in the background (auto_settle)."""
+    from bank import disputes, receipts
+    now = time.time() if now is None else now
+    with disputes._locks[deal_id]:  # not the pay() lock: the seller may deliver while pay() still waits for its ack
+        deal = _require(deal_id)
+        s = disputes.get(deal_id)
+        if deal["state"] not in ("authorized", "delivered") or s is None:
+            raise DealError(409, f"deal is {deal['state']}, not waiting for a delivery")
+        if s["voided"] or s["closed_at"]:
+            raise DealError(409, "the deal is settled: no new versions after the final void")
+        if any(c["rule"] == "C" for c in s["claims"]):
+            raise DealError(409, "a C claim was filed: no new versions are accepted (§7C.1)")
+        if now > s["deadline_at"]:
+            raise DealError(409, "the delivery deadline has passed")
         try:
-            escrow.capture(deal_id, plan["capture_now"], 1)
-        except (chain.TxReverted, escrow.EscrowError) as e:
-            escrow.void(deal_id)
-            mandate.release(deal_id)
-            _set(deal_id, "closed", "capture_failed_returned", {"error": str(e)[:300], "returned": int(deal["amount"])})
-            return {"state": "closed", "capture_now": 0, "held": 0, "void": int(deal["amount"]), "error": str(e)}
-        target = money.to_eur_cents(asset, plan["capture_now"])
-        done = (db.one("SELECT committed FROM reservations WHERE deal_id=?", (deal_id,)) or {}).get("committed") or 0
-        if done < target:  # a retry after a failed void must not commit the same capture twice
-            mandate.commit(deal_id, target - done)
-    if plan["held"] == 0:
-        if plan["void"] > 0:
-            escrow.void(deal_id)
-        mandate.release(deal_id)  # amount := committed (or released if nothing was captured)
-    state = "settled" if plan["held"] == 0 else "verified"
-    _set(deal_id, state, "settlement_applied", {k: plan[k] for k in ("capture_now", "held", "void")})
-    return {"state": state, **{k: plan[k] for k in ("capture_now", "held", "void")}}
+            out = receipts.receive(deal, payload, now=now, **lookups())
+        except receipts.Refused as e:
+            raise DealError(e.status, str(e)) from e
+        if out["accepted"]:
+            disputes.delivered(deal_id, now=now)
+            if deal["state"] == "authorized":
+                _set(deal_id, "delivered", "delivery_received", {"version": out["version"],
+                                                                 "accepted_items": out["accepted_items"],
+                                                                 "source": "untrusted:seller"}, actor="agent:seller")
+    return out
+
+
+def fetch_delivery(deal_id: str) -> dict:
+    """Buyer: only the accepted items, with inclusion proofs against the seller-signed roots (§5.2 p. 5)."""
+    from bank import receipts
+    _require(deal_id)
+    return receipts.fetch(deal_id)
+
+
+def auto_settle(deal_id: str):
+    """After a delivery: let the money follow the deal's rule (bank/disputes.py). A background task: a failure is
+    journalled and the timer retries."""
+    try:
+        return _module("disputes").advance(deal_id)
+    except Exception as e:  # noqa: BLE001
+        journal.append("bank", "settlement_failed", {"error": repr(e)[:300]}, deal_id=deal_id)
+        return None
 
 
 # ---- human actions (bank UI, HUMAN_TOKEN): the agent can never call these ----
@@ -480,25 +582,6 @@ def ack_vat(deal_id: str, by: str) -> dict:
     journal.append(by, "vat_risk_acknowledged", {"seller_ico": seller["ico"], "asset": deal["asset"],
                                                 "mandate_version": version}, deal_id=deal_id)
     return pay(deal_id)
-
-
-def auto_settle(deal_id: str):
-    """After a delivery: the L5 settlement (bank.disputes: rules verdict, holdback, objection windows and the
-    timer's silence defaults) when present, else the plain capture/void of settle(); waits without a verifier."""
-    try:
-        _module("verifier")
-    except ImportError:
-        journal.append("bank", "settlement_pending", {"why": "verifier not available"}, deal_id=deal_id)
-        return None
-    try:
-        disputes = _module("disputes")
-    except ImportError:
-        disputes = None
-    try:
-        return disputes.settle(deal_id) if disputes else settle(deal_id)
-    except Exception as e:  # noqa: BLE001 — a background task: never lose the failure, the deal stays "delivered"
-        journal.append("bank", "settlement_failed", {"error": repr(e)[:300]}, deal_id=deal_id)
-        return None
 
 
 def statement(mandate_id: str) -> dict:

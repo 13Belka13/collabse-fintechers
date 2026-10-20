@@ -99,8 +99,6 @@ def world(monkeypatch, seeded):
     screening.prefetch = lambda ico, wallet=None, website_url=None: None
     monkeypatch.setitem(sys.modules, "bank.mandate", mandate)
     monkeypatch.setitem(sys.modules, "bank.screening", screening)
-    # settlement is driven explicitly in these tests; the real verifier (stream S) is covered in test_verifier
-    monkeypatch.setitem(sys.modules, "bank.verifier", None)
     return types.SimpleNamespace(bank=bank, seller=seller_client, sender=sender, mandate=mandate,
                                  screening=screening, locked=locked)
 
@@ -160,15 +158,17 @@ def test_honest_pay_locks_escrow_and_seller_delivers(world):
     deal_id, _ = new_deal(world)
     view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
     assert view["status"] == "ok" and view["code"] is None and "5,00 €" in view["explanation"]
-    assert [s[0] for s in world.sender.sent] == ["authorize"] and world.sender.sent[0][2] == escrow.idem_key(deal_id, "authorize")
+    assert [s[0] for s in world.sender.sent] == ["authorize", "capture"]  # rule B: 90 % at acceptance
+    assert world.sender.sent[0][2] == escrow.idem_key(deal_id, "authorize")
     assert world.mandate.calls[:2] == [("decide", 500, BETA, "ok"), ("reserve", 500)]
     pi = escrow.stored_payment_info(deal_id)
     assert pi["receiver"] == BETA and pi["maxAmount"] == 5_000_000 and pi["token"] == config.EURC
     deal = deals.get(deal_id)
-    assert deal["state"] == "delivered"  # the seller checked the escrow and posted 20 items back
-    assert len(db.loads(db.one("SELECT items_json FROM deliveries WHERE deal_id=?", (deal_id,))["items_json"])) == 20
+    assert deal["state"] == "delivered"  # the seller checked the escrow and delivered 20 items through the bank
+    assert db.one("SELECT COUNT(*) n FROM items WHERE deal_id=? AND status='accepted'", (deal_id,))["n"] == 20
+    assert deal["terms"]["rule"] == "B" and deal["terms"]["b_slot"] == 1 and deal["terms"]["tier"] == "T1"
     again = world.bank.post(f"/api/deals/{deal_id}/pay").json()  # a second pay never locks twice
-    assert again["status"] == "ok" and len(world.sender.sent) == 1
+    assert again["status"] == "ok" and len(world.sender.sent) == 2
 
 
 def test_tczk_deal_uses_tczk_price(world):
@@ -180,22 +180,51 @@ def test_tczk_deal_uses_tczk_price(world):
     assert world.mandate.calls[1] == ("reserve", 500)  # 125,00 Kč = 5,00 € at the demo rate
 
 
-def test_settle_captures_accepted_then_voids_rest(world):
+def test_rule_b_captures_at_acceptance_with_the_pis_idem_key(world):
     deal_id, _ = new_deal(world)
     world.bank.post(f"/api/deals/{deal_id}/pay")
-    out = deals.settle(deal_id, {"capture_now": 4_500_000, "held": 0, "void": 500_000})
-    assert out["state"] == "settled"
-    assert [(s[0], s[2]) for s in world.sender.sent[1:]] == [("capture", escrow.idem_key(deal_id, "capture:1")),
-                                                         ("void", escrow.idem_key(deal_id, "void"))]
+    assert [(s[0], s[2]) for s in world.sender.sent] == [("authorize", escrow.idem_key(deal_id, "authorize")),
+                                                         ("capture", escrow.idem_key(deal_id, "capture:1"))]
     assert world.sender.sent[1][1][1] == 4_500_000
     assert ("commit", 450) in world.mandate.calls
 
 
-def test_settle_with_held_items_does_not_void(world):
+def _offer_patch(world, monkeypatch, **change):
+    real = seller_mod.offer_rule
+    monkeypatch.setattr(seller_mod, "offer_rule", lambda terms, cents: {**real(terms, cents), **change})
+
+
+@pytest.mark.parametrize("change,reason", [
+    ({"rule": "D"}, "rule_unknown"), ({"b_pct": 50}, "b_pct_unknown"), ({"window_s": 1}, "window_out_of_bounds"),
+    ({"window_s": 10**7}, "window_out_of_bounds"), ({"rule": "C"}, "c_needs_source")])
+def test_offer_terms_below_the_rules_are_refused_before_the_mandate(world, monkeypatch, change, reason):
+    _offer_patch(world, monkeypatch, **change)
     deal_id, _ = new_deal(world)
-    world.bank.post(f"/api/deals/{deal_id}/pay")
-    out = deals.settle(deal_id, {"capture_now": 4_000_000, "held": 500_000, "void": 500_000})
-    assert out["state"] == "verified" and [s[0] for s in world.sender.sent[1:]] == ["capture"]
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "TERMS_MISMATCH" and view["next_tool"] == "negotiate"
+    assert [r["code"] for r in view["reasons"]] == [reason]
+    assert world.mandate.calls == [] and world.sender.sent == []
+
+
+def test_a_dropped_confirmed_predicate_is_refused(world):
+    deal_id, _ = new_deal(world)
+    offer = deals.get(deal_id)["offer"]
+    offer["predicates"] = offer["predicates"][1:]
+    db.run("UPDATE deals SET offer_json=? WHERE deal_id=?", (db.dumps(offer), deal_id))
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "TERMS_MISMATCH" and view["reasons"][0]["code"] == "predicates_not_verbatim"
+
+
+def test_b_unavailable_needs_a_person_then_b_without_claims(world, monkeypatch):
+    from bank import disputes
+    monkeypatch.setattr(disputes, "b_availability", lambda *a, **k: {
+        "available": False, "reason": "b_pair_limit", "text": "Limit reached."})
+    deal_id, _ = new_deal(world)
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "CONFIRMATION_REQUIRED" and world.sender.sent == []
+    db.run("UPDATE deals SET confirmed_by='human:anna' WHERE deal_id=?", (deal_id,))
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and deals.get(deal_id)["terms"]["b_slot"] == 0
 
 
 def test_mandate_refusal_reserves_nothing(world):
@@ -249,4 +278,4 @@ def test_sellers_and_statement(world):
     deal_id, _ = new_deal(world)
     world.bank.post(f"/api/deals/{deal_id}/pay")
     st = world.bank.get("/api/statement?mandate_id=m-alfa-1").json()
-    assert st["reserved_eur_cents"] == 500 and st["deals"][0]["deal_id"] == deal_id
+    assert st["committed_eur_cents"] == 450 and st["deals"][0]["deal_id"] == deal_id  # rule B: 90 % at acceptance

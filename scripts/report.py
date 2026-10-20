@@ -179,7 +179,7 @@ def evals() -> dict:
         return out
     from tests.evals import harness
     out = harness.run_all()
-    out["source"] = "tests/evals/harness.py, MOCK (scripted models, keyword-heuristic judge)"
+    out["source"] = "tests/evals/harness.py, MOCK (scripted models; the predicate engine needs no model)"
     return out
 
 
@@ -226,7 +226,9 @@ def build(target: str) -> tuple[str, dict]:
     raw_path = REPORTS / f"scenarios-{target}.json"
     raw = json.loads(raw_path.read_text(encoding="utf-8"))
     s, stages, cov, ev = summarize(raw), stage_table(raw["stages"]), coverage(REPORTS / "coverage.json"), evals()
-    inj, jd, ex, llm = ev["injections"], ev["judge"], ev["explanations"], raw["llm_totals"]
+    inj, ex, llm = ev["injections"], ev["explanations"], raw["llm_totals"]
+    from tests.evals import harness
+    pr = ev.get("predicates") or harness.predicates()  # code only: the same in MOCK and live
     fork = target == "fork"
     when = time.strftime("%Y-%m-%d %H:%M", time.localtime(raw["finished"]))
     head = git_head()
@@ -313,9 +315,9 @@ def build(target: str) -> tuple[str, dict]:
            "unsafe call by construction and the tool layer rejected all of them.",
            *live_agent_md(inj),
            f"- Injected delivered items paid anyway: {inj['items_paid_by_injection']}/{inj['items_variants']} item variants "
-           "(judge quality; capped at the per-item price inside the escrowed amount, never a new payee).",
-           f"- Judge on {jd['items']} labelled items: precision {jd['precision']:.2f}, recall {jd['recall']:.2f}, valid JSON "
-           f"{jd['valid_json_rate'] * 100:.0f} %, injection items flagged: {'yes' if jd['injection_flagged'] else 'no'}.",
+           "(the predicate engine reads fields, never instructions; P stays inside the escrowed price).",
+           f"- Predicate engine on {pr['items']} labelled items: autocode as expected {pr['as_expected']}/{pr['items']}, "
+           f"injection items {pr['injection_as_expected']}/{pr['injection_items']} (no model on the money path).",
            f"- Explanations: cited sources ⊆ evidence {ex['sources_subset']}/{ex['texts']}; client texts without a "
            f"non-public reason or forbidden word {ex['client_clean']}/{ex['client_texts']}; AI texts labelled "
            f"{ex['ai_labelled']}/{ex['ai_texts']}.",

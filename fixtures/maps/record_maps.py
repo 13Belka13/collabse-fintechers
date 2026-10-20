@@ -18,7 +18,10 @@ sys.path.insert(0, str(ROOT))
 from apify_client import ApifyClient  # noqa: E402
 
 from bank import config  # noqa: E402
-from bank.verifier import KEEP_FIELDS, check_items  # noqa: E402
+from bank import deals, verifier  # noqa: E402
+
+KEEP_FIELDS = ("title", "categoryName", "totalScore", "reviewsCount", "address", "city", "postalCode", "website",
+               "placeId", "url", "permanentlyClosed")
 
 ACTOR = "compass/crawler-google-places"
 OUT = ROOT / "fixtures" / "maps" / "brno_warehouses_recorded.json"
@@ -49,8 +52,9 @@ def clean(raw: list[dict]) -> list[dict]:
 
 def passing(items: list[dict]) -> list[dict]:
     """Items that pass every code rule and carry a category keyword (no over_quantity cap here)."""
-    checks = check_items(items, {"count": len(items)})
-    return [it for it, ch in zip(items, checks) if ch["ok"] and ch["category_keyword"]]
+    c = deals.buyer_criteria({"criteria": {"count": len(items), "registry_check": False}})
+    res = verifier.evaluate(items, verifier.criteria_predicates(c), ordered=len(items))
+    return [it for it, r in zip(items, res) if r["status"] == "accepted"]
 
 
 def main():
