@@ -12,6 +12,7 @@ from eth_account import Account
 
 ACTIVE = False
 SIM_TCZK = "0x6a99C9e95DD220172d07D5f730f2e82B466D4B67"  # the prep token's address, only for EIP-712 domains
+SIM_SUPPLY = 100_000  # tCZK the setup minted outside the ramp (demo-deposit-alfa, 1 000,00 Kč)
 _lock = threading.Lock()
 
 
@@ -25,6 +26,7 @@ class SimChain:
 
     def __init__(self):
         self.state: dict[str, dict] = {}
+        self.supply: int | None = None  # tCZK totalSupply; the sim keeps no token balances
 
     def send(self, call, *, kind, deal_id=None, idem_key=None, gas=None, expect_revert=False):
         from bank import chain, db, escrow
@@ -34,6 +36,13 @@ class SimChain:
                 return {"tx_hash": prior["tx_hash"], "status": "simulated", "block_number": None, "gas_used": 0,
                         "link": sim_link(prior["tx_hash"]), "receipt": None}
             h = "0x" + secrets.token_hex(32)
+            if call.fn_name in ("mint", "burn"):  # tCZK ramp (bank/ramp.py): only the supply moves
+                supply = self._supply()
+                self.supply = supply + (1 if call.fn_name == "mint" else -1) * int(call.args[1])
+                db.run("INSERT INTO onchain_txs (tx_hash, kind, deal_id, status, idem_key, created_at) VALUES"
+                       " (?,?,?,?,?,?)", (h, kind, deal_id, "simulated", idem_key, time.time()))
+                return {"tx_hash": h, "status": "simulated", "block_number": None, "gas_used": 0, "link": sim_link(h),
+                        "receipt": None}
             pi = dict(zip([n for n, _ in escrow.PI_FIELDS], call.args[0]))
             st = self._state(escrow.payment_hash(pi))
             if call.fn_name == "authorize":
@@ -71,6 +80,18 @@ class SimChain:
         with _lock:
             return dict(self._state(h))
 
+    def _supply(self) -> int:
+        """After a restart rebuilt from the bank's ramp operations, like paymentState from the journal."""
+        if self.supply is None:
+            from bank import ramp
+            b = ramp.books()
+            self.supply = (SIM_SUPPLY if b["initial"] is None else b["initial"]) + b["minted"] - b["burned"]
+        return self.supply
+
+    def total_supply(self) -> int:
+        with _lock:
+            return self._supply()
+
 
 SIM = SimChain()
 SELLER = None
@@ -84,7 +105,7 @@ def install():
     from fastapi.testclient import TestClient
     from x402.schemas import SettleResponse, SupportedKind, SupportedResponse, VerifyResponse
 
-    from bank import chain, config, core, deals, disputes, escrow, tczk
+    from bank import chain, config, core, deals, disputes, escrow, ramp, tczk
     from seller import app as seller_mod
 
     for name in ("BANK_OPERATOR_PK", "ALFA_PK"):
@@ -111,6 +132,7 @@ def install():
     SELLER = seller_mod.create_app(SimFacilitator())
     chain.sender = lambda pk: SIM
     escrow.read_state = SIM.read_state
+    ramp.total_supply = SIM.total_supply
     # tCZK allowlist/freeze live on the token: simulated as "every bank client's wallet is allowed, none frozen"
     tczk.is_allowed = lambda addr, address=None: core.company_by_wallet(addr) is not None
     tczk.is_frozen = lambda addr, address=None: False

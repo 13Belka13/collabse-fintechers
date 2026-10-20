@@ -1,5 +1,6 @@
 # Seed the bank DB with demo data for the UI on a simulated chain: the five §13 scenarios, the VAT risk
 # acknowledged once for Beta in EURC (scene 1), and a B claim on the fake-data deal (refund without investigation).
+# Accounts (scripts/seed.py): Alfa 10 000,00 Kč, Beta 0,00 Kč with tCZK paid out to its account after each capture.
 # Usage: MOCK=1 python -m scripts.demo_seed      then: DEMO_SIM=1 uvicorn bank.app:app --port 8000
 # (DEMO_SIM=1 keeps the simulated chain in the server, so the timer can finish the claim windows.)
 import os
@@ -12,8 +13,8 @@ def main():
 
     from bank import db, deadlines, deals, disputes, mandate
     from scripts import demo_scenarios, demo_sim, seed
+    demo_sim.install()  # first: the seed records the simulator's tCZK supply, never the live chain's
     seed.seed()
-    demo_sim.install()
     m = mandate.ensure_demo()
     out = {}
     first = demo_scenarios.run("honest")  # Beta is a VAT payer: EURC needs the human's acknowledgement once
