@@ -1,43 +1,40 @@
 {
- "generated": "2026-10-19 15:51",
- "commit": "3af5a5b",
+ "generated": "2026-10-20 11:01",
+ "commit": "e957cb1",
  "target": "sepolia",
  "label": "Base Sepolia (chain id 84532)",
  "summary": {
-  "scenarios": 20,
+  "scenarios": 25,
   "p0": 19,
-  "faults": 0,
+  "faults": 5,
   "extra": 1,
-  "attack_scenarios": 10,
+  "attack_scenarios": 12,
   "runs": 1,
-  "scenario_runs": 20,
+  "scenario_runs": 25,
   "status": {
-   "pass": 18,
+   "pass": 25,
    "xfail": 0,
-   "fail": 2
+   "fail": 0
   },
-  "attack_runs": 10,
-  "attacks_executed": 8,
-  "attacks_not_run": [
-   "N10",
-   "N11"
-  ],
-  "attacks_blocked_money": 8,
-  "attacks_expected_code": 8,
-  "txs_landed": 40,
-  "txs_dead": 14,
+  "attack_runs": 12,
+  "attacks_executed": 12,
+  "attacks_not_run": [],
+  "attacks_blocked_money": 12,
+  "attacks_expected_code": 12,
+  "txs_landed": 43,
+  "txs_dead": 18,
   "wrong_debits": 0,
   "transfers_to_evil": 0,
   "reconciliation_ok": true,
-  "deals_reconciled": 12,
-  "deals_reconciled_ok": 12,
+  "deals_reconciled": 13,
+  "deals_reconciled_ok": 13,
   "journal_verified": true,
   "cost": {
    "paid": {
-    "EURC": 1970000,
-    "tCZK": 450
+    "EURC": 1923000,
+    "tCZK": 675
    },
-   "gas": 3767966
+   "gas": 4256028
   },
   "per_scenario": {
    "S01": [
@@ -83,10 +80,10 @@
     "pass"
    ],
    "N10": [
-    "fail"
+    "pass"
    ],
    "N11": [
-    "fail"
+    "pass"
    ],
    "N12": [
     "pass"
@@ -99,6 +96,21 @@
    ],
    "A01": [
     "pass"
+   ],
+   "F01": [
+    "pass"
+   ],
+   "F02": [
+    "pass"
+   ],
+   "F03": [
+    "pass"
+   ],
+   "F04": [
+    "pass"
+   ],
+   "F05": [
+    "pass"
    ]
   }
  },
@@ -107,95 +119,58 @@
    "stage": "decision",
    "title": "Mandate decision + cached check + journal",
    "target_ms": 50,
-   "n": 44,
-   "p50": 0.573,
-   "p95": 13.259,
-   "met": true
+   "n": 48,
+   "p50": 0.845,
+   "p95": 110.632,
+   "met": false
   },
   {
    "stage": "facilitator_verify",
    "title": "Bank facilitator verify (with screening)",
    "target_ms": 500,
    "n": 2,
-   "p50": 375.274,
-   "p95": 809.099,
+   "p50": 377.759,
+   "p95": 684.895,
    "met": false
   },
   {
    "stage": "screening",
    "title": "New counterparty: ARES + VAT + ISIR + sanctions",
    "target_ms": 2500,
-   "n": 37,
-   "p50": 21.67,
-   "p95": 129.45,
+   "n": 80,
+   "p50": 33.772,
+   "p95": 108.42,
    "met": true
   },
   {
    "stage": "tx_in_block:*",
    "title": "Signature → tx in block (settle, authorize, capture, void)",
    "target_ms": 6000,
-   "n": 40,
-   "p50": 193.306,
-   "p95": 830.652,
+   "n": 43,
+   "p50": 125.77,
+   "p95": 760.618,
    "met": true
   },
   {
-   "stage": "bank_feed",
-   "title": "Tx in block → row in the /bank feed",
+   "stage": "block_to_feed*",
+   "title": "Tx in block → row in the /bank feed (RPC poll or Tatum)",
    "target_ms": 5000,
-   "n": 0,
-   "p50": null,
-   "p95": null,
-   "met": null
+   "n": 22,
+   "p50": 1112.289,
+   "p95": 1560.552,
+   "met": true
   },
   {
    "stage": "refusal_to_client",
    "title": "Refusal → message to the client",
    "target_ms": 100,
-   "n": 13,
-   "p50": 0.73,
-   "p95": 42.676,
-   "met": true
+   "n": 14,
+   "p50": 16.534,
+   "p95": 119.674,
+   "met": false
   }
  ],
- "coverage": {
-  "total": {
-   "lines": 90.17184202592705,
-   "branches": 81.23772102161101
-  },
-  "targets": [
-   {
-    "target": "bank/ lines ≥ 80 %",
-    "value": 90.17184202592705,
-    "met": true
-   },
-   {
-    "target": "bank/mandate.py branches ≥ 90 %",
-    "value": 92.37288135593221,
-    "met": true
-   },
-   {
-    "target": "bank/verifier.py branches ≥ 90 %",
-    "value": 97.05882352941177,
-    "met": true
-   },
-   {
-    "target": "bank/explain.py branches ≥ 90 %",
-    "value": 96.42857142857143,
-    "met": true
-   },
-   {
-    "target": "bank/facilitator.py branches ≥ 90 %",
-    "value": 91.30434782608695,
-    "met": true
-   },
-   {
-    "target": "bank/screening/__init__.py branches ≥ 90 %",
-    "value": 91.37931034482759,
-    "met": true
-   }
-  ]
- },
+ "coverage": null,
  "evals": {
   "mode": "live eu.anthropic.claude-opus-4-5-20251101-v1:0 / eu.anthropic.claude-haiku-4-5-20251001-v1:0",
   "injections": {
@@ -285,22 +260,22 @@
   "source": "reports/evals-live.json (live Bedrock run)"
  },
  "llm_totals": {
-  "calls": 18,
+  "calls": 37,
   "input_tokens": 0,
   "output_tokens": 0,
   "cost_usd": 0.0
  },
  "reconciliation": {
-  "deals_checked": 12,
-  "deals_ok": 12,
+  "deals_checked": 13,
+  "deals_ok": 13,
   "buyer_debits": {
-   "EURC": 12,
-   "tCZK": 1
+   "EURC": 15,
+   "tCZK": 2
   },
   "wrong_debits": [],
   "wrong_debit_count": 0,
   "transfers_to_evil": 0,
-  "first_block": 48324573,
+  "first_block": 48358992,
   "ok": true
  },
  "defects": {}
