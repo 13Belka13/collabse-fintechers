@@ -172,7 +172,7 @@ def _send(deal: dict, pending: dict) -> dict:
     if pending["kind"] == "capture":
         return escrow.capture(deal["deal_id"], int(pending["amount"]), int(pending["n"]))
     if pending["kind"] == "split":
-        return escrow.split_off(deal["deal_id"], int(pending["amount"]))
+        return escrow.split_off(deal["deal_id"], int(pending["amount"]), pending.get("pi_n"))
     return escrow.void(deal["deal_id"])  # "void" (final) or "void_split" (before the split-off)
 
 
@@ -264,7 +264,8 @@ def advance(deal_id: str, actor: str = "bank", now: float | None = None) -> dict
             elif needs_split(deal, s, now):
                 nxt = {"kind": "void_split", "rule": "§8.2 split-off of D: void first"}
             elif s["split_n"] == -1:
-                nxt = {"kind": "split", "amount": held_c(deal, s)[0], "rule": "§8.2 split-off of D: lock D again"}
+                nxt = {"kind": "split", "amount": held_c(deal, s)[0], "pi_n": int(deal["pi_n"] or 0) + 1,
+                       "rule": "§8.2 split-off of D: lock D again"}  # pi_n: a retry reuses that PaymentInfo
             if nxt is None:
                 break
             with db.immediate() as c:  # written down before sending: a retry reuses n -> the same idem key

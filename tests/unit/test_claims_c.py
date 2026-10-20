@@ -546,3 +546,49 @@ def test_no_split_off_while_items_are_pending_and_nothing_leaves_the_split_lock_
     monkeypatch.setattr(disputes, "payable", lambda deal: PRICE_C * 2)  # even if P grew, D stays held
     deadlines.tick(now=end2 + 100)
     assert deal_txs()[3:] == [] and claims_c.get(deal_id)["state"] in claims_c.OPEN
+
+
+def _to_split(w, monkeypatch, first_error, attr="fail_next"):
+    """A C claim on all items with both fees paid; the first authorize of the split-off fails with first_error."""
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    _both_fees_paid(w, deal_id, T0 + 5)
+    end = max(T0 + 1 + window + 1, deciders.get(claims_c.get(deal_id)["id"])["opened_at"] + 1)
+    real = escrow.split_off
+
+    def first_fails(*a, **kw):
+        if not hasattr(first_fails, "done"):
+            first_fails.done = True
+            setattr(w.sender, attr, first_error)
+        return real(*a, **kw)
+    monkeypatch.setattr(escrow, "split_off", first_fails)
+    deadlines.tick(now=end)
+    assert disputes.get(deal_id)["pending"]["kind"] == "split" and deals.get(deal_id)["pi_n"] == 1
+    return deal_id, end
+
+
+def _deal_pis(deal_id):
+    return [(r["n"], r["max_amount"], r["authorized"]) for r in db.rows(
+        "SELECT n, max_amount, authorized FROM payment_infos WHERE deal_id=? AND purpose='deal' ORDER BY n",
+        (deal_id,))]
+
+
+def test_a_retried_split_off_authorizes_the_stored_payment_info_never_a_second_lock(w, monkeypatch):
+    deal_id, end = _to_split(w, monkeypatch, TimeoutError("receipt wait timed out"))  # the tx went out, answer lost
+    deadlines.tick(now=end + 1)
+    auths = [a for fn, a, key, _ in w.sender.sent if fn == "authorize" and ":fee-" not in key]
+    assert auths == [PRICE_C]  # ONE split lock of D (the retry resent the same idem key)
+    assert deals.get(deal_id)["pi_n"] == 1 and disputes.get(deal_id)["split_n"] == 1
+    assert _deal_pis(deal_id)[1:] == [(1, PRICE_C, 1)] and escrow.locked_amount(deal_id) == PRICE_C
+
+
+def test_a_split_payment_info_that_never_locked_is_rebuilt_after_pre_approval_expiry(w, monkeypatch):
+    deal_id, end = _to_split(w, monkeypatch, ValueError("gas estimation reverted"), attr="fail_always")
+    w.sender.fail_always = None
+    later = time.time() + escrow.PRE_APPROVAL_S + 1
+    monkeypatch.setattr(escrow.time, "time", lambda: later)
+    deadlines.tick(now=end + 1)
+    auths = [a for fn, a, key, _ in w.sender.sent if fn == "authorize" and ":fee-" not in key]
+    assert auths == [PRICE_C] and deals.get(deal_id)["pi_n"] == 2 and disputes.get(deal_id)["split_n"] == 2
+    assert _deal_pis(deal_id)[1:] == [(1, PRICE_C, 0), (2, PRICE_C, 1)]
