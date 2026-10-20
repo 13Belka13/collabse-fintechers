@@ -32,7 +32,7 @@ class FakeSender:
         if self.fail_always:  # refused before anything was signed (e.g. gas estimation reverts)
             raise self.fail_always
         args = call.args
-        self.sent.append((call.fn_name, args[1] if call.fn_name in ("capture", "authorize") else None, key,
+        self.sent.append((call.fn_name, args[1] if call.fn_name in ("capture", "authorize", "transfer") else None, key,
                           args[2] if call.fn_name == "capture" else None))
         tx = {"tx_hash": "0x%064x" % len(self.sent), "link": chain.tx_link("0x%064x" % len(self.sent)),
               "status": "mined"}
@@ -103,7 +103,8 @@ def deliver(w, deal_id, mode="honest", count=20, version=1, now=None, items=None
 
 
 def captures(w):
-    return [amount for fn, amount, _, _ in w.sender.sent if fn == "capture"]
+    """Captures of the deal's own locks (C dispute fees are separate authorizations, captured too)."""
+    return [amount for fn, amount, key, _ in w.sender.sent if fn == "capture" and ":fee-" not in key]
 
 
 def fns(w):

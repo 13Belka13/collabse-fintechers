@@ -77,6 +77,24 @@
     <button type="submit" class="ghost">Remind the seller to deliver</button></form>
   <span class="small muted">resends the escrow notice; the money stays locked, nothing is paid twice</span>{% endif %}</div>{% endif %}
 
+{% if c %}<h2>C dispute</h2>
+<div class="card small">
+  <div class="flex"><strong>{{ c['items']|length }} disputed item(s) · D = {{ c.amount|money(deal.asset) }}</strong>
+    <span class="badge b-warn">{{ c.state.replace('_', ' ') }}</span>
+    <span class="right">fee per side {{ c.data.fee|money(deal.asset) }} (paid, not blocked)</span></div>
+  {% if c.data.excluded %}<div class="muted">{{ c.data.excluded|length }} item(s) not admissible before any fee: {% for x in c.data.excluded %}{{ x.version }}/{{ x.index }} {{ x.field }} — {{ x.why }}{% if not loop.last %}; {% endif %}{% endfor %}</div>{% endif %}
+  {% if c.state == 'negotiation' %}<div>Negotiation until {{ c.data.negotiation_until|ts }}: the seller may agree, then D comes back without fees.</div>{% endif %}
+  {% if c.state == 'buyer_fee' %}<div>The buyer pays its fee by {{ c.data.buyer_fee_until|ts }}, or the claim is withdrawn and D goes to the seller.</div>{% endif %}
+  {% if c.state == 'seller_fee' %}<div>The seller pays its fee by {{ c.data.seller_fee_until|ts }}, or the decision is for the buyer without a decider.</div>{% endif %}
+  {% if c.case %}{% set k = c.case %}<div>Decider stage: challenge hashes until {{ k.t1|ts }}, reveals until {{ k.t2|ts }}, drawn by drand round {{ k.selection_round }}, sample by round {{ k.sample_round }} · bank salt committed <code>{{ k.salt_hash[:18] }}…</code>
+    {% if k.decider_assigned and not k.salt %} · decider assigned (identity disclosed after the decision){% endif %}
+    {% if k.salt %} · salt revealed <code>{{ k.salt[:18] }}…</code>, decider {{ k.decider }}{% endif %}
+    {% if k.sample %} · sample {{ k.sample|join(', ') }}{% endif %}</div>{% endif %}
+  {% if c.data.buyer_share_pct is defined %}<div><strong>{{ c.data.buyer_share_pct }} % of D back to the buyer</strong>{% if c.data.upheld is defined %} ({{ c.data.upheld }} of {{ c.data.of }} sampled items upheld){% endif %}{% if c.data.execute_after and c.state == 'decided' %} · executed after {{ c.data.execute_after|ts }} unless a side confirms a court claim{% endif %}{% if c.data.court %} · <span class="badge b-warn">court claim: D stays in escrow</span>{% endif %}</div>{% endif %}
+  <div><a href="/deciders/{{ deal.deal_id }}">Decider's view (pseudonymised) →</a></div>
+</div>
+{% endif %}
+
 {% if s and s.claims %}<h2>Claims</h2>
 {% for c in s.claims %}<div class="card small"><strong>{{ c.rule }}</strong> · {{ c['items']|length }} item(s) · {{ c.amount|money(deal.asset) }} · {{ c.state }}{% if c.reason %} · reason <code>{{ c.reason }}</code>{% endif %} · filed {{ c.filed_at|ts }} by <code>{{ c.by }}</code></div>{% endfor %}
 {% endif %}

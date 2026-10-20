@@ -398,10 +398,37 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         reason = verify_escrow(offer, body.asset, body.payment_info, notice=body.model_dump())
         if reason:
             raise HTTPException(409, reason)
+        if body.kind != "deal":  # the disputed sum locked again (§8.2): checked, nothing to deliver
+            return {"ok": True, "offer_id": offer_id, "kind": body.kind}
         if offer_id not in app.state.delivered and offer_id not in app.state.delivering:
             app.state.delivering.add(offer_id)
             background.add_task(deliver_to_bank, offer_id, body.deal_id, signed_delivery(offer_id, mode_of(offer)))
         return {"ok": True, "offer_id": offer_id, "delivering": True}
+
+    def staff(token: str | None):
+        if not token or not hmac.compare_digest(token.encode(), config.SELLER_TOKEN.encode()):
+            raise HTTPException(401, "seller staff token required")
+
+    @app.post("/claims/{deal_id}/fee")
+    def c_fee(deal_id: str, seller_id: str = "s-beta", x_seller_token: str | None = Header(None)):
+        """Rule C (MODEL_V2 §7C.4): the seller pays its dispute fee itself — an ERC-3009 authorization signed with
+        its own wallet key ({SELLER_ID}_WALLET_PK), never by the bank."""
+        staff(x_seller_token)
+        pk = os.getenv(f"{seller_id.upper().replace('-', '_')}_WALLET_PK", "").strip()
+        if not pk:
+            raise HTTPException(503, "no wallet key for this seller (TODO(credential))")
+        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers={"x-seller-token": config.SELLER_TOKEN}) as c:
+            pi = c.get(f"/api/deals/{deal_id}/claims/c/fee-terms").raise_for_status().json()
+            asset = next(a for a, m in config.ASSETS.items() if (m["address"] or "").lower() == pi["token"].lower())
+            sig = escrow.buyer_signature(pi, asset, pk)  # the same ERC-3009 shape, signed with the seller's key
+            return c.post(f"/api/deals/{deal_id}/claims/c/seller-fee",
+                          json={"signature": "0x" + sig.hex()}).raise_for_status().json()
+
+    @app.post("/claims/{deal_id}/agree")
+    def c_agree(deal_id: str, x_seller_token: str | None = Header(None)):
+        staff(x_seller_token)
+        with httpx.Client(base_url=config.BANK_URL, timeout=30, headers={"x-seller-token": config.SELLER_TOKEN}) as c:
+            return c.post(f"/api/deals/{deal_id}/claims/c/agree").raise_for_status().json()
 
     return app
 

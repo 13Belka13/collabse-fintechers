@@ -22,6 +22,11 @@ def tick(now: float | None = None) -> list[dict]:
     now = time.time() if now is None else now
     done = []
     with _tick_lock:
+        try:
+            from bank import snapshots
+            snapshots.drain(now)  # waiting source snapshots, fairly by seller (§5.1)
+        except Exception as e:  # noqa: BLE001 — a source outage only keeps items waiting
+            journal.append("timer", "snapshot.drain_failed", {"error": repr(e)[:200]})
         for deal_id in disputes.open_ids():
             before = journal.entries(deal_id, limit=1)
             disputes.tick(deal_id, now=now)

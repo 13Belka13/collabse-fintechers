@@ -1,0 +1,217 @@
+# Rule C (MODEL_V2 §7C, §8.2) on a fake clock and a fake chain: the bank's own snapshot at delivery, admissibility
+# at filing (bank-extracted field value, same type, different), no new versions after the claim, negotiation, fees
+# PAID to the clearing address with their deadlines, the split-off of D at window end, the drand draw with a
+# committed salt, the sample, the decision 3 of 5 -> 60 % of D back, execution 10 business days later, fees split.
+import time
+
+import pytest
+from eth_account import Account
+
+from bank import claims_c, config, core, db, deadlines, deals, deciders, disputes, escrow, journal, snapshots
+from seller.app import company_items
+from tests.unit import dealkit as k
+
+T0 = float(int(time.time()))
+BD = None  # set per test from config (demo business day in seconds)
+C_PREDICATES = k.TERMS_PREDICATES[:4] + [
+    {"op": "max_count", "n": 10}, {"op": "source", "template": "ares", "key_field": "ico"},
+    {"op": "json_schema", "schema": {"type": "object", "properties": {"founded": {
+        "type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"}}}}]
+PRICE_C = 8_000_000  # 10 items for 8 € — T2 at the demo scale
+
+
+@pytest.fixture
+def w(monkeypatch, seeded):
+    buyer, seller_wallet, operator = Account.create(), Account.create(), Account.create()
+    monkeypatch.setenv("ALFA_PK", buyer.key.hex())
+    monkeypatch.setenv("BANK_OPERATOR_PK", operator.key.hex())
+    config.reload()
+    db.run("UPDATE companies SET wallet_address=? WHERE id='alfa'", (buyer.address,))
+    db.run("UPDATE companies SET wallet_address=? WHERE id='beta'", (seller_wallet.address,))
+    world = k.world(monkeypatch)
+    world.seller_wallet, world.notices = seller_wallet, []
+    monkeypatch.setattr(deals, "notify_seller", lambda d, kind="deal", amount=None: world.notices.append(
+        (d, kind, amount)) or True)
+    return world
+
+
+def c_deal(w, deal_id="d-c", now=T0):
+    window = config.WINDOW_S["T2"][0]
+    deal_id = k.make_deal(w, rule="C", deal_id=deal_id, count=10, predicates=C_PREDICATES, amount=PRICE_C,
+                          window_s=window, deadline_s=300, now=now, task_hash=deal_id)
+    out = k.deliver(w, deal_id, mode="misdated", count=10, now=now + 1)
+    assert out["accepted_items"] == 10 and k.captures(w) == []  # rule C: nothing at acceptance
+    return deal_id, window
+
+
+def all_items(field="founded"):
+    return [[1, i] for i in range(10)], {f"1/{i}": field for i in range(10)}
+
+
+def test_snapshot_is_taken_at_delivery_from_the_template_url(w):
+    deal_id, _ = c_deal(w)
+    snap = snapshots.get(deal_id, 1, 0, "ares")
+    item = disputes.receipts.items_of(deal_id)[0]["item"]
+    assert snap["status"] == "ok" and snap["url"] == snapshots.build_url("ares", item["ico"])
+    assert snap["fields"]["founded"] != item["founded"] and snap["body_hash"].startswith("0x")
+    assert any(e["event"] == "snapshot.ok" for e in journal.entries(deal_id, limit=500))
+
+
+def test_admissibility_is_checked_by_the_bank_before_any_fee(w):
+    deal_id, _ = c_deal(w)
+    items, fields = all_items()
+    fields["1/0"], fields["1/1"] = "website", "name"  # no mapping / the source says the same
+    out = claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    assert out["admissible"] == 8 and {x["why"] for x in out["excluded"]} == {
+        "no published field mapping for this field (only B protects it)", "the source says the same"}
+    assert out["D"] == 6_400_000 and out["fee"] == 660_000  # 0,50 € + 8 × 0,02 € = 0,66 € > 10 % of D (0,64 €)
+    with pytest.raises(claims_c.ClaimError):  # one C claim per deal
+        claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 6)
+    with pytest.raises(deals.DealError, match="C claim"):  # no new versions after a C claim
+        deals.record_delivery(deal_id, k.signed(w, deal_id, company_items(12, "honest")[10:], version=2),
+                              now=T0 + 7)
+
+
+def test_nothing_admissible_means_no_claim_and_no_fee(w):
+    deal_id, _ = c_deal(w)
+    items, fields = all_items("name")  # the ARES name equals the item's name for every item
+    out = claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    assert out["claim"] is None and out["admissible"] == 0 and claims_c.get(deal_id) is None
+
+
+def test_episode_3_negotiation_fees_draw_sample_decision_split_and_execution(w):
+    global BD
+    BD = config.BUSINESS_DAY_S
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    out = claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    fee = out["fee"]
+    assert out["D"] == PRICE_C and fee == 800_000  # 10 % of D (0,80 €) > 0,50 € + 10 × 0,02 €
+    deadlines.tick(now=T0 + 5 + 2 * BD + 1)  # negotiation over: the buyer's fee is due
+    assert claims_c.get(deal_id)["state"] == "buyer_fee"
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * BD + 2)
+    with pytest.raises(claims_c.ClaimError):  # the seller's fee must be signed by the seller's wallet
+        claims_c.pay_fee(deal_id, "seller", "seller", signature="0x" + "11" * 65)
+    pi = claims_c.fee_terms(deal_id, "seller")
+    sig = escrow.buyer_signature(pi, "EURC", w.seller_wallet.key.hex())  # same ERC-3009 shape, the seller's key
+    claims_c.pay_fee(deal_id, "seller", "seller", signature=sig.hex(), now=T0 + 5 + 2 * BD + 3)
+    fee_caps = [(fn, amount, key) for fn, amount, key, _ in w.sender.sent if "fee" in key]
+    assert [(fn, amount) for fn, amount, _ in fee_caps] == [("authorize", fee), ("capture", fee)] * 2
+    c = claims_c.get(deal_id)
+    assert c["state"] == "decider" and escrow.paid(deal_id) == 0  # fees to the clearing address are not "paid"
+    case = deciders.get(c["id"])
+    opened = case["opened_at"]
+
+    # window end: the undisputed part (0 here) captured, D split off: void, then a new lock on D (n = 1)
+    end = T0 + 1 + window + 1
+    deadlines.tick(now=max(end, opened + 1))
+    assert k.fns(w)[-2:] == ["void", "authorize"] and w.notices[-1] == (deal_id, "split_off", PRICE_C)
+    assert deals.get(deal_id)["pi_n"] == 1 and int(deals.get(deal_id)["payment_info"]["salt"]) == escrow.salt(deal_id, 1)
+    assert disputes.get(deal_id)["split_n"] == 1 and k.state(deal_id) == "dispute_c"
+    assert k.reservation(deal_id)["state"] == "reserved"  # D in the buyer's wallet for a few blocks: reserve kept
+
+    # the draw: the schedule was fixed at stage open; the salt is hidden until the decision
+    assert "salt" not in deciders.public(case) and not deciders.public(case)["decider_assigned"]
+    after_sample = deciders.round_time(case["sample_round"]) + 1
+    deadlines.tick(now=after_sample)
+    case = deciders.get(c["id"])
+    assert case["decider"] in {d["id"] for d in deciders.pool()} and len(case["sample"]) == 5
+    with pytest.raises(deciders.DeciderError) as e:
+        claims_c.decide(deal_id, "dec-x", {}, now=after_sample + 1)
+    assert e.value.status == 403
+    verdicts = {str(i): ("buyer" if n < 3 else "seller") for n, i in enumerate(case["sample"])}
+    claims_c.decide(deal_id, case["decider"], verdicts, now=after_sample + 2)
+    case = deciders.get(c["id"])
+    assert deciders.public(case)["salt"] == case["salt"]  # revealed: anyone can recheck the draw
+    left, _ = deciders.eligible(case)
+    assert left[deciders.draw(case["selection_beacon"]["randomness"], case["salt"]) % len(left)]["id"] == case["decider"]
+
+    deadlines.tick(now=after_sample + 3 + 9 * BD)  # within the 10 business days: nothing moves
+    assert claims_c.get(deal_id)["state"] == "decided"
+    deadlines.tick(now=after_sample + 3 + 10 * BD + 1)
+    assert claims_c.get(deal_id)["state"] == "executed"
+    assert k.captures(w)[-1] == 3_200_000 and k.fns(w)[-1] == "void"  # 40 % of D to the seller, 60 % back
+    view = disputes.money_view(deals.get(deal_id), disputes.get(deal_id))
+    assert view["captured"] == 3_200_000 and k.state(deal_id) == "settled"
+    transfers = {key.rsplit(":", 1)[-1]: amount for fn, amount, key, _ in w.sender.sent if fn == "transfer"}
+    assert transfers == {"fee_back_buyer": 480_000, "fee_back_seller": 320_000, "decider_fee": 800_000}
+    assert k.reservation(deal_id)["committed"] == 320
+
+
+def test_seller_not_paying_its_fee_decides_for_the_buyer_without_a_decider(w):
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    claims_c.pay_fee(deal_id, "buyer", "agent:buyer", now=T0 + 5 + 2 * bd + 2)
+    deadlines.tick(now=T0 + 5 + 5 * bd + 3)  # 3 business days passed
+    c = claims_c.get(deal_id)
+    assert c["state"] == "refund" and c["data"]["outcome"] == "for_buyer_without_decider"
+    transfers = [(amount, key) for fn, amount, key, _ in w.sender.sent if fn == "transfer"]
+    assert transfers == [(800_000, f"{deal_id}:clearing:fee_back_buyer")]  # the buyer's fee back in full
+    deadlines.tick(now=T0 + 1 + window + 10)  # window end: D is not captured, one final void returns it
+    assert k.captures(w) == [] and k.fns(w)[-1] == "void" and k.state(deal_id) == "settled"
+
+
+def test_buyer_not_paying_its_fee_withdraws_the_claim_and_d_goes_to_the_seller(w):
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    bd = config.BUSINESS_DAY_S
+    deadlines.tick(now=T0 + 5 + 2 * bd + 1)
+    deadlines.tick(now=T0 + 5 + 5 * bd + 2)
+    assert claims_c.get(deal_id)["state"] == "withdrawn"
+    assert k.captures(w) == [PRICE_C]  # D to the seller at once, nothing frozen without a fee
+
+
+def test_seller_agreeing_refunds_d_at_window_end_without_fees(w):
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items[:4], fields, "agent:buyer", now=T0 + 5)
+    claims_c.agree(deal_id, "seller")
+    with pytest.raises(claims_c.ClaimError):
+        claims_c.agree(deal_id, "seller")
+    deadlines.tick(now=T0 + 1 + window + 1)
+    assert k.captures(w) == [4_800_000] and k.fns(w)[-1] == "void"  # 6 undisputed items paid, 4 refunded
+    assert not [x for x in w.sender.sent if "fee" in x[2]]
+
+
+def test_c_claim_after_the_window_is_refused(w):
+    deal_id, window = c_deal(w)
+    items, fields = all_items()
+    with pytest.raises(claims_c.ClaimError):
+        claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 1 + window + 1)
+
+
+def test_api_files_a_c_claim_by_ids(w, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import api
+    deal_id, _ = c_deal(w)
+    app = FastAPI()
+    app.include_router(api.router)
+    client = TestClient(app, headers={"x-agent-token": "dev-agent-alfa"})
+    items, fields = all_items()
+    r = client.post(f"/api/deals/{deal_id}/claims", json={"rule": "C", "items": items[:2], "fields": fields})
+    assert r.status_code == 200 and r.json()["admissible"] == 2
+    assert client.post(f"/api/deals/{deal_id}/claims/c/decision", json={"decider": "dec-1", "verdicts": {}}).status_code == 401
+    assert core.seller("s-beta")
+
+
+def test_deal_page_and_the_pseudonymised_decider_page(w):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bank import ui
+    deal_id, _ = c_deal(w)
+    items, fields = all_items()
+    claims_c.file(deal_id, items, fields, "agent:buyer", now=T0 + 5)
+    app = FastAPI()
+    app.include_router(ui.router)
+    client = TestClient(app)
+    page = client.get(f"/deals/{deal_id}").text
+    assert "C dispute" in page and "D = 8,00" in page and "Negotiation until" in page
+    dec = client.get(f"/deciders/{deal_id}").text
+    assert "Buyer A" in dec and "Beta" not in dec and "Alfa" not in dec  # pseudonyms only

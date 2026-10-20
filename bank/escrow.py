@@ -252,6 +252,100 @@ def finish(deal_id: str, to_seller: int) -> dict:
     return out
 
 
+def _store_pi(deal_id: str, n: int, purpose: str, pi: dict) -> str:
+    h = payment_hash(pi)
+    db.run("INSERT OR IGNORE INTO payment_infos (payment_hash, deal_id, n, purpose, receiver, max_amount, pi_json,"
+           " created_at) VALUES (?,?,?,?,?,?,?,?)", (h, deal_id, n, purpose, pi["receiver"], int(pi["maxAmount"]),
+                                                     db.dumps(pi), time.time()))
+    return h
+
+
+def split_off(deal_id: str, amount: int, now: int | None = None) -> dict:
+    """§8.2 at window end with an open C claim, after the undisputed part was captured and the old PaymentInfo
+    voided: a new PaymentInfo on D only (salt keccak(deal_id ‖ n+1), the §8.3 terms from now), persisted before
+    the authorize. Between the void and this authorize D sits in the buyer's wallet under the bank's key with the
+    mandate's reservation kept, so neither the buyer nor its agent can spend it."""
+    deal = _deal(deal_id)
+    now = int(time.time()) if now is None else now
+    old, terms = db.loads(deal["payment_info_json"]), db.loads(deal["terms_json"]) or {}
+    n = int(deal["pi_n"] or 0) + 1
+    auth, refund = expiries({**terms, "deadline_s": 0, "window_s": 0}, now)
+    pi = {**old, "maxAmount": int(amount), "preApprovalExpiry": now + PRE_APPROVAL_S, "authorizationExpiry": auth,
+          "refundExpiry": refund, "salt": str(salt(deal_id, n))}
+    with db.immediate():
+        h = _store_pi(deal_id, n, "deal", pi)
+        db.run("UPDATE deals SET payment_info_json=?, payment_hash=?, pi_n=?, updated_at=? WHERE deal_id=?",
+               (db.dumps(pi), h, n, time.time(), deal_id))
+        journal.append("bank", "escrow_split_off", {"n": n, "amount": int(amount), "payment_hash": h},
+                       deal_id=deal_id)
+    return authorize(deal_id)
+
+
+# ---- C dispute fees: separate authorizations to the clearing address, captured at once (§7C.4, §8.2) ----
+
+def fee_payment_info(deal_id: str, role: str, amount: int, payer: str, k: int = 0, now: int | None = None) -> dict:
+    """receiver = the clearing address, maxFeeBps = 0; stored before anything is signed."""
+    deal = _deal(deal_id)
+    now = int(time.time()) if now is None else now
+    pi = {"operator": operator_address(), "payer": Web3.to_checksum_address(payer),
+          "receiver": Web3.to_checksum_address(config.BANK_CLEARING_ADDR),
+          "token": config.ASSETS[deal["asset"]]["address"], "maxAmount": int(amount),
+          "preApprovalExpiry": now + PRE_APPROVAL_S, "authorizationExpiry": now + DAY_S,
+          "refundExpiry": now + (1 + config.REFUND_EXTRA_DAYS) * DAY_S, "minFeeBps": 0, "maxFeeBps": 0,
+          "feeReceiver": ZERO, "salt": str(salt(f"{deal_id}:fee:{role}", k))}
+    pi = {key: (Web3.to_checksum_address(v) if key in ADDRESS_FIELDS else v) for key, v in pi.items()}
+    _store_pi(deal_id, k, f"fee_{role}", pi)
+    return pi
+
+
+def receive_signer(pi: dict, asset: str, signature: str) -> str | None:
+    """Who signed the ERC-3009 ReceiveWithAuthorization for this PaymentInfo (the seller pays its fee itself)."""
+    from eth_account.messages import encode_typed_data
+    meta = config.ASSETS[asset]
+    try:
+        msg = encode_typed_data(
+            domain_data={"name": meta["name"], "version": meta["version"], "chainId": config.CHAIN_ID,
+                         "verifyingContract": Web3.to_checksum_address(meta["address"])},
+            message_types=RECEIVE_TYPES,
+            message_data={"from": Web3.to_checksum_address(pi["payer"]), "to": Web3.to_checksum_address(config.COLLECTOR),
+                          "value": int(pi["maxAmount"]), "validAfter": 0, "validBefore": int(pi["preApprovalExpiry"]),
+                          "nonce": bytes.fromhex(payment_hash({**pi, "payer": ZERO})[2:])})
+        return Account.recover_message(msg, signature=bytes.fromhex(str(signature).removeprefix("0x")))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def pay_fee(deal_id: str, pi: dict, signature: bytes | str) -> dict:
+    """Authorize the fee and capture all of it to the clearing address at once (paid, not blocked: a party cannot
+    take its fee back by reclaim while the case runs)."""
+    h = payment_hash(pi)
+    key = f"{deal_id}:{h[2:10]}"
+    sig = bytes.fromhex(signature.removeprefix("0x")) if isinstance(signature, str) else signature
+    sender = chain.sender(config.BANK_OPERATOR_PK)
+    auth = sender.send(contract().functions.authorize(as_tuple(pi), int(pi["maxAmount"]),
+                                                      Web3.to_checksum_address(config.COLLECTOR), sig),
+                       kind="fee_authorize", deal_id=deal_id, idem_key=f"{key}:fee-authorize")
+    cap = sender.send(contract().functions.capture(as_tuple(pi), int(pi["maxAmount"]), 0, ZERO),
+                      kind="fee_capture", deal_id=deal_id, idem_key=f"{key}:fee-capture")
+    db.run("UPDATE payment_infos SET authorized=1, captured=max_amount WHERE payment_hash=?", (h,))
+    journal.append("bank", "escrow_fee_captured", {"amount": int(pi["maxAmount"]), "payer": pi["payer"],
+                                                   "tx_hash": cap["tx_hash"], "authorize_tx": auth["tx_hash"]},
+                   deal_id=deal_id)
+    return cap
+
+
+def transfer_from_clearing(deal_id: str, asset: str, to: str, amount: int, what: str) -> dict:
+    """A fee back to the winner or to the decider: a plain transfer from the clearing address (§7C.5)."""
+    if not config.BANK_CLEARING_PK and not config.MOCK:
+        raise EscrowError("missing BANK_CLEARING_PK (TODO(credential))")
+    call = chain.erc20(config.ASSETS[asset]["address"]).functions.transfer(Web3.to_checksum_address(to), int(amount))
+    tx = chain.sender(config.BANK_CLEARING_PK).send(call, kind="transfer", deal_id=deal_id,
+                                                    idem_key=f"{deal_id}:clearing:{what}")
+    journal.append("bank", "clearing_transfer", {"to": to, "amount": int(amount), "what": what,
+                                                 "tx_hash": tx["tx_hash"]}, deal_id=deal_id)
+    return tx
+
+
 def paid(deal_id: str) -> int:
     """'Paid' at deal level (§8.4): gross captures over every PaymentInfo of the deal whose receiver is the seller —
     fee authorizations (receiver = the clearing address) never count."""

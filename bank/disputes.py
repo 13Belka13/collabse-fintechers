@@ -5,7 +5,9 @@
 #   B  quality guarantee X % (5/10/20): at acceptance capture (1 − X)·P; within the window the buyer may get back up
 #      to X % of P without investigation (Visa RDR-like refund rule priced in); at window end capture P − refunds,
 #      then the final void.
-#   C  B plus a dispute with an external decider (bank/claims_c.py).
+#   C  B plus a dispute with an external decider (bank/claims_c.py): nothing before the window ends; then P minus
+#      B refunds minus D, and while the claim is open the disputed sum D is split off: void, and at once a new
+#      authorization on D only (salt keccak(deal_id ‖ n+1)), so the undisputed refund never waits for the dispute.
 # All refunds reach the buyer through ONE final void per PaymentInfo (void returns the whole remainder, so every
 # capture comes first). A capture is written down (pending_json, capture_n) BEFORE it is sent, under the idem key
 # capture:n of the current PaymentInfo: a retry after a crash resends the same key, never a second payment.
@@ -127,7 +129,19 @@ def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
     d, open_c = held_c(deal, s)
     if window_over:  # C: nothing before the window ends, then everything not refunded and not in dispute
         return max(0, P - refunded_b(deal["deal_id"]) - d), not open_c, "rule C: window over"
+    from bank import claims_c
+    c = claims_c.get(deal["deal_id"])
+    if c and c["state"] == "withdrawn":  # the buyer did not pay its fee: D goes to the seller at once (§7C.3)
+        return c["amount"], False, "rule C: claim withdrawn, D to the seller"
     return 0, False, "rule C: waiting for the window"
+
+
+def needs_split(deal: dict, s: dict, now: float) -> bool:
+    """§8.2: at window end with an open C claim, D is split off once (the undisputed part is captured first)."""
+    if s["rule"] != "C" or s["split_n"] is not None or s["window_end_at"] is None or now < s["window_end_at"]:
+        return False
+    d, open_c = held_c(deal, s)
+    return open_c and d > 0
 
 
 # ---- money ----
@@ -142,7 +156,9 @@ def _record(deal_id: str, kind: str, actor: str, rule: str, text: str):
 def _send(deal: dict, pending: dict) -> dict:
     if pending["kind"] == "capture":
         return escrow.capture(deal["deal_id"], int(pending["amount"]), int(pending["n"]))
-    return escrow.void(deal["deal_id"])
+    if pending["kind"] == "split":
+        return escrow.split_off(deal["deal_id"], int(pending["amount"]))
+    return escrow.void(deal["deal_id"])  # "void" (final) or "void_split" (before the split-off)
 
 
 def _execute(deal: dict, pending: dict, actor: str, rule: str):
@@ -167,6 +183,16 @@ def _execute(deal: dict, pending: dict, actor: str, rule: str):
                       (before + int(pending["amount"]), deal_id))
             c.execute("UPDATE payment_infos SET captured=captured+? WHERE payment_hash=?", (int(pending["amount"]), h))
             text = f"{money.fmt(asset, int(pending['amount']))} paid to the seller from escrow."
+        elif pending["kind"] == "void_split":
+            returned = escrow.locked_amount(deal_id) - before
+            c.execute("UPDATE settlements SET split_n=-1, pending_json=NULL WHERE deal_id=?", (deal_id,))
+            c.execute("UPDATE payment_infos SET voided=1 WHERE payment_hash=?", (h,))
+            text = (f"{money.fmt(asset, returned)} left the escrow: the undisputed part goes back to the buyer, the "
+                    "disputed sum is locked again at once.")
+        elif pending["kind"] == "split":
+            c.execute("UPDATE settlements SET split_n=?, pending_json=NULL WHERE deal_id=?",
+                      (deals.get(deal_id)["pi_n"], deal_id))
+            text = f"{money.fmt(asset, int(pending['amount']))} in dispute locked again in escrow (split-off of D)."
         else:
             returned = escrow.locked_amount(deal_id) - before
             c.execute("UPDATE settlements SET voided=1, pending_json=NULL WHERE deal_id=?", (deal_id,))
@@ -175,6 +201,11 @@ def _execute(deal: dict, pending: dict, actor: str, rule: str):
         journal.append(actor, f"settlement.{pending['kind']}", {**pending, "rule": rule, "tx_hash": tx["tx_hash"],
                                                                  "link": tx.get("link")}, deal_id=deal_id)
         _record(deal_id, pending["kind"], actor, rule, text)
+    if pending["kind"] == "split":  # the seller checks the new lock on chain like the first one
+        deals.notify_seller(deal_id, kind="split_off", amount=int(pending["amount"]))
+        return tx
+    if pending["kind"] == "void_split":  # D is in the buyer's wallet under the bank's key: the reservation stays
+        return tx
     try:
         if pending["kind"] == "capture":  # commit by the rounded-up total, so the parts never exceed the reservation
             delta = money.to_eur_cents(asset, before + int(pending["amount"])) - money.to_eur_cents(asset, before)
@@ -213,6 +244,10 @@ def advance(deal_id: str, actor: str = "bank", now: float | None = None) -> dict
                 else:
                     _close(deal_id, actor, now)
                     break
+            elif needs_split(deal, s, now):
+                nxt = {"kind": "void_split", "rule": "§8.2 split-off of D: void first"}
+            elif s["split_n"] == -1:
+                nxt = {"kind": "split", "amount": held_c(deal, s)[0], "rule": "§8.2 split-off of D: lock D again"}
             if nxt is None:
                 break
             with db.immediate() as c:  # written down before sending: a retry reuses n -> the same idem key
@@ -353,8 +388,15 @@ def open_ids() -> list[str]:
 
 
 def tick(deal_id: str, now: float | None = None) -> dict | None:
-    """Recheck items waiting for a registry or snapshot, then let the money follow the schedule."""
+    """Recheck items waiting for a registry or snapshot, move a C claim along its deadlines, then let the money
+    follow the schedule."""
     deal = deals.get(deal_id)
+    if deal["terms"] and deal["terms"].get("rule") == "C":
+        from bank import claims_c
+        try:
+            claims_c.tick(deal_id, now=now)
+        except Exception as e:  # noqa: BLE001 — journalled; the escrow does not move because of it
+            journal.append("timer", "claim_c.tick_failed", {"error": repr(e)[:200]}, deal_id=deal_id)
     try:
         if receipts.recheck_pending(deal, now=now, **deals.lookups()):
             delivered(deal_id, now=now)  # the buyer sees those items only now: their window starts now

@@ -74,6 +74,7 @@ def reload():
     g["SELLER_TOKEN"] = _env("SELLER_TOKEN", "dev-seller")     # seller service -> bank (deliveries)
     g["BANK_TO_SELLER_TOKEN"] = _env("BANK_TO_SELLER_TOKEN", "dev-bank")  # bank -> seller (escrow notices)
     g["HUMAN_TOKEN"] = _env("HUMAN_TOKEN", "dev-human")        # bank UI: confirmations, VAT acknowledgements
+    g["DECIDER_TOKEN"] = _env("DECIDER_TOKEN", "dev-decider")  # rule C deciders submit decisions (demo: on stage)
     # the escrow operator the seller accepts; derived from the bank's key when this process holds it
     derived = Account.from_key(g["BANK_OPERATOR_PK"]).address if g["BANK_OPERATOR_PK"] else ""
     g["BANK_OPERATOR_ADDR"] = _env("BANK_OPERATOR_ADDR", derived or "0x0469ceC178789072bc61435835D0BB38214D4e53")

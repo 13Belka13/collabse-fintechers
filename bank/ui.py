@@ -476,13 +476,41 @@ def deal_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
                   for p in (terms.get("predicates") or (deal.get("offer") or {}).get("predicates")
                             or task.get("predicates") or [])]
     s = disputes.get(deal_id)
-    return page(request, "deal.html", deal=deal, seller=_seller(deal["seller_id"]), ledger=ledger(deal),
+    from bank import claims_c
+    return page(request, "deal.html", deal=deal, seller=_seller(deal["seller_id"]), ledger=ledger(deal), c=claims_c.view(deal_id),
                 items=_items(deal), conditions=conditions, terms=terms, task=task, s=s,
                 silence=disputes.silence_text(deal, s) if s else "", scale=disputes.config_note(),
                 business_days=_business_days(s), step_text=STEP_TEXT, error=error, ok=ok,
                 attempts=db.rows("SELECT * FROM delivery_attempts WHERE deal_id=? ORDER BY id", (deal_id,)),
                 txs=db.rows("SELECT * FROM onchain_txs WHERE deal_id=? ORDER BY created_at", (deal_id,)),
                 decisions=decisions, events=journal.entries(deal_id, limit=80))
+
+
+@router.get("/deciders/{deal_id}", response_class=HTMLResponse)
+def decider_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
+    """The decider's case (§7C.6): pseudonyms instead of companies, the sampled items with the item's value and the
+    value the bank read from its own snapshot at delivery. In the demo a person on stage holds the decider keys."""
+    from bank import claims_c, deciders
+    _deal_or_404(deal_id)
+    c = claims_c.get(deal_id)
+    if c is None:
+        raise HTTPException(404, "no C claim")
+    case = deciders.get(c["id"]) or {}
+    sampled = [dict(c["items"][i], n=i) for i in (case.get("sample") or [])]
+    return page(request, "decider.html", deal_id=deal_id, c=c, case=case, sampled=sampled, error=error, ok=ok,
+                deadline=deciders.deadline(case) if case.get("sample") is not None else None)
+
+
+@router.post("/deciders/{deal_id}")
+async def decider_decide(request: Request, deal_id: str):
+    from bank import claims_c, deciders
+    form = await request.form()
+    verdicts = {k.removeprefix("item-"): v for k, v in form.items() if k.startswith("item-")}
+    try:
+        claims_c.decide(deal_id, str(form.get("decider", "")), verdicts)
+    except (claims_c.ClaimError, deciders.DeciderError) as e:
+        return RedirectResponse(f"/deciders/{deal_id}?error={e}", status_code=303)
+    return RedirectResponse(f"/deciders/{deal_id}?ok=decided", status_code=303)
 
 
 def _business_days(s: dict | None) -> int | None:

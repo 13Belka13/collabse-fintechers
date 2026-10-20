@@ -69,6 +69,24 @@ class ItemsIn(BaseModel):
     by: str
 
 
+class SignatureIn(BaseModel):
+    signature: str
+
+
+class CommitIn(BaseModel):
+    hash: str
+
+
+class RevealIn(BaseModel):
+    deciders: list[str]
+    nonce: str
+
+
+class DecisionIn(BaseModel):
+    decider: str
+    verdicts: dict[str, str]
+
+
 class HumanIn(BaseModel):
     by: str
 
@@ -80,11 +98,16 @@ class VatAckIn(BaseModel):
 
 
 def _call(fn, *args):
-    from bank import disputes
+    from bank import claims_c, deciders, disputes
     try:
         return fn(*args)
-    except (deals.DealError, disputes.DisputeError) as e:
+    except (deals.DealError, disputes.DisputeError, claims_c.ClaimError, deciders.DeciderError) as e:
         raise HTTPException(e.status, str(e)) from e
+
+
+def decider_caller(x_decider_token: str | None = Header(None)) -> None:
+    if not _same(x_decider_token, config.DECIDER_TOKEN):
+        raise HTTPException(401, "decider token required")
 
 
 def _own_deal(deal_id: str, company_id: str) -> dict:
@@ -230,3 +253,68 @@ def ack_vat(mandate_id: str, body: VatAckIn):
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
     return {"mandate_id": mandate_id, "version": version}
+
+
+# ---- rule C (MODEL_V2 §7C): the agent acts for the buyer, the seller service for the seller ----
+
+@router.post("/deals/{deal_id}/claims/c/fee")
+def c_buyer_fee(deal_id: str, company_id: str = Depends(agent_company)):
+    from bank import claims_c
+    _own_deal(deal_id, company_id)
+    return _call(claims_c.pay_fee, deal_id, "buyer", "agent:buyer")
+
+
+@router.post("/deals/{deal_id}/claims/c/challenge")
+def c_buyer_challenge(deal_id: str, body: CommitIn, company_id: str = Depends(agent_company)):
+    from bank import claims_c, deciders
+    _own_deal(deal_id, company_id)
+    return _call(deciders.commit, _call(claims_c._claim, deal_id)["id"], "buyer", body.hash)
+
+
+@router.post("/deals/{deal_id}/claims/c/reveal")
+def c_buyer_reveal(deal_id: str, body: RevealIn, company_id: str = Depends(agent_company)):
+    from bank import claims_c, deciders
+    _own_deal(deal_id, company_id)
+    return _call(deciders.reveal, _call(claims_c._claim, deal_id)["id"], "buyer", body.deciders, body.nonce)
+
+
+@router.get("/deals/{deal_id}/claims/c/fee-terms", dependencies=[Depends(seller_caller)])
+def c_fee_terms(deal_id: str):
+    from bank import claims_c
+    return _call(claims_c.fee_terms, deal_id, "seller")
+
+
+@router.post("/deals/{deal_id}/claims/c/seller-fee", dependencies=[Depends(seller_caller)])
+def c_seller_fee(deal_id: str, body: SignatureIn):
+    from bank import claims_c
+    return _call(claims_c.pay_fee, deal_id, "seller", "seller", body.signature)
+
+
+@router.post("/deals/{deal_id}/claims/c/agree", dependencies=[Depends(seller_caller)])
+def c_agree(deal_id: str):
+    from bank import claims_c
+    return _call(claims_c.agree, deal_id, "seller")
+
+
+@router.post("/deals/{deal_id}/claims/c/seller-challenge", dependencies=[Depends(seller_caller)])
+def c_seller_challenge(deal_id: str, body: CommitIn):
+    from bank import claims_c, deciders
+    return _call(deciders.commit, _call(claims_c._claim, deal_id)["id"], "seller", body.hash)
+
+
+@router.post("/deals/{deal_id}/claims/c/seller-reveal", dependencies=[Depends(seller_caller)])
+def c_seller_reveal(deal_id: str, body: RevealIn):
+    from bank import claims_c, deciders
+    return _call(deciders.reveal, _call(claims_c._claim, deal_id)["id"], "seller", body.deciders, body.nonce)
+
+
+@router.post("/deals/{deal_id}/claims/c/court", dependencies=[Depends(human_caller)])
+def c_court(deal_id: str, body: HumanIn):
+    from bank import claims_c
+    return _call(claims_c.court, deal_id, f"human:{body.by}")
+
+
+@router.post("/deals/{deal_id}/claims/c/decision", dependencies=[Depends(decider_caller)])
+def c_decision(deal_id: str, body: DecisionIn):
+    from bank import claims_c
+    return _call(claims_c.decide, deal_id, body.decider, body.verdicts)

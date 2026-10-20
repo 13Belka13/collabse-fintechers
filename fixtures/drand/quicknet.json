@@ -1,0 +1,37 @@
+{
+ "_note": "Real drand quicknet beacons recorded on 2026-10-20 from api.drand.sh (unchained, BLS on G1); used by tests to check the parser and the selection maths. MOCK mode uses a labelled deterministic stand-in for rounds that are not recorded here.",
+ "chain": {
+  "hash": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+  "period": 3,
+  "genesis_time": 1692803367,
+  "public_key": "83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a",
+  "schemeID": "bls-unchained-g1-rfc9380"
+ },
+ "rounds": {
+  "1000000": {
+   "round": 1000000,
+   "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe72"
+  },
+  "1000001": {
+   "round": 1000001,
+   "randomness": "9f45f439afd81e9846b3b4dc5e3e6051922c73c8459d18e9d507b52ddbd884ff",
+   "signature": "a5bd91e5e2d8c0bf51bffdfad87eef34348fd9c0b2df2bee39db90bdef7e1399b1a77bb2fe98b24d84c0936a306c4218"
+  },
+  "1000002": {
+   "round": 1000002,
+   "randomness": "018e0e0c9e0d7906762eca633fab3ec5e97ee4cb8949e4eb9ee589160b49263d",
+   "signature": "a96e2a020098645aa4f912dcca317a67e98c39909fe1a037798fb503f04272b8153bab438c7e8d298593af1bdf29e5c5"
+  },
+  "1000003": {
+   "round": 1000003,
+   "randomness": "4988431355480858aede82fe7af925d486ecf10253e175d4fa28c2e6512d14ea",
+   "signature": "876ae112d465a00683071570a37cc7d86bebbf9887cf133d4d6a64ae24e51a7059e85e2533b52f95f5368c166255c53d"
+  },
+  "1000004": {
+   "round": 1000004,
+   "randomness": "2c6941659e7d70f91dc6d3740898f16471ddbb2d77f42c4beed50ac0bb9596ff",
+   "signature": "96d856ebd9437e6d247414557b6365fd63f91a4df75db48c8d81b01d1e9b58839d9f40a54e463516c4a18f4c8a90862a"
+  }
+ }
+}

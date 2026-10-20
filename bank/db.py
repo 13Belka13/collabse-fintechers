@@ -55,12 +55,18 @@ CREATE TABLE IF NOT EXISTS settlements (
   deal_id TEXT PRIMARY KEY, rule TEXT NOT NULL, b_pct INTEGER NOT NULL DEFAULT 0, tier TEXT NOT NULL,
   window_s REAL NOT NULL, deadline_at REAL NOT NULL, window_end_at REAL, accepted_at REAL, accepted_by TEXT,
   captured INTEGER NOT NULL DEFAULT 0, capture_n INTEGER NOT NULL DEFAULT 0, pending_json TEXT,
-  voided INTEGER NOT NULL DEFAULT 0, step TEXT, closed_at REAL, outcome TEXT);
+  voided INTEGER NOT NULL DEFAULT 0, step TEXT, closed_at REAL, outcome TEXT, split_n INTEGER);
 CREATE TABLE IF NOT EXISTS claims (
   id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT NOT NULL, rule TEXT NOT NULL, buyer_id TEXT NOT NULL,
   seller_id TEXT NOT NULL, items_json TEXT NOT NULL, reason TEXT, amount INTEGER NOT NULL, state TEXT NOT NULL,
   filed_at REAL NOT NULL, by TEXT, data_json TEXT, closed_at REAL);
 CREATE INDEX IF NOT EXISTS claims_pair ON claims(buyer_id, seller_id, filed_at);
+CREATE TABLE IF NOT EXISTS snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, deal_id TEXT NOT NULL, version INTEGER NOT NULL, idx INTEGER NOT NULL,
+  template TEXT NOT NULL, key TEXT NOT NULL, url TEXT NOT NULL, seller_id TEXT, status TEXT NOT NULL, body BLOB,
+  body_hash TEXT, fields_json TEXT, taken_at REAL, attempts INTEGER NOT NULL DEFAULT 0, next_try_at REAL NOT NULL,
+  error TEXT, created_at REAL NOT NULL, UNIQUE (deal_id, version, idx, template));
+CREATE TABLE IF NOT EXISTS decider_cases (claim_id INTEGER PRIMARY KEY, data_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS payment_infos (
   payment_hash TEXT PRIMARY KEY, deal_id TEXT NOT NULL, n INTEGER NOT NULL, purpose TEXT NOT NULL,
   receiver TEXT NOT NULL, max_amount INTEGER NOT NULL, pi_json TEXT NOT NULL, captured INTEGER NOT NULL DEFAULT 0,

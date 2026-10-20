@@ -485,14 +485,16 @@ def _already_paid(deal: dict) -> dict:
     return codes.ok(deal_id=deal_id, explanation=f"Already paid ({state}): the funds are in escrow for this deal.")
 
 
-def notify_seller(deal_id: str) -> bool | None:
-    """Tell the seller the escrow is locked. True = accepted, False = rejected, None = not reached (retry later)."""
+def notify_seller(deal_id: str, kind: str = "deal", amount: int | None = None) -> bool | None:
+    """Tell the seller the escrow is locked (kind deal, or split_off: the disputed sum D locked again, §8.2).
+    True = accepted, False = rejected, None = not reached (retry later)."""
     deal = _require(deal_id)
     seller = core.seller(deal["seller_id"])
     terms = deal["terms"] or {}
     body = {"deal_id": deal_id, "asset": deal["asset"], "payment_info": deal["payment_info"],
-            "payment_hash": deal["payment_hash"], "n": int(deal["pi_n"] or 0), "kind": "deal",
-            "tier": terms.get("tier"), "rule": terms.get("rule"), "amount": int(deal["amount"]),
+            "payment_hash": deal["payment_hash"], "n": int(deal["pi_n"] or 0), "kind": kind,
+            "tier": terms.get("tier"), "rule": terms.get("rule"),
+            "amount": int(amount if amount is not None else deal["amount"]),
             "tx_hash": (db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (escrow.idem_key(deal_id, "authorize"),)) or {}).get("tx_hash")}
     try:
         with timing.timed("notify_seller", deal_id):
