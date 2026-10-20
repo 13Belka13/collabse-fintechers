@@ -236,6 +236,17 @@ def test_mandate_refusal_reserves_nothing(world):
     assert_no_money_moved(world, deal_id)
 
 
+def test_b_slot_is_asked_only_after_the_mandate_and_counterparty_checks(world, monkeypatch):
+    from bank import disputes
+    asked = []
+    monkeypatch.setattr(disputes, "b_availability", lambda *a, **k: asked.append(a) or {
+        "available": False, "reason": "b_pair_limit", "text": "Limit reached."})
+    deal_id, _ = new_deal(world)
+    world.mandate.verdict = codes.refuse(Code.AMOUNT_ABOVE_LIMIT, [codes.reason("per_deal_max", True, "Above 10 €.")])
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["code"] == "AMOUNT_ABOVE_LIMIT" and asked == []  # the refusal is not hidden behind a slot question
+
+
 def test_vat_risk_waits_for_human(world):
     deal_id, _ = new_deal(world)
     world.mandate.verdict = codes.refuse(Code.VAT_LIABILITY_RISK, [codes.reason("vat_payer_eurc", True, "§109")])

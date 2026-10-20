@@ -105,6 +105,39 @@ def test_capture_takes_the_tariff_fee_to_the_clearing_address(deal):
     assert (void["fn"], void["idem_key"]) == ("void", escrow.idem_key("d-1", "void"))
 
 
+@pytest.mark.parametrize("bps", [0, 1, 80, 120, 150, 10_000])
+@pytest.mark.parametrize("amount", [1, 3, 83, 4_499_999, 4_500_000, 5_000_000, 125_000_000_000_000_000_000])
+def test_capture_fee_is_always_accepted_by_the_contract_check(bps, amount):
+    """The fee and receiver we pass satisfy AuthCaptureEscrow v1.1 _validateFee for every tariff and amount,
+    including a fee that rounds to 0 (T0 at 0 bps) with the clearing address configured as feeReceiver."""
+    pi = {"minFeeBps": bps, "maxFeeBps": bps, "feeReceiver": config.BANK_CLEARING_ADDR}
+    fee, receiver = escrow.capture_fee(pi, amount)
+    assert fee == amount * bps // 10_000 and escrow.contract_fee_error(pi, amount, fee, receiver) is None
+    assert receiver.lower() == config.BANK_CLEARING_ADDR.lower()
+
+
+def test_contract_fee_check_rejects_what_the_contract_rejects():
+    pi = {"minFeeBps": 120, "maxFeeBps": 120, "feeReceiver": config.BANK_CLEARING_ADDR}
+    assert escrow.contract_fee_error(pi, 4_499_999, 54_000, config.BANK_CLEARING_ADDR).startswith("FeeAmountOutOfRange")
+    assert escrow.contract_fee_error(pi, 4_499_999, 53_999, config.BANK_CLEARING_ADDR) is None  # floor, not round
+    zero_bps = {**pi, "minFeeBps": 0, "maxFeeBps": 0}
+    assert escrow.contract_fee_error(zero_bps, 5_000_000, 0, escrow.ZERO).startswith("InvalidFeeReceiver")  # old bug
+    open_receiver = {**zero_bps, "feeReceiver": escrow.ZERO}  # the C-fee PaymentInfos
+    assert escrow.capture_fee(open_receiver, 5_000_000) == (0, escrow.ZERO)
+    assert escrow.contract_fee_error(open_receiver, 5_000_000, 0, escrow.ZERO) is None
+    with pytest.raises(escrow.EscrowError):
+        escrow.capture_fee({**pi, "feeReceiver": escrow.ZERO}, 5_000_000)
+
+
+def test_t0_capture_passes_the_configured_receiver_with_a_zero_fee(deal):
+    db.run("UPDATE deals SET terms_json=? WHERE deal_id='d-1'", (db.dumps({**TERMS, "rule": "A", "tier": "T0",
+                                                                             "fee_bps": 0}),))
+    escrow.authorize("d-1")
+    escrow.capture("d-1", 5_000_000, 1)
+    amount, fee, receiver = deal["sender"].sent[1]["args"][1:]
+    assert (amount, fee) == (5_000_000, 0) and receiver.lower() == config.BANK_CLEARING_ADDR.lower()
+
+
 def test_paid_counts_only_payment_infos_with_the_seller_as_receiver(deal):
     escrow.authorize("d-1")
     h = db.one("SELECT payment_hash FROM deals WHERE deal_id='d-1'")["payment_hash"]

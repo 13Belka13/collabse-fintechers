@@ -563,7 +563,7 @@ def lookups() -> dict:
 def record_delivery(deal_id: str, payload: dict, now: float | None = None) -> dict:
     """Seller -> bank: a signed manifest and its items (§5.2). The bank recomputes root and count, runs the
     autocodes and answers the seller at once; the money follows in the background (auto_settle)."""
-    from bank import disputes, receipts
+    from bank import deadlines, disputes, receipts
     now = time.time() if now is None else now
     with disputes._locks[deal_id]:  # not the pay() lock: the seller may deliver while pay() still waits for its ack
         deal = _require(deal_id)
@@ -574,7 +574,7 @@ def record_delivery(deal_id: str, payload: dict, now: float | None = None) -> di
             raise DealError(409, "the deal is settled: no new versions after the final void")
         if any(c["rule"] == "C" for c in s["claims"]):
             raise DealError(409, "a C claim was filed: no new versions are accepted (§7C.1)")
-        if now > s["deadline_at"]:
+        if now > deadlines.delivery_deadline(s, now):  # moved by the time items waited for a registry (§5.1)
             raise DealError(409, "the delivery deadline has passed")
         try:
             out = receipts.receive(deal, payload, now=now, **lookups())

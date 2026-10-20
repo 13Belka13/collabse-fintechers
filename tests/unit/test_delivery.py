@@ -134,3 +134,56 @@ def test_registry_outage_keeps_items_pending_then_the_timer_decides(w, monkeypat
     down["on"] = False
     deadlines.tick(now=T0 + 31)
     assert receipts.counts(deal_id)["accepted_items"] == 20 and k.captures(w) == [4_500_000]
+
+
+def test_registry_wait_moves_the_delivery_deadline(w, monkeypatch):
+    """§5.1: the seller cannot replace an item the bank has not decided, so the deadline moves by the wait."""
+    from bank import deadlines, journal, verifier
+    deal_id = k.make_deal(w, rule="A", deadline_s=100, now=T0)
+    down = {"on": True}
+    real = verifier.registry_record
+
+    def flaky(ico):
+        if down["on"]:
+            raise verifier.Pending("ARES timeout")
+        return real(ico)
+    monkeypatch.setattr(verifier, "registry_record", flaky)
+    assert send(w, deal_id, k.signed(w, deal_id, company_items(20, "honest")), now=T0 + 50)["pending_items"] == 20
+    deadlines.tick(now=T0 + 120)  # past the agreed deadline, items still waiting: it keeps moving
+    s = disputes.get(deal_id)
+    assert deadlines.delivery_deadline(s, T0 + 120) == T0 + 170 and k.captures(w) == []
+    down["on"] = False
+    deadlines.tick(now=T0 + 150)  # decided after 100 s of waiting: deadline = T0 + 100 + 100
+    assert receipts.counts(deal_id)["accepted_items"] == 20
+    assert deadlines.delivery_deadline(s, T0 + 150) == T0 + 200 and k.captures(w) == []  # rule A waits for it
+    ev = [e for e in journal.entries(deal_id, limit=50) if e["event"] == "delivery.deadline_extended"]
+    assert ev and ev[0]["payload"]["waited_s"] == 100
+    late = send(w, deal_id, k.signed(w, deal_id, company_items(20, "honest"), version=2), now=T0 + 190)
+    assert late["version"] == 2  # taken in: the deadline moved (its items are duplicates of version 1)
+    with pytest.raises(deals.DealError, match="deadline"):
+        send(w, deal_id, k.signed(w, deal_id, company_items(20, "honest"), version=3), now=T0 + 201)
+    deadlines.tick(now=T0 + 201)
+    assert k.captures(w) == [5_000_000]
+
+
+def test_wait_extension_is_capped_at_five_business_days(w, monkeypatch):
+    from bank import config, deadlines, verifier
+    deal_id = k.make_deal(w, rule="A", deadline_s=100, now=T0)
+    monkeypatch.setattr(verifier, "registry_record", lambda ico: (_ for _ in ()).throw(verifier.Pending("down")))
+    send(w, deal_id, k.signed(w, deal_id, company_items(20, "honest")), now=T0 + 10)
+    far = T0 + 100 * config.BUSINESS_DAY_S
+    assert deadlines.waited(deal_id, far) == 5 * config.BUSINESS_DAY_S
+    # items accepted anyway by a person do not count as waiting (their decided_at is the waiver)
+    db.run("UPDATE items SET status='accepted', waived_by='human:anna', decided_at=? WHERE deal_id=?", (far, deal_id))
+    assert deadlines.waited(deal_id, far) == 0
+
+
+def test_accept_anyway_never_pays_more_items_than_ordered(w):
+    deal_id = k.make_deal(w, now=T0)
+    send(w, deal_id, k.signed(w, deal_id, company_items(20, "fake_data")))
+    rejected = [(r["version"], r["idx"]) for r in receipts.items_of(deal_id, "rejected")]
+    accepted = receipts.counts(deal_id)["accepted_items"]
+    assert len(rejected) >= 2
+    with pytest.raises(receipts.Refused, match=f"at most {accepted + 1}"):  # room for one waiver only
+        receipts.waive(deal_id, rejected[:2], "human:anna", accepted + 1)
+    assert receipts.counts(deal_id)["accepted_items"] == accepted  # the refused waiver changed nothing (one tx)

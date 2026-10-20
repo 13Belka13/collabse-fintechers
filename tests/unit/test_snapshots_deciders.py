@@ -132,3 +132,30 @@ def test_commit_reveal_challenges(seeded):
     with pytest.raises(deciders.DeciderError) as e:
         deciders.select(1, now=out["t2"] - 1)  # before T2 nobody is drawn
     assert e.value.status == 425
+
+
+def test_salt_hash_is_anchored_on_chain_as_calldata(monkeypatch, seeded):
+    from bank import chain, config, deciders, journal
+    sent = []
+
+    class Rec:
+        def send(self, call, **kw):
+            sent.append((call, kw))
+            return {"tx_hash": "0x" + "ab" * 32, "link": "https://example.invalid/tx"}
+    monkeypatch.setattr(chain, "sender", lambda pk: Rec())
+    case = deciders.open_stage({"id": 5, "deal_id": "d-anchor"}, {"buyer": "64146103", "seller": "30181020"},
+                               now=1_800_000_000)
+    (call, kw), = sent
+    assert call == {"to": config.BANK_OPERATOR_ADDR, "value": 0, "data": case["salt_hash"]}
+    assert kw["kind"] == "salt_commit" and kw["idem_key"].startswith("d-anchor:salt:5:first:")
+    ev = [e for e in journal.entries("d-anchor", limit=20) if e["event"] == "decider.salt_anchored"]
+    assert ev[0]["payload"]["salt_hash"] == case["salt_hash"] and "salt" not in case  # the salt itself stays secret
+
+
+def test_salt_anchor_failure_does_not_stop_the_case(monkeypatch, seeded):
+    from bank import chain, deciders, journal
+    monkeypatch.setattr(chain, "sender", lambda pk: (_ for _ in ()).throw(RuntimeError("no key")))
+    case = deciders.open_stage({"id": 6, "deal_id": "d-anchor2"}, {"buyer": "64146103", "seller": "30181020"},
+                               now=1_800_000_000)
+    assert case["salt_hash"] and deciders.get(6)["salt"]
+    assert any(e["event"] == "decider.salt_anchor_failed" for e in journal.entries("d-anchor2", limit=20))

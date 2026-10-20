@@ -78,8 +78,8 @@ def test_c_required_above_the_threshold_falls_back_to_b_only_with_a_person(m):
 
 def test_unprotected_payments_share_one_daily_cap(m):
     """50 cents a day over all sellers (demo): 20 + 20 with two sellers leaves 10 for a third."""
-    for i, seller in enumerate(("s-beta", "s-gama")):
-        deal(f"d-t0-{i}", seller=seller, category="other", amount=200_000, state="settled")
+    for i, seller in enumerate(("s-beta", "s-gama")):  # other tasks: Gama and Delta are related (EvSM)
+        deal(f"d-t0-{i}", seller=seller, category="other", amount=200_000, state="settled", task_hash=f"t0-{i}")
         db.run("UPDATE deals SET terms_json=? WHERE deal_id=?", (db.dumps({"tier": "T0"}), f"d-t0-{i}"))
         assert mandate.reserve(m, f"d-t0-{i}", 20)["status"] == "ok"
     t = terms(rule="A", tier="T0", window=0, category="other")

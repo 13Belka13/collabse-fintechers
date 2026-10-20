@@ -12,6 +12,12 @@
 #   s is revealed after the decision, so anyone can recheck the draw; the decider's identity is hidden from the
 #   parties until then, and the decider sees pseudonyms only.
 # - The decider decides within 48 h of the sample round, per sampled item; the result extends to the share of D.
+# - Re-review paid by the loser (§7C.6): two NEW deciders from the pool without the first (fewer than two left ->
+#   the reserve provider alone), a new salt s' committed when the step opens, its own schedule and selection round;
+#   they decide the same sampled items, the result is the majority of three per item. s' is revealed at the end.
+# - Audit: H(drand[sample round] ‖ s ‖ "audit") mod 100 < 5 sends the decision to another decider for a check; s is
+#   secret until the decision, so the decider cannot know. A divergence is journalled (a penalty under the decider's
+#   contract with the bank); the parties' outcome does not change.
 # drand: quicknet (3 s rounds). Live rounds from api.drand.sh; recorded rounds in fixtures/drand/quicknet.json;
 # in MOCK a round that is not recorded gets a labelled deterministic stand-in (never presented as the real beacon).
 import hashlib
@@ -28,6 +34,7 @@ DRAND_HASH = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
 DRAND_GENESIS, DRAND_PERIOD = 1692803367, 3
 HOUR = 3600
 MIN_POOL, SAMPLE_K = 3, 5
+REREVIEW_N, AUDIT_PCT = 2, 5
 RESERVE_PROVIDER = {"id": "reserve", "name": "Reserve dispute-resolution provider (contract with the bank)",
                     "address": "0x000000000000000000000000000000000000dEC0", "related_icos": []}
 
@@ -40,8 +47,9 @@ class DeciderError(Exception):
 
 def pool() -> list[dict]:
     """Accredited deciders. Demo: 3 demo deciders whose keys a person on stage controls (§14) — said aloud."""
+    from bank import evsm
     return [{"id": f"dec-{i}", "name": f"Demo decider {i}", "address": f"0x{'dec0':0>36}{i:04x}",
-             "related_icos": []} for i in (1, 2, 3)]
+             "related_icos": sorted(evsm.decider_icos(f"dec-{i}"))} for i in (1, 2, 3)]
 
 
 # ---- drand ----
@@ -103,9 +111,29 @@ def schedule(now: float) -> dict:
             "sample_round": first_round_after(t2 + 48 * HOUR / config.TIME_DIVISOR)}
 
 
+def anchor(deal_id: str, claim_id: int, step: str, salt_hash: str) -> dict | None:
+    """The salt commitment in the network (§7C.6) without a contract: a 0-value transaction from the operator to
+    itself with the hash as calldata, readable on the explorer. A failure is journalled and does not stop the case:
+    the commitment is in the hash-chained journal either way."""
+    from bank import chain
+    try:
+        me = config.BANK_OPERATOR_ADDR
+        tx = chain.sender(config.BANK_OPERATOR_PK).send(
+            {"to": me, "value": 0, "data": salt_hash}, kind="salt_commit", deal_id=deal_id,
+            idem_key=f"{deal_id}:salt:{claim_id}:{step}:{salt_hash[2:18]}")
+    except Exception as e:  # noqa: BLE001 — e.g. no operator key in CI; the journal still holds the commitment
+        journal.append("bank", "decider.salt_anchor_failed", {"claim_id": claim_id, "step": step,
+                                                              "error": repr(e)[:200]}, deal_id=deal_id)
+        return None
+    journal.append("bank", "decider.salt_anchored", {"claim_id": claim_id, "step": step, "salt_hash": salt_hash,
+                                                     "tx_hash": tx["tx_hash"], "link": tx.get("link")},
+                   deal_id=deal_id)
+    return tx
+
+
 def open_stage(claim: dict, sides: dict, now: float | None = None, exclude: tuple = (), step: str = "first") -> dict:
-    """Both fees are in: fix the schedule and commit to a fresh secret salt (its hash goes to the journal; on a
-    chain-backed deployment, also to the network). sides: {"buyer": ico, "seller": ico}."""
+    """Both fees are in: fix the schedule and commit to a fresh secret salt (its hash goes to the journal and to
+    the network, anchor()). sides: {"buyer": ico, "seller": ico}."""
     now = time.time() if now is None else now
     salt = secrets.token_hex(32)
     case = {"claim_id": claim["id"], "deal_id": claim["deal_id"], "step": step, "sides": sides,
@@ -116,6 +144,7 @@ def open_stage(claim: dict, sides: dict, now: float | None = None, exclude: tupl
     journal.append("bank", "decider.stage_opened", {k: case[k] for k in ("claim_id", "step", "salt_hash", "t1", "t2",
                                                                        "selection_round", "sample_round")},
                    deal_id=claim["deal_id"])
+    anchor(claim["deal_id"], claim["id"], step, case["salt_hash"])
     return public(case)
 
 
@@ -127,6 +156,12 @@ def public(case: dict) -> dict:
         out["salt"], out["decider"] = case["salt"], case["decider"]
     out["challenges"] = {p: {"committed": bool(c.get("commit")), "revealed": bool(c.get("ids") is not None)}
                          for p, c in case["challenges"].items()}
+    if case.get("rereview"):
+        rr = case["rereview"]
+        out["rereview"] = {k: v for k, v in rr.items() if rr.get("salt_revealed") or k not in ("salt", "deciders")}
+        out["rereview"]["verdicts"] = len(rr["verdicts"])
+    if case.get("audit"):
+        out["audit"] = {"done": case["audit"]["verdicts"] is not None}
     return out
 
 
@@ -168,7 +203,8 @@ def _case(claim_id: int) -> dict:
 def eligible(case: dict, recent: list[tuple[str, float]] | None = None) -> tuple[list[dict], bool]:
     """(the pool after challenges, whether the reserve provider takes the case). recent: [(decider_id, case time)]
     of cases with the same side in 90 days — off in the demo (a second run would challenge the first decider)."""
-    sides = set(case["sides"].values())
+    from bank import evsm
+    sides = set().union(*(evsm.related_icos(i) for i in case["sides"].values()))  # a side and its owners' firms
     left = [d for d in pool() if d["id"] not in case["exclude"] and not sides & set(d["related_icos"])]
     if len(left) < MIN_POOL:
         return [RESERVE_PROVIDER], True
@@ -236,11 +272,135 @@ def decide(claim_id: int, decider_id: str, verdicts: dict, now: float | None = N
         raise DeciderError(400, "a conclusion for every sampled item: buyer or seller")
     upheld = sum(v == "buyer" for v in got.values())
     case.update(verdicts=got, decided_at=now, upheld=upheld, of=len(got), salt_revealed=True)
+    if audit_due(case):
+        left = [d for d in eligible({**case, "exclude": case["exclude"] + [decider_id]})[0]]
+        auditor = left[draw(case["sample_beacon"]["randomness"], case["salt"], b"auditor") % len(left)]
+        case["audit"] = {"decider": auditor["id"], "verdicts": None}
     _save(case)
     journal.append(f"decider:{decider_id}", "decider.decided",
                    {"claim_id": claim_id, "upheld": upheld, "of": len(got), "salt": case["salt"],
-                    "decider": decider_id}, deal_id=case["deal_id"])
+                    "decider": decider_id, "audit": bool(case.get("audit"))}, deal_id=case["deal_id"])
     return public(case)
+
+
+def _verdicts(case: dict, verdicts: dict) -> dict:
+    got = {int(k): v for k, v in verdicts.items()}
+    if set(got) != set(case["sample"]) or not set(got.values()) <= {"buyer", "seller"}:
+        raise DeciderError(400, "a conclusion for every sampled item: buyer or seller")
+    return got
+
+
+# ---- the random 5 % audit ----
+
+def audit_due(case: dict) -> bool:
+    return draw(case["sample_beacon"]["randomness"], case["salt"], b"audit") % 100 < AUDIT_PCT
+
+
+def audit(claim_id: int, decider_id: str, verdicts: dict, now: float | None = None) -> dict:
+    """The auditing decider's check of a decision: the items where it differs are journalled; money is untouched."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    a = case.get("audit")
+    if not a or a["verdicts"] is not None:
+        raise DeciderError(409, "no audit is due on this case")
+    if decider_id != a["decider"]:
+        raise DeciderError(403, "only the auditing decider checks this case")
+    got = _verdicts(case, verdicts)
+    first = {int(i): v for i, v in case["verdicts"].items()}  # JSON keys are strings
+    diverged = sorted(i for i in got if got[i] != first[i])
+    a.update(verdicts=got, decided_at=now, diverged=diverged)
+    _save(case)
+    journal.append(f"decider:{decider_id}", "decider.audited",
+                   {"claim_id": claim_id, "diverged": len(diverged), "of": len(got),
+                    "consequence": "penalty under the decider's contract" if diverged else "none"},
+                   deal_id=case["deal_id"])
+    return public(case)
+
+
+# ---- re-review paid by the loser ----
+
+def open_rereview(claim_id: int, now: float | None = None) -> dict:
+    """Commit to a new salt s' and fix the step's schedule; the first decider is out of the pool."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    if not case["decided_at"] or case.get("rereview"):
+        raise DeciderError(409, "a re-review follows one first decision")
+    salt = secrets.token_hex(32)
+    case["rereview"] = {"salt": salt, "salt_hash": "0x" + hashlib.sha256(bytes.fromhex(salt)).hexdigest(),
+                        **schedule(now), "deciders": None, "verdicts": {}, "decided_at": None}
+    _save(case)
+    rr = case["rereview"]
+    journal.append("bank", "decider.rereview_opened", {"claim_id": claim_id, "salt_hash": rr["salt_hash"],
+                                                       "t2": rr["t2"], "selection_round": rr["selection_round"]},
+                   deal_id=case["deal_id"])
+    anchor(case["deal_id"], claim_id, "rereview", rr["salt_hash"])
+    return public(case)
+
+
+def select_rereview(claim_id: int, now: float | None = None) -> list[str]:
+    """After the step's selection round: two new deciders by H(drand ‖ s' ‖ id) order. Idempotent."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    rr = case["rereview"]
+    if rr["deciders"]:
+        return rr["deciders"]
+    if now <= rr["t2"]:
+        raise DeciderError(425, "the re-review draw waits for its schedule")
+    b = beacon(rr["selection_round"], now)
+    sides = {"buyer": {}, "seller": {}}
+    left, reserve = eligible({**case, "exclude": case["exclude"] + [case["decider"]], "challenges": sides})
+    if reserve or len(left) < REREVIEW_N:
+        chosen = [RESERVE_PROVIDER["id"]]
+    else:
+        chosen = [d["id"] for d in sorted(left, key=lambda d: draw(b["randomness"], rr["salt"], d["id"].encode()))]
+        chosen = chosen[:REREVIEW_N]
+    rr.update(deciders=chosen, selection_beacon=b)
+    _save(case)
+    journal.append("bank", "decider.rereview_selected", {"claim_id": claim_id, "round": b["round"],
+                                                         "count": len(chosen)}, deal_id=case["deal_id"])
+    return chosen
+
+
+def replace_late_rereview(claim_id: int, now: float | None = None) -> list[str] | None:
+    """Re-review deciders who missed the 48 h are replaced by the reserve provider (§7C.8), with a fresh 48 h; the
+    money stays put. Returns the new list of deciders, or None when nobody is late."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    rr = case.get("rereview") or {}
+    if not rr.get("deciders") or rr["decided_at"] or now <= deadline({"sample_round": rr["selection_round"]}):
+        return None
+    on_time = [d for d in rr["deciders"] if d in rr["verdicts"]]
+    late = len(rr["deciders"]) - len(on_time)
+    rr.update(deciders=on_time + [RESERVE_PROVIDER["id"]] * (RESERVE_PROVIDER["id"] not in on_time),
+              selection_round=first_round_after(now))
+    rr["verdicts"] = {d: v for d, v in rr["verdicts"].items() if d in rr["deciders"]}
+    _save(case)
+    journal.append("bank", "decider.rereview_late", {"claim_id": claim_id, "late": late}, deal_id=case["deal_id"])
+    return rr["deciders"]
+
+
+def decide_rereview(claim_id: int, decider_id: str, verdicts: dict, now: float | None = None) -> dict | None:
+    """One new decider's conclusion on the same sampled items. When all are in: the majority of three per item
+    (the reserve provider alone decides when the pool was too small). Returns the final result or None."""
+    now, case = time.time() if now is None else now, _case(claim_id)
+    rr = case.get("rereview") or {}
+    if not rr.get("deciders") or rr["decided_at"]:
+        raise DeciderError(409, "no re-review decision is due")
+    if decider_id not in rr["deciders"] or decider_id in rr["verdicts"]:
+        raise DeciderError(403, "only a re-review decider decides, once")
+    if now > deadline({"sample_round": rr["selection_round"]}):
+        raise DeciderError(409, "late: the re-review decider missed the 48 h")
+    rr["verdicts"][decider_id] = {str(i): v for i, v in _verdicts(case, verdicts).items()}
+    final = None
+    if set(rr["verdicts"]) == set(rr["deciders"]):
+        votes = [{int(i): v for i, v in x.items()} for x in [case["verdicts"], *rr["verdicts"].values()]]
+        if rr["deciders"] == [RESERVE_PROVIDER["id"]]:
+            votes = votes[1:]
+        out = {i: max(("buyer", "seller"), key=lambda side: sum(v[i] == side for v in votes)) for i in case["sample"]}
+        upheld = sum(v == "buyer" for v in out.values())
+        rr.update(decided_at=now, final=out, upheld=upheld, of=len(out), salt_revealed=True)
+        final = {"upheld": upheld, "of": len(out), "changed": upheld != case["upheld"]}
+    _save(case)
+    journal.append(f"decider:{decider_id}", "decider.rereview_decided",
+                   {"claim_id": claim_id, **(final or {}), **({"salt": rr["salt"]} if final else {})},
+                   deal_id=case["deal_id"])
+    return final
 
 
 def replace_late(claim_id: int, now: float | None = None) -> dict | None:

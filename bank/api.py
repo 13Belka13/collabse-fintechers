@@ -314,6 +314,31 @@ def c_court(deal_id: str, body: HumanIn):
     return _call(claims_c.court, deal_id, f"human:{body.by}")
 
 
+@router.post("/deals/{deal_id}/claims/c/rereview")
+def c_buyer_rereview(deal_id: str, company_id: str = Depends(agent_company)):
+    from bank import claims_c
+    _own_deal(deal_id, company_id)
+    return _call(claims_c.request_rereview, deal_id, "buyer", "agent:buyer")
+
+
+@router.get("/deals/{deal_id}/claims/c/rereview-terms", dependencies=[Depends(seller_caller)])
+def c_rereview_terms(deal_id: str):
+    from bank import claims_c
+    return _call(claims_c.rereview_terms, deal_id, "seller")
+
+
+@router.post("/deals/{deal_id}/claims/c/seller-rereview", dependencies=[Depends(seller_caller)])
+def c_seller_rereview(deal_id: str, body: SignatureIn):
+    from bank import claims_c
+    return _call(claims_c.request_rereview, deal_id, "seller", "seller", body.signature)
+
+
+@router.post("/deals/{deal_id}/claims/c/audit", dependencies=[Depends(decider_caller)])
+def c_audit(deal_id: str, body: DecisionIn):
+    from bank import claims_c, deciders
+    return _call(deciders.audit, _call(claims_c._claim, deal_id)["id"], body.decider, body.verdicts)
+
+
 @router.post("/deals/{deal_id}/claims/c/decision", dependencies=[Depends(decider_caller)])
 def c_decision(deal_id: str, body: DecisionIn):
     from bank import claims_c

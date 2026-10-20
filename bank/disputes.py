@@ -65,6 +65,14 @@ def get(deal_id: str) -> dict | None:
     return s
 
 
+def claims_of_seller(seller_id: str, rule: str, state: str) -> list[dict]:
+    rows = db.rows("SELECT * FROM claims WHERE seller_id=? AND rule=? AND state=? ORDER BY id", (seller_id, rule, state))
+    for r in rows:
+        r["items"] = db.loads(r.pop("items_json"))
+        r["data"] = db.loads(r.pop("data_json")) or {}
+    return rows
+
+
 def claims(deal_id: str, rule: str | None = None) -> list[dict]:
     rows = db.rows("SELECT * FROM claims WHERE deal_id=?" + (" AND rule=?" if rule else "") + " ORDER BY id",
                    (deal_id, rule) if rule else (deal_id,))
@@ -112,8 +120,10 @@ def held_c(deal: dict, s: dict) -> tuple[int, bool]:
 
 def due(deal: dict, s: dict, now: float) -> tuple[int, bool, str]:
     """(what the seller should have been paid by now, whether the deal is final, the rule that says so)."""
+    from bank import deadlines
     P = payable(deal)
     pending = receipts.counts(deal["deal_id"])["pending_items"]
+    s = {**s, "deadline_at": deadlines.delivery_deadline(s, now)}  # moved by registry/snapshot waits (§5.1)
     rule, x = s["rule"], s["b_pct"]
     if P == 0 and not pending and now >= s["deadline_at"]:
         return 0, True, "NO_DELIVERY: nothing accepted by the delivery deadline"
@@ -403,6 +413,12 @@ def tick(deal_id: str, now: float | None = None) -> dict | None:
     try:
         if receipts.recheck_pending(deal, now=now, **deals.lookups()):
             delivered(deal_id, now=now)  # the buyer sees those items only now: their window starts now
+            from bank import deadlines
+            t = _now(now)
+            journal.append("timer", "delivery.deadline_extended", {
+                "deadline_at": deadlines.delivery_deadline(get(deal_id), t), "waited_s": round(deadlines.waited(deal_id, t)),
+                "rule": "§5.1: the delivery deadline moves by the time items waited for a registry or a snapshot"},
+                deal_id=deal_id)
     except Exception as e:  # noqa: BLE001 — a registry outage keeps items pending; the money waits too
         journal.append("timer", "delivery.recheck_failed", {"error": repr(e)[:200]}, deal_id=deal_id)
     return advance(deal_id, actor="timer", now=now)
