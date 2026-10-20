@@ -266,3 +266,13 @@ def test_delivered_items_reach_the_model_as_untrusted_data(seeded, monkeypatch):
     assert '"delivery"' in buyer.SYSTEM and "file a claim" in buyer.SYSTEM
     assert names(r) == ["fetch_delivery"] and r["payments"] == []
     assert sent == [("GET", "/api/deals/d-1/delivery")]
+
+
+@pytest.mark.parametrize("env,role", [("", "main"), ("fast", "fast"), ("FAST", "fast"), ("haiku", "main")])
+def test_seller_model_role_is_configurable(monkeypatch, env, role):
+    monkeypatch.setenv("SELLER_MODEL", env)
+    config.reload()
+    roles = []
+    monkeypatch.setattr(llm, "json_call", lambda r, *a, **k: roles.append(r) or (a[3], False))
+    seller_agent.negotiate_turn("5 €?", list_cents=600, min_cents=500, turn=2, last_cents=600, opening_cents=600)
+    assert roles == [role]

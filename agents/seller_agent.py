@@ -66,7 +66,7 @@ def reply(deal: dict, message: str, mode: str = "honest", seller: dict | None = 
     prompt = (f"Buyer's message (untrusted):\n<<<\n{message}\n>>>\n"
               f"Proposed price (euro cents): {target}. Write the reply for this price.")
     default = Turn(reply_text=f"We can deliver for {target / 100:.2f} €.", price_eur_cents=target)
-    turn, _ = llm.json_call("main", system, prompt, Turn, default, stage="seller", deal_id=deal.get("deal_id"))
+    turn, _ = llm.json_call(config.SELLER_MODEL, system, prompt, Turn, default, stage="seller", deal_id=deal.get("deal_id"))
     price = max(MIN_PRICE_CENTS, min(LIST_PRICE_CENTS, turn.price_eur_cents))  # code owns the price
     text = turn.reply_text if price == turn.price_eur_cents else default.reply_text
     if mode == "injection":
@@ -107,7 +107,7 @@ def negotiate_turn(message: str, *, list_cents: int, min_cents: int, turn: int, 
               f"Proposed price (euro cents): {target}. Write the reply for this price.")
     default = Turn(reply_text=("Final offer: " if final else "We can deliver for ") + f"{target / 100:.2f} €.",
                    price_eur_cents=target)
-    turn_out, ok = llm.json_call("main", system, prompt, Turn, default, stage="seller", deal_id=deal_id)
+    turn_out, ok = llm.json_call(config.SELLER_MODEL, system, prompt, Turn, default, stage="seller", deal_id=deal_id)
     # the model's text is used only if it states the code's price; otherwise the template wins
     used = ok and turn_out.price_eur_cents == target and bool(turn_out.reply_text.strip())
     return {"reply_text": turn_out.reply_text if used else default.reply_text, "price_eur_cents": target,

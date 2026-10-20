@@ -41,6 +41,9 @@ def reload():
     g["BEDROCK_CLIENT"] = _env("BEDROCK_CLIENT", "invoke")  # invoke = AnthropicBedrock (InvokeModel), or mantle
     g["MODEL_MAIN"] = _env("MODEL_MAIN", "eu.anthropic.claude-opus-4-5-20251101-v1:0")
     g["MODEL_FAST"] = _env("MODEL_FAST", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
+    # the seller agent only phrases a price code has fixed: SELLER_MODEL=fast moves it to MODEL_FAST (anything else
+    # = main, the default while Haiku 4.5 on Bedrock is unreliable)
+    g["SELLER_MODEL"] = "fast" if _env("SELLER_MODEL", "main").lower() == "fast" else "main"
     # Bedrock timeouts (bank/llm.py). Each HTTP attempt: connect LLM_CONNECT_S, read per role; retries with backoff
     # on throttling / 5xx / timeouts; the whole call (all attempts, json_call's validation retry included) has a
     # wall-clock budget per stage. They nest inside the HTTP timeouts below: seller model 20 s < bank -> seller
