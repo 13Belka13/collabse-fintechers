@@ -195,10 +195,11 @@ def test_run_custom_resets_sellers_even_when_the_agent_fails(client, monkeypatch
 
 @pytest.fixture
 def sim(client, monkeypatch):
-    from bank import chain, deals, escrow, tczk
+    from bank import chain, deals, escrow, ramp, tczk
     from scripts import demo_sim
     from seller import app as seller_mod
     for mod, names in ((chain, ["sender"]), (escrow, ["read_state"]), (tczk, ["is_allowed", "is_frozen"]),
+                       (ramp, ["total_supply"]),
                        (seller_mod, ["read_retry", "bank_post"]), (deals, ["seller_http", "auto_settle"]),
                        (demo_sim, ["ACTIVE", "SELLER"])):
         for n in names:
