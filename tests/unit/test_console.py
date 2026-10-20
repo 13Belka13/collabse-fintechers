@@ -237,6 +237,32 @@ def test_full_custom_run_in_sim_completes_and_resets_sellers(client, sim):
     assert "Your deal: the bank approved the payment" in page and f"/deals/{view['deal_id']}" in page
 
 
+def test_run_outcome_comes_from_the_deal_when_the_agents_pay_call_times_out(client, sim, monkeypatch):
+    """The bank locked the money but the agent's HTTP answer was lost: the console says paid, not 'nothing was paid';
+    a pay still in flight ('quoted') reads 'the bank is still processing'."""
+    import httpx
+    real = ds._agent_call
+
+    def lost_answer(bank):
+        call = real(bank)
+
+        def wrapped(method, path, json=None, params=None):
+            out = call(method, path, json=json, params=params)
+            if path.endswith("/pay"):
+                raise httpx.ReadTimeout("timed out")
+            return out
+        return wrapped
+    monkeypatch.setattr(ds, "_agent_call", lost_answer)
+    out = ds.run_safe("custom", ds.custom_params({**FORM, "seller": "s-gama", "mode": "honest"}))
+    assert out["outcome"] == "ok", out
+    assert ui.run_view()["outcome_text"].startswith("the bank approved the payment")
+    from bank import deals
+    deal_id = list(out["deals"].values())[-1]
+    db.run("UPDATE deals SET state='quoted' WHERE deal_id=?", (deal_id,))  # as if the bank were still on it
+    assert ds._outcome({"deals": out["deals"], "payments": [], "outcome": "done"}) == ds.PENDING
+    assert deals.get(deal_id)["state"] == "quoted"
+
+
 def test_mandate_edit_makes_a_version_that_pay_enforces(client, sim):
     m0 = mandate.current(mandate.DEMO_MANDATE_ID)
     form = {"per_deal_max": "3", "confirm_above": "2,50", "budget": "30", "task_budget_max": "",
