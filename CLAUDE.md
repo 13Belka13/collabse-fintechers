@@ -1,5 +1,7 @@
 # CLAUDE.md — Agents that pay each other + bank token tCZK (The FinTechers Hackathon 2026, Track 2)
 
+> **Internal — instructions for the coding agent** (Claude Code), not project documentation. The project is described in the [README](README.md).
+
 You are the coding agent for a 24-hour hackathon build. Before writing code read, in this order:
 
 1. `docs/SPEC.md` — **the master document** (Russian): the implementation spec (addresses,

@@ -1,5 +1,7 @@
 # Disclosure email to the organisers (reply to their instruction email)
 
+> **Internal**: the team's template for the pre-hackathon disclosure email. The project is described in the [README](../README.md).
+
 Fill the [brackets], then send it yourself as a reply to the organisers' instruction email.
 
 ---

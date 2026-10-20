@@ -1,5 +1,7 @@
 # TASKS — tick-list (details and done-criteria: SPEC.md; layers = §15)
 
+> **Internal working document**: the build tick-list of the team and its coding agent. Kept for history; the project is described in the [README](../README.md).
+
 Hacking 12:00 Mon → code freeze 13:30 Tue. AWS Toolbox 12:00–13:30 is mandatory for at least one
 person (Bedrock logins) — start with work that needs no AWS; LLM steps run in MOCK mode until then.
 Minimum for stage: layers 1–3 + 5. After each task: run its check, commit, tick here.

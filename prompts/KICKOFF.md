@@ -1,5 +1,7 @@
 # Kickoff prompts
 
+> **Internal — prompts for the coding agent** used at the hackathon start. The project is described in the [README](../README.md).
+
 ## Main prompt (one agent, paste at 12:00)
 
 ```

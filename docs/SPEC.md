@@ -1,5 +1,7 @@
 # Техническая спецификация: Agents that pay each other + токен банка tCZK
 
+> **Internal working document** (Russian): the implementation spec the team and its coding agent built from. Kept for history; the project is described in the [README](../README.md).
+
 Для команды и её ИИ-ассистента. Собрано 18.10.2026 из первоисточников: исходники SDK и контрактов (коммиты указаны) и живые запросы к API. План, демо и питч — в Части 1.
 
 ## 0. Как пользоваться этим документом
