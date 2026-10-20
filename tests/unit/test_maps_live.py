@@ -127,7 +127,8 @@ def test_console_places_drop_the_registry_predicate(monkeypatch):
     from scripts import demo_scenarios
     assert set(demo_scenarios.DATA_SOURCES) == {"companies", "maps", "apify"}
     assert demo_scenarios.custom_params({"task": "10 warehouses in Praha", "data": "apify"})["data"] == "apify"
-    assert demo_scenarios.custom_params({"task": "10 warehouses in Praha", "data": "evil"})["data"] is None
+    with pytest.raises(ValueError):
+        demo_scenarios.custom_params({"task": "10 warehouses in Praha", "data": "evil"})
     b = buyer_mod.Buyer("10 warehouses in Praha with rating above 4.5 and a website", transport=lambda *a, **kw: {},
                         registry_check=False)
     monkeypatch.setattr(buyer_mod, "extract_criteria", lambda text, deal_id=None: {"count": 10, "city": "Praha"})
