@@ -16,7 +16,7 @@ import threading
 import time
 from collections import defaultdict
 
-from bank import config, db, deals, escrow, journal, money, receipts
+from bank import config, db, deals, escrow, journal, money, ramp, receipts
 
 RULES = ("A", "B", "C")
 B_PCTS = (5, 10, 20)
@@ -225,6 +225,8 @@ def _execute(deal: dict, pending: dict, actor: str, rule: str):
             mandate.release(deal_id)
     except ValueError as e:  # no reservation (a deal created outside deals.pay): the escrow stays the truth
         journal.append("bank", "budget_booking_skipped", {"error": str(e)}, deal_id=deal_id)
+    if pending["kind"] == "capture":  # tCZK seller paid on its bank account (bank/ramp.py); never undoes the capture
+        ramp.after_capture(deal_id, int(pending["amount"]), int(pending["n"]))
     return tx
 
 

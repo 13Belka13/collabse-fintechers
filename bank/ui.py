@@ -9,18 +9,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, receipts, timing
+from bank import codes, config, db, deadlines, deals, disputes, escrow, explain, journal, money, ramp, receipts, timing
 from bank.screening import website
 from bank.ui_auth import same_origin
 
 DEMO_MANDATE = "m-alfa-1"
 BANK_OFFICER = "human:bank-officer"
 TRANSFER_EVENTS = {"escrow_authorized": "Locked in escrow", "escrow_captured": "Paid to the seller",
-                   "escrow_voided": "Returned to the buyer", "x402_settled": "x402 payment settled"}
+                   "escrow_voided": "Returned to the buyer", "x402_settled": "x402 payment settled",
+                   "payout_to_account": "Paid out to the seller's bank account"}
 INFO_EVENTS = {"settlement.opened", "delivery.autocodes", "delivery.refused", "delivery.accepted_anyway",
                "claim_b.filed", "settlement.accepted", "settlement.closed", "settlement.tx_failed",
                "escrow_expiry_alarm", "timer_error", "x402_refused", "demo.scenario"}
@@ -375,6 +376,8 @@ def story(deal_id: str | None = None) -> dict | None:
         steps.append(_step("pay", "The seller was paid for accepted items", "now" if open_ else "done",
                            text, ts=caps[-1]["ts"], tx=caps[-1]["payload"].get("tx_hash"),
                            deadline=s_["window_end_at"] if open_ and s_ else None))
+    po = ramp.deal_view(deal) if caps else None
+    steps += _payout_steps(po, seller, s_)
     for cl in (s_ or {}).get("claims", []):
         steps.append(_step("claim", f"The buyer filed a {cl['rule']} claim", "done",
                            f"{len(cl['items'])} item(s), {_fmt_money(cl['amount'], asset)} back to the buyer "
@@ -390,7 +393,8 @@ def story(deal_id: str | None = None) -> dict | None:
                            "The bank stopped this before anything was signed: balances are unchanged on chain."))
 
     money_now = ({"buyer_out": lg["total"], "in_escrow": lg["in_escrow"], "to_seller": lg["captured"],
-                  "returned": lg["returned"]} if lg else None)
+                  "returned": lg["returned"], "on_account": po["paid_out"] if po else None,
+                  "account": po and po["account"]} if lg else None)
     if stopped and not lock:
         headline, tone = f"Refused — {PLAIN.get(stopped['code'], stopped['code'])}. No money moved.", "bad"
     elif money_now and money_now["in_escrow"] == 0:
@@ -406,6 +410,30 @@ def story(deal_id: str | None = None) -> dict | None:
     return {"deal": deal, "asset": asset, "seller": seller, "buyer": buyer, "steps": steps, "money": money_now,
             "headline": headline, "tone": tone, "item_count": (deal.get("offer") or {}).get("count"),
             "price": _fmt_money(deal["amount"], asset) if deal.get("amount") else None}
+
+
+def _payout_steps(po: dict | None, seller: dict, s_: dict | None) -> list[dict]:
+    """tCZK paid on to the seller's bank account (bank/ramp.py): shown only for a seller with payout_mode='account'."""
+    if po is None:
+        return []
+    if po["off"]:
+        return [_step("payout", "The crowns stay in the seller's wallet", "skipped", f"Payout to the account is off: {po['off']}.")]
+    steps = []
+    if po["last"]:
+        more = s_ is not None and not s_["closed_at"]
+        steps.append(_step("payout", f"The seller received {_fmt_money(po['paid_out'], 'tCZK')} on its bank account",
+                           "now" if more else "done",
+                           f"{_fmt_money(po['paid_out'], 'tCZK')} (what reached its wallet after the bank's fee) credited "
+                           f"to account {po['account']} of {_name(seller['name'])}. The bank burnt the tCZK and paid out crowns: "
+                           "the seller never had to hold the token." + (" The rest follows when the deal settles." if more else ""),
+                           ts=po["last"]["updated_at"], tx=po["last"]["tx_hash"]))
+    for o in po["open"]:
+        steps.append(_step("payout_open", f"{_fmt_money(o['amount'], 'tCZK')} is in the seller's wallet, payout not done",
+                           "blocked" if o["state"] == "failed" else "now",
+                           f"The capture stands; the payout to account {po['account']} "
+                           + ("failed and can be retried." if o["state"] == "failed" else "waits for the burn's receipt."),
+                           ts=o["updated_at"], tx=o["tx_hash"], retry=o["ref"]))
+    return steps
 
 
 # ---- pages ----
@@ -590,7 +618,7 @@ def deal_page(request: Request, deal_id: str, error: str = "", ok: str = ""):
     from bank import claims_c
     seller = _seller(deal["seller_id"])
     return page(request, "deal.html", deal=deal, seller=seller, ledger=ledger(deal), c=claims_c.view(deal_id),
-                web=website.latest(seller.get("ico")),
+                web=website.latest(seller.get("ico")), payout=ramp.deal_view(deal),
                 items=_items(deal), conditions=conditions, terms=terms, task=task, s=s,
                 silence=disputes.silence_text(deal, s) if s else "", scale=disputes.config_note(),
                 business_days=_business_days(s), step_text=STEP_TEXT, error=error, ok=ok,
@@ -693,7 +721,7 @@ def escrow_state(request: Request, deal_id: str):
 
 
 @router.get("/statement", response_class=HTMLResponse)
-def statement_page(request: Request, mandate_id: str = DEMO_MANDATE):
+def statement_page(request: Request, mandate_id: str = DEMO_MANDATE, error: str = "", ok: str = ""):
     from bank import mandate
     rows = db.rows("SELECT * FROM deals WHERE mandate_id=? ORDER BY created_at", (mandate_id,))
     totals: dict[str, dict] = {}
@@ -703,8 +731,41 @@ def statement_page(request: Request, mandate_id: str = DEMO_MANDATE):
         t["total"] += r["ledger"]["total"] if r["ledger"]["locked"] else 0
         for k in ("captured", "returned", "in_escrow"):
             t[k] += r["ledger"][k]
+    owner = db.one("SELECT company_id FROM mandates WHERE mandate_id=?", (mandate_id,))
     return page(request, "statement.html", mandate_id=mandate_id, rows=rows, totals=totals, names=_names(),
-                summary=mandate.summary(mandate_id))
+                summary=mandate.summary(mandate_id), accounts=ramp.accounts(), ramp_ops=ramp.ops(limit=20),
+                ramp_off=ramp.off_reason(), owner=owner["company_id"] if owner else "alfa", error=error, ok=ok)
+
+
+@router.post("/ramp/{action}")
+def ramp_action(action: str, company_id: str = Form(""), amount: str = Form(""),
+                ref: str = Form(""), next: str = Form("/statement")):
+    """A person moves crowns between the company's bank account and its wallet (deposit = mint, withdraw = burn), or
+    a bank officer retries a payout. Human only, like the other bank-UI actions (same-origin, actor set by the
+    server); the agent has no tool for this. The logged-in person acts for the demo mandate's company only."""
+    back = next if next.startswith("/deals/") or next in ("/statement", "/story") else "/statement"
+    sep = "&" if "?" in back else "?"
+    if action not in ("deposit", "withdraw", "retry"):
+        raise HTTPException(400, "unknown action")
+    owner = _owner(DEMO_MANDATE)
+    if action != "retry" and company_id != owner:
+        raise HTTPException(403, "a person moves only their own company's crowns")
+    who = BANK_OFFICER if action == "retry" else human_of(owner)
+    try:
+        if action == "retry":
+            o = ramp.retry(ref, who)
+        else:
+            atomic = money.to_atomic("tCZK", amount.replace(" ", "").replace(",", "."))
+            o = (ramp.deposit if action == "deposit" else ramp.withdraw)(company_id, atomic, who)
+    except ramp.RampError as e:
+        return RedirectResponse(f"{back}{sep}error={e}", status_code=303)
+    except (ValueError, ArithmeticError):
+        return RedirectResponse(f"{back}{sep}error=Enter an amount in Kč, e.g. 100,00.", status_code=303)
+    what = f"{o['direction']} {money.fmt('tCZK', o['amount'])}"
+    if o["state"] == "failed":
+        return RedirectResponse(f"{back}{sep}error={what} failed on chain, nothing moved", status_code=303)
+    text = "done" if o["state"] == "done" else "sent, waiting for the receipt"
+    return RedirectResponse(f"{back}{sep}ok={what}: {text}", status_code=303)
 
 
 @router.get("/statement/reconcile", response_class=HTMLResponse)
@@ -722,7 +783,7 @@ def reconcile(request: Request, mandate_id: str = DEMO_MANDATE):
                         "ok": st["capturable"] == lg["in_escrow"], "err": None})
         except Exception as e:  # noqa: BLE001
             out.append({"deal": r, "ours": lg["in_escrow"], "chain": None, "ok": None, "err": type(e).__name__})
-    return templates.TemplateResponse(request, "_reconcile.html", {"rows": out})
+    return templates.TemplateResponse(request, "_reconcile.html", {"rows": out, "supply": ramp.reconcile()})
 
 
 # ---- the demo console: scripted scenarios and the viewer's own deal, one run at a time ----

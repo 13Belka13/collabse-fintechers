@@ -1,6 +1,6 @@
 # One SQLite for the whole bank (SPEC §12). WAL mode; one connection per thread.
 # Timestamps are unix seconds (REAL). Money is integer atomic units of the deal asset;
-# mandate/reservation amounts are integer euro cents.
+# mandate/reservation amounts are integer euro cents; core accounts (accounts, ramp_ops) are in haléře.
 import json
 import sqlite3
 import threading
@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS seller_keys (
   PRIMARY KEY (seller_id, address));
 CREATE TABLE IF NOT EXISTS frozen_wallets (
   address TEXT PRIMARY KEY, case_ref TEXT, frozen_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS accounts (
+  company_id TEXT PRIMARY KEY, account_number TEXT, balance INTEGER NOT NULL DEFAULT 0,
+  payout_mode TEXT NOT NULL DEFAULT 'wallet');
+CREATE TABLE IF NOT EXISTS ramp_ops (
+  ref TEXT PRIMARY KEY, company_id TEXT, direction TEXT NOT NULL, amount INTEGER NOT NULL, deal_id TEXT,
+  state TEXT NOT NULL, tx_hash TEXT, created_at REAL NOT NULL, updated_at REAL);
+CREATE INDEX IF NOT EXISTS ramp_ops_deal ON ramp_ops(deal_id);
 """
 
 _local = threading.local()

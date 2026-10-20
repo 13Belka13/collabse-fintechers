@@ -327,8 +327,17 @@ def settled_escrow(ctx: Ctx, deal_id: str, asset: str, seller_id: str, to_seller
     st = ctx.escrow_state(deal_id, ok=lambda st: st["capturable"] == 0)
     ctx.check("paymentState: nothing left to capture", st is not None and st["capturable"] == 0, st)
     name = seller_id.removeprefix("s-")
-    d = ctx.delta_after(before, lambda d: d.get(f"{asset}:{name}", 0) == net and d.get(f"{asset}:buyer", 0) == -paid)
-    ctx.check("seller balance + captured net of fee (chain)", d.get(f"{asset}:{name}", 0) == net, d)
+    from bank import ramp
+    payout = ramp.deal_view(deals.get(deal_id))  # a tCZK seller paid on its bank account: the bank burnt the net
+    kept = 0 if payout else net
+    d = ctx.delta_after(before, lambda d: d.get(f"{asset}:{name}", 0) == kept and d.get(f"{asset}:buyer", 0) == -paid)
+    ctx.check("seller balance + captured net of fee (chain)" if not payout else
+              "seller wallet back to its start: the net went to its bank account (chain)", d.get(f"{asset}:{name}", 0) == kept, d)
+    if payout:
+        burnt = sum(t["value"] for o in payout["ops"] if o["tx_hash"] for t in transfers_in(o["tx_hash"], asset)
+                    if t["to"] == "0x0000000000000000000000000000000000000000")
+        ctx.check("payout burns = net paid to the seller, totalSupply down by it (Transfer events)", burnt == net,
+                  {"burnt": burnt, "net": net, "ops": [(o["ref"], o["state"]) for o in payout["ops"]]})
     ctx.check("clearing address + the bank's fee (chain)", d.get(f"{asset}:clearing", 0) == fee, d)
     ctx.check("buyer balance − captured (chain)", d.get(f"{asset}:buyer", 0) == -paid, d)
     ctx.check("escrow store back to its start (chain)", d.get(f"{asset}:escrow_store", 0) == 0, d)

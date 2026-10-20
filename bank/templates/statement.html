@@ -22,8 +22,33 @@
     <td class="num">{{ r.amount|money(r.asset) if r.amount else '—' }}</td><td class="num">{{ l.captured|money(r.asset) }}</td><td class="num">{{ l.returned|money(r.asset) }}</td><td class="num">{{ l.in_escrow|money(r.asset) }}</td></tr>
   {% else %}<tr><td colspan="7" class="muted">No deals.</td></tr>{% endfor %}
 </table>
+<h2>Bank accounts and the wallet</h2>
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}{% if ok %}<div class="banner ok">{{ ok }}</div>{% endif %}
+<p class="muted small">tCZK is the same crowns of the same bank, written on chain: topping up the wallet debits the account and mints tCZK, a withdrawal burns tCZK and credits the account. No rate, no fee. A person does this; the agent has no tool for it. Core accounts are simulated in this prototype.</p>
+<table>
+  <tr><th>Company</th><th>Account</th><th class="num">Balance</th><th>After a tCZK payment</th></tr>
+  {% for a in accounts %}<tr><td>{{ a.name }}</td><td class="mono">{{ a.masked }}</td><td class="num">{{ a.balance|money('tCZK') }}</td>
+    <td class="small">{{ 'paid out to the bank account automatically' if a.payout_mode == 'account' else 'stays in the wallet' }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No accounts (run python -m scripts.seed).</td></tr>{% endfor %}
+</table>
+{% if ramp_off %}<div class="banner sim" style="margin-top:8px">Deposits and withdrawals are off: {{ ramp_off }}.</div>
+{% else %}
+<div class="flex" style="margin-top:8px">
+  {% for action, label in (('deposit', 'Top up the wallet from the account'), ('withdraw', 'Withdraw to the account')) %}
+  <form method="post" action="/ramp/{{ action }}" class="flex">
+    <input type="hidden" name="company_id" value="{{ owner }}">
+    <input name="amount" value="100,00" size="9" inputmode="decimal" aria-label="Amount in Kč"> Kč
+    <button type="submit"{% if action == 'withdraw' %} class="ghost"{% endif %}>{{ label }}</button></form>
+  {% endfor %}
+</div>
+{% endif %}
+{% if ramp_ops %}<table class="small" style="margin-top:8px"><tr><th>When</th><th>Operation</th><th class="num">Amount</th><th>State</th><th>Tx</th></tr>
+  {% for o in ramp_ops %}{% set x = o.tx_hash|tx %}<tr><td>{{ o.created_at|ts }}</td><td>{{ {'deposit': 'account → wallet (mint)', 'withdraw': 'wallet → account (burn)', 'payout': 'payout to the seller (burn)'}[o.direction] }} · {{ o.name or o.company_id }}{% if o.deal_id %} · <a href="/deals/{{ o.deal_id }}"><code>{{ o.deal_id }}</code></a>{% endif %}</td>
+    <td class="num">{{ o.amount|money('tCZK') }}</td><td>{{ o.state }}</td>
+    <td>{% if x %}{% if x.url %}<a class="mono" href="{{ x.url }}" target="_blank" rel="noopener">{{ x.short }}</a>{% else %}<span class="mono">{{ x.short }}</span> <span class="muted">simulated</span>{% endif %}{% endif %}</td></tr>{% endfor %}
+</table>{% endif %}
 <h2>Reconcile with the chain</h2>
-<p class="muted small">Reads <code>paymentState</code> of every escrow lock from the chain and compares the capturable amount with our ledger.</p>
+<p class="muted small">Reads <code>paymentState</code> of every escrow lock from the chain and compares the capturable amount with our ledger; then the tCZK <code>totalSupply</code> against the bank's books.</p>
 <button hx-get="/statement/reconcile?mandate_id={{ mandate_id }}" hx-target="#recon" hx-swap="innerHTML">Read the chain and reconcile</button>
 <div id="recon" style="margin-top:12px"></div>
 {% endblock %}

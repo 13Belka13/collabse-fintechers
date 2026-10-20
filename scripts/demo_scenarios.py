@@ -287,6 +287,6 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.sim:
         from scripts import demo_sim, seed
-        seed.seed()
         demo_sim.install()
+        seed.seed()
     print(json.dumps(run(a.scenario), indent=2, ensure_ascii=False, default=str))

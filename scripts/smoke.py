@@ -82,6 +82,18 @@ class Smoke:
                     low.append(f"buyer {asset} {units:.2f} < {MIN[asset]}")
         return not low, "; ".join(low) if low else ", ".join(parts)
 
+    def issuer(self):
+        """Every ramp mint/burn and every payout to a seller's account is sent by the key holding ISSUER_ROLE on tCZK."""
+        from bank import tczk
+        a = self.addr("admin")
+        if a is None:
+            return False, "no issuer key (TODO(credential): BANK_ADMIN_PK)"
+        if tczk.is_prep():
+            return True, "prep token: the ramp is off, no issuer needed"
+        role = tczk.token().functions.hasRole(tczk.ROLES["ISSUER_ROLE"], a).call()
+        eth = chain.w3().eth.get_balance(a) / 1e18
+        return role and eth >= MIN["ETH"], f"{a} ISSUER_ROLE={role}, {eth:.6f} ETH (min {MIN['ETH']})"
+
     def unpaid_402(self):
         offer = httpx.post(f"{self.seller_url}/negotiate", timeout=config.NEGOTIATE_TIMEOUT_S, json={
             "deal_id": f"smoke-{int(time.time())}", "seller_id": "s-beta", "task": {"criteria": {"count": 1}}}).json()["offer"]
@@ -132,6 +144,7 @@ class Smoke:
         self.run("facilitator /x402/supported: EURC + tCZK", self.supported)
         self.run("RPC reachable, chain 84532", self.rpc)
         self.run("ETH / EURC / tCZK above thresholds", self.balances)
+        self.run("tCZK issuer key: ISSUER_ROLE + ETH for mint/burn", self.issuer)
         self.run("unpaid request → 402", self.unpaid_402)
         self.run("one LLM call", self.llm_call)
         self.run("ARES reachable", self.ares)

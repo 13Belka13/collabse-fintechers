@@ -85,12 +85,10 @@ def test_simulated_chain_uses_typical_gas():
     assert "simulated chain" in e["fee_note"]
 
 
-def test_ramp_mint_and_burn_count_once_when_the_table_exists():
+def test_ramp_mint_and_burn_count_once():
     d = deal("d-ramp", asset="tCZK", amount=12_500)
     tx(d, "authorize", 150_000)
-    assert economics.deal(d, FALLBACK)["gas"] == 150_000  # no ramp table in this build: still works
-    db.run("CREATE TABLE ramp_ops (ref TEXT PRIMARY KEY, company_id TEXT, direction TEXT, amount INTEGER,"
-           " deal_id TEXT, state TEXT, tx_hash TEXT, created_at REAL, updated_at REAL)")
+    assert economics.deal(d, FALLBACK)["gas"] == 150_000  # no ramp operation yet
     burn = tx(None, "tczk_burn", 48_000)
     db.run("INSERT INTO ramp_ops VALUES ('payout:d-ramp:1','beta','payout',12000,?,'done',?,0,0)", (d, burn))
     db.run("INSERT INTO ramp_ops VALUES ('payout:d-ramp:2','beta','payout',500,?,'done','0xsim',0,0)", (d,))

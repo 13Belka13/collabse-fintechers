@@ -80,8 +80,8 @@ def bank_frozen(addr: str) -> bool:
 
 # ---- admin writes (bank admin key) ----
 
-def _send(call, kind, idem_key=None):
-    return chain.sender(config.BANK_ADMIN_PK).send(call, kind=kind, idem_key=idem_key)
+def _send(call, kind, idem_key=None, gas=None, deal_id=None):
+    return chain.sender(config.BANK_ADMIN_PK).send(call, kind=kind, deal_id=deal_id, idem_key=idem_key, gas=gas)
 
 
 def allow(addr: str, ref: str | bytes) -> dict:
@@ -125,11 +125,13 @@ def mint(to: str, amount: int, ref: str) -> dict:
     return _send(call, "tczk_mint", idem_key=f"tczk:mint:{ref}")
 
 
-def burn(frm: str, amount: int, ref: str) -> dict:
+def burn(frm: str, amount: int, ref: str, gas: int | None = None, deal_id: str | None = None) -> dict:
+    """gas: set it when the tokens arrived in the previous tx (a payout right after a capture): a lagging node's gas
+    estimate would not see them yet and refuse a burn that will succeed in the next block."""
     if is_prep():
         raise RuntimeError("the prep token has no burn with a bank ref")
     call = token().functions.burn(Web3.to_checksum_address(frm), amount, bytes32(ref))
-    return _send(call, "tczk_burn", idem_key=f"tczk:burn:{ref}")
+    return _send(call, "tczk_burn", idem_key=f"tczk:burn:{ref}", gas=gas, deal_id=deal_id)
 
 
 # ---- deploy (fallback for script/Deploy.s.sol; same steps) ----
