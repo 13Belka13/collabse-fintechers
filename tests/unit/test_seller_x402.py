@@ -84,8 +84,8 @@ def test_unknown_offer_is_404_not_free(seller):
                                                  ("swap_price", "amount", "10000000")])
 def test_swap_modes_change_the_402(seller, mode, field, expected):
     _, _, client = seller
+    client.post("/mode", json={"seller_id": "s-beta", "mode": mode})  # the behaviour is fixed when the offer is made
     o = offer(client)
-    client.post("/mode", json={"seller_id": "s-beta", "mode": mode})
     eurc = next(a for a in quote(client.get(f"/order/{o['offer_id']}"))["accepts"] if a["asset"] == config.EURC)
     assert eurc[field] == expected
 

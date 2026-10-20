@@ -237,6 +237,20 @@ def test_full_custom_run_in_sim_completes_and_resets_sellers(client, sim):
     assert "Your deal: the bank approved the payment" in page and f"/deals/{view['deal_id']}" in page
 
 
+def test_a_deal_confirmed_after_the_sellers_reset_delivers_as_negotiated(client, sim):
+    """The QR approval scene: Gama honest at its 8 € floor, the bank asks a person, the sellers go back to their usual
+    behaviour (Gama: fake_data) before anyone approves. The delivery keeps the behaviour the offer was made with."""
+    from bank import deals
+    out = ds.run_safe("jury")
+    assert out["outcome"] == Code.CONFIRMATION_REQUIRED, out
+    deal_id = out["deals"]["s-gama"]
+    ds.reset_sellers(sim.seller_client())
+    assert sellers_state(sim)["s-gama"]["mode"] == "fake_data"
+    assert deals.confirm(deal_id, "human:alfa")["status"] == "ok"
+    items = db.rows("SELECT status FROM items WHERE deal_id=?", (deal_id,))
+    assert len(items) == 20 and {r["status"] for r in items} == {"accepted"}, items
+
+
 def test_mandate_edit_makes_a_version_that_pay_enforces(client, sim):
     m0 = mandate.current(mandate.DEMO_MANDATE_ID)
     form = {"per_deal_max": "3", "confirm_above": "2,50", "budget": "30", "task_budget_max": "",

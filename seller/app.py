@@ -283,6 +283,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         for s in app.state.sellers.values():
             s["mode"] = os.environ["SELLER_MODE"]
     app.state.offers = {}
+    app.state.setups = {}  # offer_id -> the seller's behaviour and data source when it made the offer
     app.state.negotiations = {}  # deal_id -> {"turns", "last"}: the seller's own memory of the haggling
     app.state.delivered = {}
     app.state.delivering = set()
@@ -295,8 +296,14 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     def offer_of(ctx) -> dict:
         return app.state.offers[ctx.path.rstrip("/").rsplit("/", 1)[-1]]
 
+    def setup_of(offer) -> dict:
+        """The behaviour the offer was negotiated with: a later /mode (the console resets the sellers once a run
+        ends) changes only future offers, never a deal a person confirms afterwards."""
+        live = app.state.sellers[offer["seller_id"]]
+        return app.state.setups.get(offer["offer_id"]) or {"mode": live["mode"], "data": live.get("data")}
+
     def mode_of(offer) -> str:
-        return app.state.sellers[offer["seller_id"]]["mode"]
+        return setup_of(offer)["mode"]
 
     def pay_to(ctx):
         offer = offer_of(ctx)
@@ -386,6 +393,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                  "deadline_s": min(DEADLINE_S, int(terms.get("deadline_s") or DEADLINE_S)),
                  "created_at": round(time.time(), 3)}
         app.state.offers[offer["offer_id"]] = offer
+        app.state.setups[offer["offer_id"]] = {"mode": seller["mode"], "data": seller.get("data")}
         reply = (f"{text} — {seller['name']}: {offer['items_spec']} for "  # the price line is code, not model
                  + " or ".join(money.fmt(a, int(offer["prices"][a])) for a in quoted) + ", delivery within 5 minutes.")
         if seller["mode"] == "injection":
@@ -397,13 +405,12 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
 
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]
-        data = app.state.sellers[offer["seller_id"]].get("data")
         return {"offer_id": offer_id, "deal_id": offer["deal_id"],
-                "items": make_items(offer["count"], mode, data, offer.get("predicates"))}
+                "items": make_items(offer["count"], mode, setup_of(offer)["data"], offer.get("predicates"))}
 
     def signed_delivery(offer_id: str, mode: str, version: int = 1) -> dict:
         offer = app.state.offers[offer_id]
-        items = make_items(offer["count"], mode, app.state.sellers[offer["seller_id"]].get("data"), offer.get("predicates"))
+        items = make_items(offer["count"], mode, setup_of(offer)["data"], offer.get("predicates"))
         manifest = {"deal_id": offer["deal_id"], "offer_hash": receipts.offer_hash(offer), "version": version,
                     "count": len(items), "merkle_root": receipts.merkle_root(items),
                     "nonce": "0x" + secrets.token_hex(32)}

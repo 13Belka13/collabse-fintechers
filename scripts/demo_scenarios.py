@@ -210,12 +210,15 @@ def run(name: str) -> dict:
     s = SCENARIOS[name]
     mandate.ensure_demo()
     bank, seller = _transport()
-    _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"), floor=s.get("floor"))
-
     call = _agent_call(bank)
-    # "jury": the agent stops at CONFIRMATION_REQUIRED; the bank pays by itself once a person approves (deals.confirm)
-    result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"],
-                   budget_eur_cents=s.get("budget", 500)).run()
+    try:
+        _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"), floor=s.get("floor"), rule="")
+        # "jury": the agent stops at CONFIRMATION_REQUIRED; the bank pays by itself once a person approves
+        # (deals.confirm) — with the behaviour the offer was made with, the seller keeps it per offer
+        result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"],
+                       budget_eur_cents=s.get("budget", 500)).run()
+    finally:  # no carry-over: the next button or console run starts from the sellers' usual behaviour
+        reset_sellers(seller)
     RUN.update(agent_text=result["text"])
     if not result["payments"] and name in ("suspicious", "sanctions_hit"):
         # the agent stopped at check_seller; show that the bank refuses even if an agent pushed on anyway

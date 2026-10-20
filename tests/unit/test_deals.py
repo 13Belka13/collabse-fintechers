@@ -162,8 +162,8 @@ def test_injection_text_is_journalled_as_untrusted(world):
 @pytest.mark.parametrize("mode,code,reason", [("swap_payto", "COUNTERPARTY_NOT_IN_SCOPE", "payto_not_registered"),
                                               ("swap_price", "QUOTE_MISMATCH", "amount_not_offer")])
 def test_swapped_402_is_refused_and_no_money_moves(world, mode, code, reason):  # N03 / N04
+    world.seller.post("/mode", json={"seller_id": "s-beta", "mode": mode})  # fixed for the offer it then makes
     deal_id, _ = new_deal(world)
-    world.seller.post("/mode", json={"seller_id": "s-beta", "mode": mode})
     r = world.bank.post(f"/api/deals/{deal_id}/pay")
     assert r.status_code == 200
     view = r.json()
