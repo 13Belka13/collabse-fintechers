@@ -193,7 +193,7 @@ flowchart TB
         SC["Screening<br/>ARES · VAT register · ISIR · EU sanctions · web footprint"]
         F["x402 facilitator<br/>/x402/verify · /settle · /supported<br/>EURC and tCZK, screening in verify and settle"]
         E["Escrow operator<br/>authorize · capture (fee to clearing) · void"]
-        R["Delivery and rules<br/>signed manifest · Merkle root · predicates · A &lt; B &lt; C · claims · drand deciders"]
+        R["Delivery and rules<br/>signed manifest · Merkle root · predicates · rules A, B, C · claims · drand deciders"]
         K["Accounts and ramp<br/>CZK ↔ tCZK · payout to the seller's account"]
         J["Journal and statement<br/>hash chain · chain reconciliation"]
     end
