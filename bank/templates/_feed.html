@@ -48,6 +48,8 @@
       {% elif r.event == 'x402_refused' %}x402 transfer refused by the bank: <code>{{ p.code }}</code>
       {% elif r.event == 'demo.scenario' %}Demo scenario “{{ p.title }}”: {{ p.outcome or 'started' }}
       {% elif r.event == 'settlement.tx_failed' %}Transaction failed, retried on the next tick with the same idempotency key: {{ p.error }}
+      {% elif r.event == 'agent_unavailable' %}The buyer's AI agent stopped ({{ p.kind }}): nothing more is paid
+      {% elif r.event == 'seller_unavailable' %}The seller did not answer in time or failed; the offer is unchanged
       {% else %}{{ p }}{% endif %}
       </span>
       <span class="right small muted">by <code>{{ r.actor }}</code>{% if r.deal_id %} · deal <a href="/deals/{{ r.deal_id }}">{{ r.deal_id }}</a>{% endif %}</span>

@@ -35,6 +35,19 @@ def reload():
     g["BEDROCK_CLIENT"] = _env("BEDROCK_CLIENT", "invoke")  # invoke = AnthropicBedrock (InvokeModel), or mantle
     g["MODEL_MAIN"] = _env("MODEL_MAIN", "eu.anthropic.claude-opus-4-5-20251101-v1:0")
     g["MODEL_FAST"] = _env("MODEL_FAST", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
+    # Bedrock timeouts (bank/llm.py). Each HTTP attempt: connect LLM_CONNECT_S, read per role; retries with backoff
+    # on throttling / 5xx / timeouts; the whole call (all attempts, json_call's validation retry included) has a
+    # wall-clock budget per stage. They nest inside the HTTP timeouts below: seller model 20 s < bank -> seller
+    # /negotiate 30 s < agent -> bank 45 s. A model that does not answer in time = a code-written fallback.
+    g["LLM_CONNECT_S"] = float(_env("LLM_CONNECT_S", "5"))
+    g["LLM_READ_S"] = {"main": float(_env("LLM_READ_S_MAIN", "60")), "fast": float(_env("LLM_READ_S_FAST", "30"))}
+    g["LLM_RETRIES"] = int(_env("LLM_RETRIES", "2"))  # extra attempts after the first
+    g["LLM_BACKOFF_S"] = float(_env("LLM_BACKOFF_S", "0.5"))  # 0.5, 1, 2 s ... plus jitter, within the budget
+    g["LLM_BUDGET_S"] = {"seller": float(_env("LLM_BUDGET_S_SELLER", "20")), "buyer": 40.0, "criteria": 20.0,
+                         "explain": 10.0, "*": float(_env("LLM_BUDGET_S", "60"))}
+    g["LLM_FAULT_SLOW_S"] = float(_env("LLM_FAULT_SLOW_S", "8"))  # FAULTS=llm_slow: the model answers this late
+    g["NEGOTIATE_TIMEOUT_S"] = float(_env("NEGOTIATE_TIMEOUT_S", "30"))  # bank -> seller /negotiate (model inside)
+    g["BANK_HTTP_TIMEOUT_S"] = float(_env("BANK_HTTP_TIMEOUT_S", "45"))  # agent -> bank API (negotiate inside)
 
     g["CZK_PER_EUR_DEMO"] = int(_env("CZK_PER_EUR_DEMO", "25"))
     g["SCENARIO_PRICE_EUR"] = _env("SCENARIO_PRICE_EUR", "0.10")

@@ -84,7 +84,9 @@ def _transport():
         from bank.app import app
         client = TestClient(app)
         return client, demo_sim.seller_client()
-    return httpx.Client(base_url=config.BANK_URL, timeout=30), httpx.Client(base_url=config.SELLER_URL, timeout=10)
+    # the agent waits on the bank longer than the bank waits on the seller (whose model has its own budget)
+    return (httpx.Client(base_url=config.BANK_URL, timeout=config.BANK_HTTP_TIMEOUT_S),
+            httpx.Client(base_url=config.SELLER_URL, timeout=10))
 
 
 def _set_seller(seller_api, sid: str, mode: str, say=None, opening="min", data=None, check=True):

@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS journal (
 CREATE TABLE IF NOT EXISTS timings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, deal_id TEXT, stage TEXT NOT NULL,
   ms REAL NOT NULL, ok INTEGER NOT NULL, model TEXT, input_tokens INTEGER, output_tokens INTEGER,
-  cache_read_tokens INTEGER, cache_write_tokens INTEGER, cost_usd REAL);
+  cache_read_tokens INTEGER, cache_write_tokens INTEGER, cost_usd REAL, error TEXT);
 CREATE TABLE IF NOT EXISTS seller_keys (
   seller_id TEXT NOT NULL, address TEXT NOT NULL, registered_at REAL NOT NULL, revoked_at REAL,
   PRIMARY KEY (seller_id, address));

@@ -35,7 +35,7 @@ def main() -> int:
     if args.asset not in health["assets"]:
         print(f"seller does not quote {args.asset}: {health}")
         return 1
-    offer = httpx.post(f"{config.SELLER_URL}/negotiate", timeout=10, json={
+    offer = httpx.post(f"{config.SELLER_URL}/negotiate", timeout=config.NEGOTIATE_TIMEOUT_S, json={
         "deal_id": f"l1-{int(time.time())}", "seller_id": args.seller_id,
         "task": {"criteria": {"count": args.count}}}).json()["offer"]
     amount = int(offer["prices"][args.asset])

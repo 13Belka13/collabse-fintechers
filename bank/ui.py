@@ -23,6 +23,8 @@ INFO_EVENTS = {"settlement.opened", "delivery.autocodes", "delivery.refused", "d
                "claim_b.filed", "settlement.accepted", "settlement.closed", "settlement.tx_failed",
                "escrow_expiry_alarm", "timer_error", "x402_refused", "demo.scenario"}
 BAD_EVENTS = {"escrow_expiry_alarm", "timer_error", "settlement.tx_failed", "x402_refused", "delivery.refused"}
+INFO_EVENTS |= {"agent_unavailable", "seller_unavailable"}  # a slow / failing model or seller shows, never silent
+BAD_EVENTS |= {"agent_unavailable", "seller_unavailable"}
 STEP_TEXT = {"delivery": "Waiting for the delivery", "window": "Claim window open", "settling": "Settling",
              "dispute_c": "C dispute: only the disputed sum stays in escrow", "closed": "Settled"}
 

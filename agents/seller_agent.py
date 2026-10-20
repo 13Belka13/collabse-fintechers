@@ -79,9 +79,19 @@ MAX_TURNS = 3  # SPEC §15 L7: negotiation up to 3 turns, then the last price is
 
 def price_turn(message: str, *, list_cents: int, min_cents: int, turn: int, last_cents: int | None,
                opening_cents: int, seller: dict | None = None, deal_id: str | None = None) -> tuple[str, int]:
-    """One negotiation turn of the seller service -> (reply_text, price in euro cents).
+    """One negotiation turn of the seller service -> (reply_text, price in euro cents); see negotiate_turn."""
+    out = negotiate_turn(message, list_cents=list_cents, min_cents=min_cents, turn=turn, last_cents=last_cents,
+                         opening_cents=opening_cents, seller=seller, deal_id=deal_id)
+    return out["reply_text"], out["price_eur_cents"]
+
+
+def negotiate_turn(message: str, *, list_cents: int, min_cents: int, turn: int, last_cents: int | None,
+                   opening_cents: int, seller: dict | None = None, deal_id: str | None = None) -> dict:
+    """One negotiation turn of the seller service -> {reply_text, price_eur_cents, ai_generated}.
     Code owns the price: the opening price on the first turn, then the buyer's counter clamped to
-    [minimum, previous price] (never up), frozen after MAX_TURNS. The model only phrases the reply."""
+    [minimum, previous price] (never up), frozen after MAX_TURNS. The model only phrases the reply; a model that
+    fails, refuses or does not answer within the stage budget (config.LLM_BUDGET_S["seller"]) -> the code-written
+    template, ai_generated=False (AI Act Art. 50 label only on model text)."""
     counter = counter_cents(message)
     previous = last_cents if last_cents is not None else opening_cents
     if turn > MAX_TURNS or counter is None:
@@ -97,10 +107,11 @@ def price_turn(message: str, *, list_cents: int, min_cents: int, turn: int, last
               f"Proposed price (euro cents): {target}. Write the reply for this price.")
     default = Turn(reply_text=("Final offer: " if final else "We can deliver for ") + f"{target / 100:.2f} €.",
                    price_eur_cents=target)
-    turn_out, _ = llm.json_call("main", system, prompt, Turn, default, stage="seller", deal_id=deal_id)
+    turn_out, ok = llm.json_call("main", system, prompt, Turn, default, stage="seller", deal_id=deal_id)
     # the model's text is used only if it states the code's price; otherwise the template wins
-    text = turn_out.reply_text if turn_out.price_eur_cents == target else default.reply_text
-    return text, target
+    used = ok and turn_out.price_eur_cents == target and bool(turn_out.reply_text.strip())
+    return {"reply_text": turn_out.reply_text if used else default.reply_text, "price_eur_cents": target,
+            "ai_generated": used and not config.MOCK}
 
 
 def quote(offer: dict, wallet: str, mode: str = "honest", swap: str = "pay_to") -> dict:

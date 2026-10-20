@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from web3 import Web3
 from x402 import x402FacilitatorSync
 from x402.mechanisms.evm import FacilitatorWeb3Signer
@@ -204,7 +204,11 @@ def _settle_refused(reason: str, body: dict, message: str | None = None) -> dict
 
 @router.get("/supported")
 def supported():
-    sup = facilitator().get_supported()
+    try:
+        sup = facilitator().get_supported()
+    except RuntimeError as e:  # no relayer key (TODO(credential)): a clear 503, the seller falls back to x402.org
+        log.warning("x402 supported: %s", e)
+        raise HTTPException(503, str(e)) from e
     kinds = [k.model_dump(by_alias=True, exclude_none=True) for k in sup.kinds
              if k.x402_version == 2 and k.network == config.NETWORK]
     assets = [{"asset": symbol, "address": m["address"], "decimals": m["decimals"],
@@ -249,6 +253,14 @@ def settle(body: dict = Body(...)):
                 result = facilitator().settle(payload, requirements)
             except PaymentAbortedError as e:
                 return _settle_refused(e.reason, body)
+            except Exception as e:  # noqa: BLE001 — RPC / signer error: a clean failure, never a 500 (the resource
+                # server then answers no delivery); a retry is safe — one idempotency key per EIP-3009 authorization
+                log.exception("x402 settle failed")
+                journal.append("bank", "x402_settle_failed", {"payer": _payer(body), "pay_to": requirements.pay_to,
+                                                              "asset": requirements.asset, "amount": requirements.amount,
+                                                              "reason": "facilitator_error",
+                                                              "error": f"{type(e).__name__}: {str(e)[:200]}"})
+                return _settle_refused("facilitator_error", body, "the bank could not settle now; retry later")
             if result.success or not _retryable(result):
                 break
             journal.append("bank", "x402_settle_retry", {"attempt": attempt + 1, "reason": result.error_reason,
