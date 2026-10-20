@@ -8,6 +8,7 @@
 # Run: uvicorn seller.app:app --port 8001   (after the bank: the x402 middleware calls {facilitator}/supported)
 import hmac
 import json
+import math
 import os
 import secrets
 import time
@@ -90,18 +91,33 @@ def recorded_items(count: int) -> list[dict]:
     return [dict(it) for it in (good + rest)[:count]]
 
 
-def company_items(count: int, mode: str) -> list[dict]:
-    """Warehouse companies in Brno with IČO (synthetic, fixtures/registries/items.json) in the shape the buyer's
-    terms check: ico, name, seat, postcode, website, category, rating, founding date."""
+def score_floor(predicates: list[dict] | None) -> float:
+    """The lowest rating the buyer's terms accept (range on totalScore), rounded up to the scale's 0.1 steps."""
+    lo = 4.2  # the usual spread: 4.2 to 4.8
+    for p in predicates or []:
+        if p.get("op") == "range" and p.get("field") == "totalScore":
+            if p.get("gt") is not None:
+                lo = max(lo, math.floor(float(p["gt"]) * 10 + 1e-9) / 10 + 0.1)
+            if p.get("gte") is not None:
+                lo = max(lo, math.ceil(float(p["gte"]) * 10 - 1e-9) / 10)
+    return round(min(lo, 5.0), 1)
+
+
+def company_items(count: int, mode: str, predicates: list[dict] | None = None) -> list[dict]:
+    """Warehouse companies in Brno with IČO (synthetic, fixtures/registries/items.json: 40 alive) in the shape the
+    buyer's terms check: ico, name, seat, postcode, website, category, rating, founding date. Ratings stay above the
+    buyer's minimum, so an honest seller meets the terms it agreed to."""
     ares = json.loads(COMPANIES.read_text(encoding="utf-8"))["ares"]
     alive = [b for b in ares.values() if not b.get("datumZaniku")]
     dead = [b for b in ares.values() if b.get("datumZaniku")]
+    lo = score_floor(predicates)
+    steps = 7 if lo == 4.2 else round((5.0 - lo) * 10) + 1
 
     def item(b, i):
         psc = str(b["sidlo"]["psc"])
         return {"ico": b["ico"], "name": b["obchodniJmeno"], "address": b["sidlo"]["textovaAdresa"],
                 "city": "Brno", "postalCode": f"{psc[:3]} {psc[3:]}", "website": f"https://{b['ico']}.example",
-                "categoryName": "Skladování a logistika", "totalScore": round(4.2 + (i % 7) / 10, 1),
+                "categoryName": "Skladování a logistika", "totalScore": round(lo + (i % steps) / 10, 1),
                 "founded": b["datumVzniku"]}
     items = [item(b, i) for i, b in enumerate(alive[:count])]
     if mode == "fake_data" and count >= 3:  # §14 episode 2: three items break the agreed terms
@@ -123,7 +139,7 @@ def make_items(count: int, mode: str, data: str | None = None, predicates: list[
     "apify": live Google Maps places for the buyer's own predicates (seller/maps_live.py, recorded on failure)."""
     data = data or os.getenv("SELLER_DATA", "").strip()
     if data not in ("maps", "places", "apify"):
-        return company_items(count, mode)
+        return company_items(count, mode, predicates)
     if data == "apify" or (data == "maps" and RECORDED_MAPS.exists()):
         if data == "apify":
             items, meta = maps_live.places(count, predicates)
@@ -283,6 +299,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         for s in app.state.sellers.values():
             s["mode"] = os.environ["SELLER_MODE"]
     app.state.offers = {}
+    app.state.setups = {}  # offer_id -> the seller's behaviour and data source when it made the offer
     app.state.negotiations = {}  # deal_id -> {"turns", "last"}: the seller's own memory of the haggling
     app.state.delivered = {}
     app.state.delivering = set()
@@ -295,8 +312,14 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     def offer_of(ctx) -> dict:
         return app.state.offers[ctx.path.rstrip("/").rsplit("/", 1)[-1]]
 
+    def setup_of(offer) -> dict:
+        """The behaviour the offer was negotiated with: a later /mode (the console resets the sellers once a run
+        ends) changes only future offers, never a deal a person confirms afterwards."""
+        live = app.state.sellers[offer["seller_id"]]
+        return app.state.setups.get(offer["offer_id"]) or {"mode": live["mode"], "data": live.get("data")}
+
     def mode_of(offer) -> str:
-        return app.state.sellers[offer["seller_id"]]["mode"]
+        return setup_of(offer)["mode"]
 
     def pay_to(ctx):
         offer = offer_of(ctx)
@@ -386,6 +409,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
                  "deadline_s": min(DEADLINE_S, int(terms.get("deadline_s") or DEADLINE_S)),
                  "created_at": round(time.time(), 3)}
         app.state.offers[offer["offer_id"]] = offer
+        app.state.setups[offer["offer_id"]] = {"mode": seller["mode"], "data": seller.get("data")}
         reply = (f"{text} — {seller['name']}: {offer['items_spec']} for "  # the price line is code, not model
                  + " or ".join(money.fmt(a, int(offer["prices"][a])) for a in quoted) + ", delivery within 5 minutes.")
         if seller["mode"] == "injection":
@@ -397,13 +421,12 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
 
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]
-        data = app.state.sellers[offer["seller_id"]].get("data")
         return {"offer_id": offer_id, "deal_id": offer["deal_id"],
-                "items": make_items(offer["count"], mode, data, offer.get("predicates"))}
+                "items": make_items(offer["count"], mode, setup_of(offer)["data"], offer.get("predicates"))}
 
     def signed_delivery(offer_id: str, mode: str, version: int = 1) -> dict:
         offer = app.state.offers[offer_id]
-        items = make_items(offer["count"], mode, app.state.sellers[offer["seller_id"]].get("data"), offer.get("predicates"))
+        items = make_items(offer["count"], mode, setup_of(offer)["data"], offer.get("predicates"))
         manifest = {"deal_id": offer["deal_id"], "offer_hash": receipts.offer_hash(offer), "version": version,
                     "count": len(items), "merkle_root": receipts.merkle_root(items),
                     "nonce": "0x" + secrets.token_hex(32)}

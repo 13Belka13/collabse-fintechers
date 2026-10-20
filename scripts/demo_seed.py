@@ -12,7 +12,7 @@ os.environ.setdefault("BANK_TIMER", "0")
 def main():
     import time
 
-    from bank import db, deadlines, deals, disputes, mandate
+    from bank import config, db, deadlines, deals, disputes, mandate
     from scripts import demo_scenarios, demo_sim, seed
     demo_sim.install()  # first: the seed records the simulator's tCZK supply, never the live chain's
     seed.seed()
@@ -36,6 +36,9 @@ def main():
     deadlines.tick(now=time.time() + 3600)
     for name in ("attack", "suspicious", "sanctions_hit", "tczk"):
         out[name] = demo_scenarios.run(name)["deals"]
+    # past the longest claim window (the tCZK deal is T2 after Beta's honest deal): no window and no B slot stays
+    # open when the presenter starts, and the rest of every seeded deal is paid out
+    deadlines.tick(now=time.time() + config.WINDOW_S["T2"][0] + 60)
     print("seeded:", out, "into", db.config.DB_PATH)
 
 

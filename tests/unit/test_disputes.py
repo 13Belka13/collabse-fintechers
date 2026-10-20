@@ -86,6 +86,7 @@ def test_one_b_claim_per_deal_and_none_without_a_slot(w):
 
 def test_b_slots_are_reserved_at_pay_new_buyer_gets_two(w):
     """15 parallel deals of a new buyer do not give 15 refunds: open B deals hold slots (§7B)."""
+    db.run("UPDATE companies SET prior_deals=0 WHERE id='alfa'")  # the seed makes Alfa an established client
     assert disputes.b_availability("alfa", "s-beta", now=T0)["available"]
     k.make_deal(w, deal_id="d-b1", now=T0)
     assert disputes.b_availability("alfa", "s-gama", now=T0)["available"]
@@ -93,6 +94,10 @@ def test_b_slots_are_reserved_at_pay_new_buyer_gets_two(w):
     a = disputes.b_availability("alfa", "s-gama", now=T0)
     assert not a["available"] and a["reason"] == "b_pair_limit" or a["reason"] == "b_new_buyer_limit"
     assert not disputes.b_availability("alfa", "s-beta", now=T0)["available"]
+    # with its earlier deals with the bank Alfa is not a new buyer: only the pair limit holds
+    db.run("UPDATE companies SET prior_deals=? WHERE id='alfa'", (disputes.B_NEW_BUYER_DEALS,))
+    assert disputes.b_availability("alfa", "s-gama", now=T0)["available"]
+    assert disputes.b_availability("alfa", "s-beta", now=T0)["reason"] == "b_pair_limit"
 
 
 def test_b_limits_count_back_over_the_demo_scaled_30_days(w):

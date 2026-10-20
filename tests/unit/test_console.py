@@ -238,6 +238,20 @@ def test_full_custom_run_in_sim_completes_and_resets_sellers(client, sim):
     assert "Your deal: the bank approved the payment" in page and f"/deals/{view['deal_id']}" in page
 
 
+def test_a_deal_confirmed_after_the_sellers_reset_delivers_as_negotiated(client, sim):
+    """The QR approval scene: Gama honest at its 8 € floor, the bank asks a person, the sellers go back to their usual
+    behaviour (Gama: fake_data) before anyone approves. The delivery keeps the behaviour the offer was made with."""
+    from bank import deals
+    out = ds.run_safe("jury")
+    assert out["outcome"] == Code.CONFIRMATION_REQUIRED, out
+    deal_id = out["deals"]["s-gama"]
+    ds.reset_sellers(sim.seller_client())
+    assert sellers_state(sim)["s-gama"]["mode"] == "fake_data"
+    assert deals.confirm(deal_id, "human:alfa")["status"] == "ok"
+    items = db.rows("SELECT status FROM items WHERE deal_id=?", (deal_id,))
+    assert len(items) == 20 and {r["status"] for r in items} == {"accepted"}, items
+
+
 def test_mandate_edit_makes_a_version_that_pay_enforces(client, sim):
     m0 = mandate.current(mandate.DEMO_MANDATE_ID)
     form = {"per_deal_max": "3", "confirm_above": "2,50", "budget": "30", "task_budget_max": "",
@@ -297,6 +311,47 @@ def test_five_scenarios_twice_in_a_row_keep_their_outcomes(client, sim, monkeypa
     half = len(ds.SCENARIOS)
     assert runs[:half] == runs[half:], runs
     assert ("tczk", "ok", "B") in runs[:half] and runs[1] == ("fake_data", "ok", "B"), runs
+
+
+def test_every_button_twice_back_to_back_asks_a_person_only_where_intended(client, sim):
+    """Alfa is an established client (prior_deals, scripts/seed.py): the new-buyer B limit does not stop the
+    scripted demo, with no clock shift between the rounds. Only the jury scene asks for a confirmation (Beta in
+    EURC asks about the VAT risk instead, until it is acknowledged)."""
+    runs = [(name, (ds.run_safe(name) or {}).get("outcome")) for _ in (1, 2) for name in ds.SCENARIOS]
+    for name, outcome in runs:
+        assert (outcome == Code.CONFIRMATION_REQUIRED) == (name == "jury") and outcome, runs
+    assert runs.count(("fake_data", "ok")) == runs.count(("tczk", "ok")) == 2, runs
+    assert runs.count(("honest", Code.VAT_LIABILITY_RISK)) == 2, runs
+
+
+def test_after_demo_seed_no_window_stays_open_and_the_scenes_run(client, sim):
+    """The keyless fallback (scripts/demo_seed) files a B claim and leaves a T2 deal with Beta: the presenter's
+    first scenes still go through, not CONFIRMATION_REQUIRED b_new_buyer_limit."""
+    from bank import disputes
+    from scripts import demo_seed
+    demo_seed.main()
+    assert db.rows("SELECT deal_id FROM settlements WHERE closed_at IS NULL AND window_end_at IS NOT NULL") == []
+    assert db.rows("SELECT deal_id FROM claims WHERE buyer_id='alfa' AND rule='B'")  # the seeded claim counts
+    assert disputes.b_availability("alfa", "s-beta")["available"]
+    runs = [(name, (ds.run_safe(name) or {}).get("outcome")) for name in ("honest", "fake_data", "tczk")]
+    assert runs == [("honest", "ok"), ("fake_data", "ok"), ("tczk", "ok")], runs
+
+
+@pytest.mark.parametrize("task", ds.TASKS)
+def test_every_preset_task_is_met_by_an_honest_seller_with_the_default_data(client, sim, task):
+    """The console's chips with the default form (companies, Honest): every item delivered and accepted. 40 items
+    cost 10 € (budget 10 €, above the 6 € threshold): a person confirms, as on stage."""
+    from bank import deals
+    count = int(task.split()[0])
+    p = ds.custom_params({**FORM, "task": task, "seller": "s-gama", "budget": "10" if count > 20 else "5"})
+    out = ds.run_safe("custom", p)
+    deal_id = out["deals"]["s-gama"]
+    if count > 20:
+        assert out["outcome"] == Code.CONFIRMATION_REQUIRED, out
+        out = deals.confirm(deal_id, "human:alfa")
+    assert out.get("outcome", out.get("status")) == "ok", out
+    items = db.rows("SELECT status, code FROM items WHERE deal_id=?", (deal_id,))
+    assert len(items) == count and {r["status"] for r in items} == {"accepted"}, items
 
 
 # ---- the buyer's wallet: tCZK by default, balances next to the form, no run the wallet cannot pay ----

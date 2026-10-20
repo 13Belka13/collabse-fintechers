@@ -1,5 +1,5 @@
 {
- "_note": "Synthetic warehouse companies in Brno for the item deliveries (MODEL_V2 §14 episodes 2-3). IČO pass the mod-11 checksum and returned 404 in ARES on 2026-10-20, so they belong to no real company; names, seats and dates are invented. The bank answers registry_active and the ARES source snapshot for these IČO from this file in demo mode (screening.fixture), never from live ARES. No personal data.",
+ "_note": "Synthetic warehouse companies in Brno for the item deliveries (MODEL_V2 §14 episodes 2-3). IČO pass the mod-11 checksum and returned 404 in ARES on 2026-10-20 (all 41; 40 alive, one closed), so they belong to no real company; names, seats and dates are invented. The bank answers registry_active and the ARES source snapshot for these IČO from this file in demo mode (screening.fixture), never from live ARES. No personal data.",
  "ares": {
   "97537071": {
    "ico": "97537071",
@@ -623,6 +623,237 @@
     "cisloDomovni": 38,
     "psc": 60200,
     "textovaAdresa": "Plotní 38, Trnitá, 60200 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "98118480": {
+   "ico": "98118480",
+   "obchodniJmeno": "Sklady Bosonohy s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2004-03-15",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Pražská",
+    "cisloDomovni": 41,
+    "psc": 64200,
+    "textovaAdresa": "Pražská 41, Bosonohy, 64200 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "94820490": {
+   "ico": "94820490",
+   "obchodniJmeno": "Logistika Bohunice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2006-07-02",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Netroufalky",
+    "cisloDomovni": 8,
+    "psc": 62500,
+    "textovaAdresa": "Netroufalky 8, Bohunice, 62500 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "97813478": {
+   "ico": "97813478",
+   "obchodniJmeno": "Skladový areál Starý Lískovec s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2001-10-19",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Labská",
+    "cisloDomovni": 23,
+    "psc": 62500,
+    "textovaAdresa": "Labská 23, Starý Lískovec, 62500 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "96835001": {
+   "ico": "96835001",
+   "obchodniJmeno": "Skladování Nový Lískovec s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2009-02-27",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Kamenice",
+    "cisloDomovni": 5,
+    "psc": 63400,
+    "textovaAdresa": "Kamenice 5, Nový Lískovec, 63400 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "98577727": {
+   "ico": "98577727",
+   "obchodniJmeno": "Překladiště Řečkovice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2012-05-08",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Palackého třída",
+    "cisloDomovni": 120,
+    "psc": 62100,
+    "textovaAdresa": "Palackého třída 120, Řečkovice, 62100 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "93289626": {
+   "ico": "93289626",
+   "obchodniJmeno": "Distribuční centrum Kohoutovice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2007-09-30",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Libušina třída",
+    "cisloDomovni": 14,
+    "psc": 62300,
+    "textovaAdresa": "Libušina třída 14, Kohoutovice, 62300 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "92229557": {
+   "ico": "92229557",
+   "obchodniJmeno": "Sklad a logistika Vinohrady s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2015-01-21",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Pálavské náměstí",
+    "cisloDomovni": 3,
+    "psc": 62800,
+    "textovaAdresa": "Pálavské náměstí 3, Vinohrady, 62800 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "95047590": {
+   "ico": "95047590",
+   "obchodniJmeno": "Skladovací služby Horní Heršpice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2003-06-11",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Vídeňská",
+    "cisloDomovni": 96,
+    "psc": 61900,
+    "textovaAdresa": "Vídeňská 96, Horní Heršpice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "90653939": {
+   "ico": "90653939",
+   "obchodniJmeno": "Logistické centrum Dolní Heršpice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2010-11-04",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Havránkova",
+    "cisloDomovni": 30,
+    "psc": 61900,
+    "textovaAdresa": "Havránkova 30, Dolní Heršpice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "96823666": {
+   "ico": "96823666",
+   "obchodniJmeno": "Expediční sklad Přízřenice s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2008-04-17",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Modřická",
+    "cisloDomovni": 62,
+    "psc": 61900,
+    "textovaAdresa": "Modřická 62, Přízřenice, 61900 Brno"
+   },
+   "seznamRegistraci": {
+    "stavZdrojeVr": "AKTIVNI",
+    "stavZdrojeRes": "AKTIVNI",
+    "stavZdrojeDph": "NEEXISTUJICI",
+    "stavZdrojeIr": "NEEXISTUJICI",
+    "stavZdrojeCeu": "NEEXISTUJICI"
+   }
+  },
+  "99010615": {
+   "ico": "99010615",
+   "obchodniJmeno": "Sklady Mokrá Hora s.r.o.",
+   "pravniForma": "112",
+   "datumVzniku": "2013-08-26",
+   "sidlo": {
+    "kodStatu": "CZ",
+    "nazevObce": "Brno",
+    "nazevUlice": "Jinačovická",
+    "cisloDomovni": 18,
+    "psc": 62100,
+    "textovaAdresa": "Jinačovická 18, Mokrá Hora, 62100 Brno"
    },
    "seznamRegistraci": {
     "stavZdrojeVr": "AKTIVNI",

@@ -55,9 +55,11 @@ DATA_SOURCES = {"companies": "Warehouse companies with IČO (synthetic, checked 
                 "maps": "Google Maps places recorded once through Apify (Brno)",
                 "apify": "Google Maps places fetched live through Apify for your task (cached; recorded data on failure)"}
 PLACES = ("maps", "places", "apify")
+# Presets an honest seller can meet with the default data (synthetic Brno companies, 40 alive in the fixture);
+# Praha needs Google Maps places (data "apify"), so it is typed by the viewer, not offered as a chip
 TASKS = [TASK, "10 warehouses in Brno with rating above 4.5 and a website",
          "40 warehouses in Brno with rating above 4.0 and a website",
-         "20 warehouses in Praha with rating above 4.0 and a website"]
+         "15 warehouses in Brno with rating above 4.7 and a website"]
 OPENINGS = {"list": "Opens at its list price: the agents haggle", "min": "Opens at its minimum price"}
 RULES = {"": "The deal's default (B for this data)",
          "A": "A: no quality claims (this mandate requires B for data, so the bank refuses A)",
@@ -210,12 +212,15 @@ def run(name: str) -> dict:
     s = SCENARIOS[name]
     mandate.ensure_demo()
     bank, seller = _transport()
-    _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"), floor=s.get("floor"))
-
     call = _agent_call(bank)
-    # "jury": the agent stops at CONFIRMATION_REQUIRED; the bank pays by itself once a person approves (deals.confirm)
-    result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"],
-                   budget_eur_cents=s.get("budget", 500)).run()
+    try:
+        _set_seller(seller, s["seller"], s["mode"], opening=s.get("opening", "min"), floor=s.get("floor"), rule="")
+        # "jury": the agent stops at CONFIRMATION_REQUIRED; the bank pays by itself once a person approves
+        # (deals.confirm) — with the behaviour the offer was made with, the seller keeps it per offer
+        result = Buyer(TASK, transport=call, asset=s["asset"], seller_hint=s["seller"],
+                       budget_eur_cents=s.get("budget", 500)).run()
+    finally:  # no carry-over: the next button or console run starts from the sellers' usual behaviour
+        reset_sellers(seller)
     RUN.update(agent_text=result["text"])
     if not result["payments"] and name in ("suspicious", "sanctions_hit"):
         # the agent stopped at check_seller; show that the bank refuses even if an agent pushed on anyway
