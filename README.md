@@ -266,7 +266,7 @@ sequenceDiagram
     B->>P: Statement reconciled with the chain, journal hash-chained
 ```
 
-### Where the money is (fake-data deal: 20 items × 0,25 €, rule B 10 %, bank fee 1,2 %)
+### Where the money is (fake-data deal at demo scale: 20 items × 0,25 €, rule B 10 %, bank fee 1,2 %)
 
 1. After `authorize` all 5 € sit in the escrow's token store. Nobody can spend them; both sides see
    `paymentState`.
@@ -372,7 +372,7 @@ that no money moved.
 Running v2.6 on Base Sepolia found five problems no unit test could: the bank's tCZK fee receiver had to be on the
 token's allowlist; a zero-fee capture needed a fee receiver; the seller's key had to be registered again after a
 bank restart; a webhook could arrive before a lagging RPC node had the block; a slow live seller turn needed its
-own time budget. Each is fixed in the code on this branch.
+own time budget. Each is fixed in the code on `main`.
 
 ### Scenarios covered
 
@@ -527,7 +527,7 @@ below are the team's; in a bank pilot they are confirmed by the bank's counsel. 
 `COUNTERPARTY_NOT_TRUSTED`, `AMOUNT_ABOVE_LIMIT`, `BUDGET_EXCEEDED`, `QUOTE_MISMATCH`, `VELOCITY_EXCEEDED`,
 `TERMS_MISMATCH`, `CONFIRMATION_REQUIRED`, `VAT_LIABILITY_RISK`, `UNDER_REVIEW`.
 
-**Responsible AI in numbers** ([evals on live Bedrock](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run)):
+**Responsible AI in numbers** ([evals on live Bedrock, run of 19.10](reports/validation-sepolia.md#evals-spec-193--reportsevals-livejson-live-bedrock-run)):
 prompt injection blocked at the money level in **20/20** variants (50/50 runs); the live buyer on Claude Opus 4.5
 never tried a call the bank had to reject (0 of 17 runs); explanations cite only sources from the evidence
 (64/64) and never leak a non-public reason to the client (32/32).
