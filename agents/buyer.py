@@ -111,10 +111,29 @@ def extract_criteria(task_text: str, deal_id: str | None = None) -> dict | None:
     return value.model_dump() if ok else None
 
 
+def criteria_by_code(task_text: str) -> dict | None:
+    """When the model gives no criteria: read them by code only if the task states all of them — count, city and
+    minimum rating ('20 warehouses in Brno with rating above 4.0'); otherwise None and the agent stops. Never a
+    guessed default (the verifier pays on these)."""
+    count = re.search(r"\b(\d{1,4})\s+(?:warehouses|sklad\w*)", task_text, re.I)
+    city = re.search(r"\bin ([A-ZÁ-Ž][a-zá-ž]+)", task_text)
+    rating = re.search(r"(?:above|over|>)\s*(\d(?:[.,]\d)?)", task_text, re.I)
+    if not (count and city and rating):
+        return None
+    try:
+        return AcceptanceCriteria(count=int(count.group(1)), city=city.group(1),
+                                  min_rating_exclusive=float(rating.group(1).replace(",", ".")),
+                                  category_keywords=["sklad", "warehouse"],
+                                  require_website="website" in task_text.lower()).model_dump()
+    except ValidationError:
+        return None
+
+
 def http_transport(base_url: str | None = None, client=None, company_id: str = "alfa") -> Transport:
     """The bank API as this company's agent: the token decides whose money it may spend, not the request body."""
     import httpx
-    client = client or httpx.Client(base_url=base_url or config.BANK_URL, timeout=15)
+    # longer than the bank's own wait on the seller (/negotiate runs the seller's model): timeouts nest inside out
+    client = client or httpx.Client(base_url=base_url or config.BANK_URL, timeout=config.BANK_HTTP_TIMEOUT_S)
     token = next((t for t, c in config.AGENT_TOKENS.items() if c == company_id), "")
 
     def call(method, path, json=None, params=None):
@@ -187,14 +206,22 @@ class Buyer:
 
     # ---- the loop ----
     def run(self, max_turns: int = MAX_TURNS) -> dict:
+        self.deal_id, turns = None, 0
         self.task["criteria"] = extract_criteria(self.task["text"])
+        if self.task["criteria"] is None:  # the model gave none (down, slow, garbage): code, or stop — never a guess
+            self.task["criteria"] = criteria_by_code(self.task["text"])
+            journal.append("agent:buyer", "criteria_fallback", {"by": "code" if self.task["criteria"] else None,
+                                                                "criteria": self.task["criteria"]})
+            if self.task["criteria"] is None:
+                return self._result("criteria_unavailable", "Stopped before any deal: the acceptance criteria could "
+                                    "not be read from the task. A human states the count, the city and the minimum "
+                                    "rating, then runs the agent again. Nothing was paid.", turns)
         budget = int(self.task["budget"]["value"])
         intro = (f"Task from the human: {self.task['text']}\nTask budget: {budget / 100:.2f} € "
                  f"(pay in {self.task['asset']}).")
         if self.seller_hint:
             intro += f"\nPreferred seller: {self.seller_hint}"
         messages = [{"role": "user", "content": intro}]
-        self.deal_id, turns = None, 0
         try:
             resp = self._turn(messages)
             turns = 1
@@ -213,6 +240,12 @@ class Buyer:
                 turns += 1
         except llm.LLMRefusal as e:
             return self._result("model_refused", f"The model refused: {e}", turns)
+        except llm.LLMUnavailable as e:  # slow / failing model mid-loop: stop cleanly, the bank paid only what it decided
+            text = (f"The buyer's AI agent stopped: {e}. Nothing more is paid; "
+                    f"{len(self.payments)} payment request(s) were made before.")
+            journal.append("agent:buyer", "agent_unavailable", {"kind": e.kind, "text": text, "turns": turns},
+                           deal_id=self.deal_id)
+            return self._result("agent_unavailable", text, turns)
         return self._result("done", llm.text_of(resp), turns)
 
     def _turn(self, messages: list):

@@ -345,10 +345,11 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         opening = list_c if (seller.get("opening") or os.getenv("SELLER_OPENING", "min").strip()) == "list" else min_c
         state = app.state.negotiations.setdefault(body.deal_id, {"turns": 0, "last": None})
         state["turns"] += 1
-        text, cents = seller_agent.price_turn(body.message, list_cents=list_c, min_cents=min_c, turn=state["turns"],
-                                              last_cents=state["last"], opening_cents=opening,
-                                              seller={"name": seller["name"], "ico": seller["ico"]},
-                                              deal_id=body.deal_id)
+        said = seller_agent.negotiate_turn(body.message, list_cents=list_c, min_cents=min_c, turn=state["turns"],
+                                           last_cents=state["last"], opening_cents=opening,
+                                           seller={"name": seller["name"], "ico": seller["ico"]},
+                                           deal_id=body.deal_id)  # never raises: a slow model -> template text
+        text, cents = said["reply_text"], said["price_eur_cents"]
         state["last"] = cents
         offer = {"offer_id": "o-" + secrets.token_hex(6), "deal_id": body.deal_id, "seller_id": body.seller_id,
                  "items_spec": f"{count} warehouse companies in Brno, by the buyer's {len(terms.get('predicates') or [])}"
@@ -366,7 +367,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
         if seller.get("say"):  # the demo console's own seller text: goes out as written, the bank treats it as data
             reply += " " + seller["say"]
         return {"reply_text": reply, "offer": offer, "turn": state["turns"], "final": state["turns"] >= seller_agent.MAX_TURNS,
-                "ai_generated": not config.MOCK}  # AI Act Art. 50: the reply text is model-written when live
+                "ai_generated": said["ai_generated"]}  # AI Act Art. 50: only model-written text is labelled
 
     def deliver(offer_id: str, mode: str) -> dict:
         offer = app.state.offers[offer_id]

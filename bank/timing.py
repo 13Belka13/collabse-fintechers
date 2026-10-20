@@ -56,8 +56,10 @@ def timed(stage: str, deal_id: str | None = None):
                (time.time(), deal_id, stage, ms, ok))
 
 
-def log_llm(stage: str, deal_id: str | None, model: str, usage, ms: float, ok: bool = True) -> float:
-    """usage: response.usage from the Anthropic SDK (or a dict). Returns the estimated cost in USD."""
+def log_llm(stage: str, deal_id: str | None, model: str, usage, ms: float, ok: bool = True,
+            error: str | None = None) -> float:
+    """usage: response.usage from the Anthropic SDK (or a dict). Returns the estimated cost in USD.
+    Failed attempts are logged too (ok=0, error = llm.classify kind, 'cooldown' or 'late')."""
     if isinstance(usage, dict):
         get = lambda k: usage.get(k) or 0  # noqa: E731
     else:
@@ -66,8 +68,8 @@ def log_llm(stage: str, deal_id: str | None, model: str, usage, ms: float, ok: b
     cread, cwrite = get("cache_read_input_tokens"), get("cache_creation_input_tokens")
     cost = cost_usd(model, tin, tout, cread, cwrite)
     db.run("INSERT INTO timings (ts, deal_id, stage, ms, ok, model, input_tokens, output_tokens,"
-           " cache_read_tokens, cache_write_tokens, cost_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-           (time.time(), deal_id, stage, ms, int(ok), model, tin, tout, cread, cwrite, cost))
+           " cache_read_tokens, cache_write_tokens, cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+           (time.time(), deal_id, stage, ms, int(ok), model, tin, tout, cread, cwrite, cost, error))
     return cost
 
 
@@ -89,3 +91,21 @@ def llm_totals() -> dict:
     return db.one("SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input_tokens,"
                   " COALESCE(SUM(output_tokens),0) output_tokens, COALESCE(SUM(cost_usd),0) cost_usd"
                   " FROM timings WHERE model IS NOT NULL")
+
+
+def llm_stats() -> list[dict]:
+    """Per (model, stage): answered calls, failed attempts by kind, latency p50 / p95 / max of answered calls,
+    tokens and cost — failed attempts included, so a slow or failing Bedrock shows in the numbers."""
+    out = []
+    for g in db.rows("SELECT model, stage, COALESCE(SUM(input_tokens),0) input_tokens,"
+                     " COALESCE(SUM(output_tokens),0) output_tokens, COALESCE(SUM(cost_usd),0) cost_usd"
+                     " FROM timings WHERE model IS NOT NULL GROUP BY model, stage ORDER BY model, stage"):
+        rows = db.rows("SELECT ms, ok, error FROM timings WHERE model=? AND stage=?", (g["model"], g["stage"]))
+        ms = [r["ms"] for r in rows if r["ok"]]
+        failed: dict[str, int] = {}
+        for r in rows:
+            if not r["ok"]:
+                failed[r["error"] or "error"] = failed.get(r["error"] or "error", 0) + 1
+        out.append({**g, "n": len(ms), "failed": failed, "p50": percentile(ms, 50), "p95": percentile(ms, 95),
+                    "max": max(ms) if ms else None})
+    return out
