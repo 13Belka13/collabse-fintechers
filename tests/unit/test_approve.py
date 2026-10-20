@@ -126,6 +126,13 @@ def test_mandate_button_stays_the_fallback(web):
     assert approve.pending(deal_id) is None
 
 
+def test_price_floor_lasts_one_run_of_the_seller(web):
+    pending_deal(web)  # Gama at 8,00 €
+    web.seller.post("/mode", json={"seller_id": "s-gama", "mode": "fake_data"}).raise_for_status()  # next scenario
+    _, offer = deal(web, seller_id="s-gama", task=JURY_TASK)
+    assert offer["price_eur_cents"] == 500  # back to the usual minimum: the floor does not leak into other scenarios
+
+
 def test_qr_svg_carries_the_url():
     url = "https://63-182-160-195.sslip.io/approve/d-0123456789?t=abc_DEF-123"
     svg = approve.qr_svg(url)
