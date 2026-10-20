@@ -181,3 +181,22 @@ def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, captu
     else:
         assert r.status_code == 409 and r.json()["detail"] == reason
         assert posted == []
+
+
+def test_seller_registers_its_key_before_every_delivery(seller, monkeypatch):
+    """A bank restarted on a fresh DB forgets the seller's manifest key: registering it (idempotent) before each
+    delivery keeps deliveries from failing BAD_SIGNATURE (seen when the scenario runner switched bank profiles)."""
+    _, _, client = seller
+    monkeypatch.setattr(seller_mod.escrow, "read_state", lambda h: {"collected": False, "capturable": 5_000_000,
+                                                                    "refundable": 0})
+    monkeypatch.setattr(seller_mod, "read_retry", lambda fn, ok: fn())
+    posted = []
+    monkeypatch.setattr(seller_mod, "bank_post", lambda path, body: posted.append(path))
+    for deal_id in ("d-1", "d-2"):
+        o = offer(client, deal_id=deal_id)
+        body = {"deal_id": deal_id, "asset": "EURC", "payment_info": _pi(o, salt=str(seller_mod.escrow.salt(deal_id, 0))),
+                "n": 0, "tier": "T1", "rule": "B"}
+        r = client.post(f"/order/{o['offer_id']}/escrow", json=body, headers={"x-bank-token": config.BANK_TO_SELLER_TOKEN})
+        assert r.status_code == 200
+    keys = [p for p in posted if p.endswith("/keys")]
+    assert len(keys) == 2 and posted[0].endswith("/keys") and posted[1].endswith("/delivery")

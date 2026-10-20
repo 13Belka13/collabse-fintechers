@@ -269,7 +269,6 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     # registered with the bank before the first delivery
     pk = os.getenv("SELLER_SIGNING_PK", "").strip()
     app.state.signing_key = Account.from_key(pk) if pk else Account.create()
-    app.state.key_registered = set()
     quoted = assets()
 
     def offer_of(ctx) -> dict:
@@ -396,9 +395,9 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
     def deliver_to_bank(offer_id: str, deal_id: str, payload: dict):
         seller_id = app.state.offers[offer_id]["seller_id"]
         try:
-            if seller_id not in app.state.key_registered:
-                bank_post(f"/api/sellers/{seller_id}/keys", {"address": app.state.signing_key.address})
-                app.state.key_registered.add(seller_id)
+            # before every delivery (idempotent at the bank): a bank restarted on a fresh DB no longer knows the key
+            # and would refuse every delivery BAD_SIGNATURE, so each paid deal would end in a NO_DELIVERY void
+            bank_post(f"/api/sellers/{seller_id}/keys", {"address": app.state.signing_key.address})
             bank_post(f"/api/deals/{deal_id}/delivery", payload)
             app.state.delivered[offer_id] = time.time()  # only once the bank has the delivery
         except httpx.HTTPError as e:

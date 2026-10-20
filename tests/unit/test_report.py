@@ -47,11 +47,13 @@ def test_money_reaching_the_attacker_zeroes_the_blocked_count():
 
 
 def test_stage_table_uses_p95_against_the_spec_targets():
-    stages = {"decision": [1.0] * 19 + [60.0], "tx_in_block:authorize": [100.0], "tx_in_block:capture": [7000.0]}
+    stages = {"decision": [1.0] * 19 + [60.0], "tx_in_block:authorize": [100.0], "tx_in_block:capture": [7000.0],
+              "block_to_feed": [900.0], "block_to_feed:tatum": [1200.0]}
     rows = {r["stage"]: r for r in report.stage_table(stages)}
     assert rows["decision"]["p95"] == 1.0 and rows["decision"]["met"] is True  # 19 of 20 under 50 ms
     assert rows["tx_in_block:*"]["n"] == 2 and rows["tx_in_block:*"]["met"] is False
-    assert rows["bank_feed"]["n"] == 0 and rows["bank_feed"]["met"] is None
+    assert rows["block_to_feed*"]["n"] == 2 and rows["block_to_feed*"]["met"] is True  # the stage webhooks.py times
+    assert rows["facilitator_verify"]["n"] == 0 and rows["facilitator_verify"]["met"] is None
 
 
 def test_fork_matrix_has_hashes_without_links_and_sepolia_has_links():
@@ -72,3 +74,21 @@ def test_coverage_targets(tmp_path):
     assert not targets["bank/ lines ≥ 80 %"]["met"] and round(cov["total"]["lines"], 1) == 72.5
     assert "| bank/mandate.py branches ≥ 90 % | 92.0 % | yes |" in report.coverage_md(cov)
     assert report.coverage(tmp_path / "missing.json") is None
+
+
+def test_build_renders_the_report_from_a_raw_run(tmp_path, monkeypatch):
+    raw = {**_raw("sepolia"), "stages": {"decision": [2.0]}, "finished": 0, "defects": {"D1": "x", "D2": "y"},
+           "llm_totals": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
+           "stack": {"funding": "faucets", "tczk": "0x1", "addresses": {"operator": "0x2"}}}
+    (tmp_path / "scenarios-sepolia.json").write_text(json.dumps(raw))
+    inj = {k: 1 for k in ("money_blocked", "variants", "money_runs_blocked", "money_runs", "outcome_as_expected",
+                          "controls", "controls_paid", "scripted_agent_followed", "scripted_agent_runs",
+                          "items_paid_by_injection", "items_variants")}
+    ex = {k: 1 for k in ("sources_subset", "texts", "client_clean", "client_texts", "ai_labelled", "ai_texts")}
+    pr = {"items": 9, "as_expected": 9, "injection_as_expected": 1, "injection_items": 1}
+    monkeypatch.setattr(report, "REPORTS", tmp_path)
+    monkeypatch.setattr(report.config, "ROOT", tmp_path)
+    monkeypatch.setattr(report, "evals", lambda: {"source": "test", "injections": inj, "explanations": ex,
+                                                  "predicates": pr})
+    md, out = report.build("sepolia")
+    assert "Predicate engine (code, no model): 9/9" in md and out["summary"]["scenario_runs"] == 6

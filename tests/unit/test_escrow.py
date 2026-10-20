@@ -138,6 +138,15 @@ def test_t0_capture_passes_the_configured_receiver_with_a_zero_fee(deal):
     assert (amount, fee) == (5_000_000, 0) and receiver.lower() == config.BANK_CLEARING_ADDR.lower()
 
 
+def test_a_capture_whose_fee_floors_to_zero_still_names_the_fee_receiver(deal):
+    """AuthCaptureEscrow reverts InvalidFeeReceiver(0x0, clearing) when the PaymentInfo names a fee receiver and
+    the capture passes another — also with fee 0 (found on the fork: a 43-unit tCZK rest at 120 bps)."""
+    escrow.authorize("d-1")
+    escrow.capture("d-1", 43, 2)
+    amount, fee, receiver = deal["sender"].sent[1]["args"][1:]
+    assert (amount, fee) == (43, 0) and receiver.lower() == config.BANK_CLEARING_ADDR.lower()
+
+
 def test_paid_counts_only_payment_infos_with_the_seller_as_receiver(deal):
     escrow.authorize("d-1")
     h = db.one("SELECT payment_hash FROM deals WHERE deal_id='d-1'")["payment_hash"]

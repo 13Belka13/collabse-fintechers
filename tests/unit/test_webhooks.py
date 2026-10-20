@@ -73,6 +73,17 @@ def test_signed_webhook_records_the_amount_from_the_chain_not_the_payload(hook):
     assert journal.verify() == (True, None)
 
 
+def test_a_lagging_node_without_the_block_still_records_the_transfer(hook, monkeypatch):
+    """The receipt came from one node, get_block reached another that has not seen the block: still 200 + one entry
+    (only the latency sample is skipped), not a 500 that makes Tatum retry."""
+    from web3.exceptions import BlockNotFound
+    tx = mint_to_beta(250)
+    monkeypatch.setattr(type(chain.w3().eth), "get_block", lambda self, n: (_ for _ in ()).throw(BlockNotFound(n)))
+    r = post(hook, payload(tx))
+    assert r.status_code == 200 and r.json()["accepted"] is True and len(incoming(tx)) == 1
+    assert db.one("SELECT COUNT(*) n FROM timings WHERE stage LIKE 'block_to_feed%'")["n"] == 0
+
+
 def test_bad_signature_is_401_with_no_row_and_a_rejected_entry(hook):
     tx = mint_to_beta()
     r = post(hook, payload(tx), secret="not-the-secret")

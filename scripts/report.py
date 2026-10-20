@@ -21,7 +21,7 @@ TARGETS = [
     ("facilitator_verify", "Bank facilitator verify (with screening)", 500),
     ("screening", "New counterparty: ARES + VAT + ISIR + sanctions", 2500),
     ("tx_in_block:*", "Signature → tx in block (settle, authorize, capture, void)", 6000),
-    ("bank_feed", "Tx in block → row in the /bank feed", 5000),
+    ("block_to_feed*", "Tx in block → row in the /bank feed (RPC poll or Tatum)", 5000),
     ("refusal_to_client", "Refusal → message to the client", 100),
 ]
 # SPEC §19.5 coverage targets: bank/ ≥ 80 % lines; these ≥ 90 % branches.
@@ -272,8 +272,8 @@ def build(target: str) -> tuple[str, dict]:
            "from Transfer events and paymentState; captured = journal = statement). Journal hash chains: "
            f"{'verified' if s['journal_verified'] else 'BROKEN'}.",
            f"- Injection evals: money-level block **{inj['money_blocked']}/{inj['variants']}** variants "
-           f"({inj['money_runs_blocked']}/{inj['money_runs']} model runs). Judge ({jd['model']}): precision "
-           f"{jd['precision']:.2f}, recall {jd['recall']:.2f} on {jd['items']} labelled items.",
+           f"({inj['money_runs_blocked']}/{inj['money_runs']} model runs). Predicate engine (code, no model): "
+           f"{pr['as_expected']}/{pr['items']} labelled items as expected.",
            f"- Coverage of bank/: lines {fmt_pct(cov['total']['lines']) if cov else 'n/a'}, branches "
            f"{fmt_pct(cov['total']['branches']) if cov else 'n/a'}.",
            f"- Model spend in the scenario runs: {llm['calls']} calls, {llm['input_tokens']} in / {llm['output_tokens']} "

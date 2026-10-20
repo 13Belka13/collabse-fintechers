@@ -32,7 +32,7 @@ def test_deploy_sets_up_roles_allowlist_and_mint(token):
     assert t.functions.name().call() == "tCZK Deposit Token" == config.ASSETS["tCZK"]["name"]
     assert t.functions.decimals().call() == 2
     assert t.functions.strictMode().call() is True
-    for who in (ALFA, BETA, config.COLLECTOR, token["store"], token["admin"]):
+    for who in (ALFA, BETA, config.COLLECTOR, token["store"], token["admin"], config.BANK_CLEARING_ADDR):
         assert tczk.is_allowed(who), who
     for router in (token["admin"], config.COLLECTOR, token["store"], config.REFUND_COLLECTOR):
         assert t.functions.hasRole(tczk.ROLES["ROUTER_ROLE"], Web3.to_checksum_address(router)).call()
@@ -92,6 +92,17 @@ def test_strict_mode_direct_transfer_reverts(token):
     assert res["status"] == "reverted"
     assert tczk.token().functions.balanceOf(client).call() == 1_000
     assert tczk.token().functions.balanceOf(BETA).call() == 0
+
+
+def test_escrow_fee_reaches_the_clearing_address(token):
+    """A capture with a fee: the escrow's token store (a router) pays the seller and the clearing address. Off the
+    allowlist the fee leg reverted NotAllowlisted and the whole capture with it (found on Base Sepolia)."""
+    tczk.mint(token["store"], 250, "dep-store")  # stands in for a lock held by the escrow
+    for to, amount in ((BETA, 188), (config.BANK_CLEARING_ADDR, 2)):
+        res = chain.sender(token["keys"][9]).send(
+            tczk.token().functions.transfer(Web3.to_checksum_address(to), amount), kind="capture_leg")
+        assert res["status"] == "mined"
+    assert tczk.token().functions.balanceOf(Web3.to_checksum_address(config.BANK_CLEARING_ADDR)).call() == 2
 
 
 def test_artifact_matches_forge_build():
