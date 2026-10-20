@@ -466,6 +466,33 @@ def test_a_late_escrow_notice_of_a_landed_lock_is_accepted_not_voided(bank, monk
     assert not any(s[0] == "void" for s in bank.sender.sent)
 
 
+def test_a_pay_retry_resumes_a_landed_lock_even_if_the_mandate_was_paused_meanwhile(bank, monkeypatch):
+    """The authorize is broadcast and lands, its answer is lost (503). A person pauses the mandate before the retry.
+    The retry must not refuse a deal whose money is already in escrow (no settlement would ever return it)."""
+    deal_id, _ = deal(bank, asset="tCZK")
+    real_send = bank.sender.send
+
+    def lands_but_answer_lost(call, **kw):
+        if call.fn_name != "authorize":
+            return real_send(call, **kw)
+        row = db.one("SELECT tx_hash FROM onchain_txs WHERE idem_key=?", (kw["idem_key"],))
+        if row:  # like chain.Sender: the same key re-broadcasts the same signed tx, now its receipt comes
+            db.run("UPDATE onchain_txs SET status='mined' WHERE idem_key=?", (kw["idem_key"],))
+            return {"tx_hash": row["tx_hash"], "link": chain.tx_link(row["tx_hash"]), "status": "mined"}
+        bank.locked["capturable"] = int(call.args[1])
+        db.run("INSERT INTO onchain_txs (tx_hash, kind, deal_id, status, idem_key, created_at) VALUES (?,?,?,?,?,?)",
+               ("0x" + "ab" * 32, kw["kind"], kw["deal_id"], "signed", kw["idem_key"], time.time()))
+        raise TimeoutError("rpc timeout")
+
+    monkeypatch.setattr(bank.sender, "send", lands_but_answer_lost)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").status_code == 503
+    mandate.amend("m-alfa-1", {"active": False}, "human:alfa")
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and deals.get(deal_id)["state"] in ("authorized", "delivered")
+    assert disputes.get(deal_id) is not None and not any(s[0] == "void" for s in bank.sender.sent)
+    assert budget()["reserved_eur_cents"] + budget()["committed_eur_cents"] == 500
+
+
 def test_payment_info_amount_is_the_accepted_quote(bank):
     deal_id, _ = deal(bank, asset="tCZK")
     bank.seller.post("/mode", json={"seller_id": "s-beta", "mode": "honest"})
