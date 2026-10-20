@@ -444,6 +444,28 @@ def test_late_authorize_after_expiry_is_recognised_as_the_lock(bank, monkeypatch
     assert budget()["reserved_eur_cents"] + budget()["committed_eur_cents"] == 500
 
 
+def test_a_late_escrow_notice_of_a_landed_lock_is_accepted_not_voided(bank, monkeypatch):
+    """The retry of an ambiguous authorize comes 20 min after the PaymentInfo was built: the lock still has 30+ days,
+    so the seller takes it and delivers; the bank never voids a valid lock over the notice time."""
+    deal_id, _ = deal(bank, asset="tCZK")
+    real_send = bank.sender.send
+
+    def lands_but_answer_lost(call, **kw):
+        if call.fn_name == "authorize":
+            bank.locked["capturable"] = int(call.args[1])
+            raise TimeoutError("rpc timeout")
+        return real_send(call, **kw)
+
+    monkeypatch.setattr(bank.sender, "send", lands_but_answer_lost)
+    assert bank.api.post(f"/api/deals/{deal_id}/pay").status_code == 503
+    monkeypatch.setattr(bank.sender, "send", real_send)
+    real_time = time.time
+    monkeypatch.setattr(time, "time", lambda: real_time() + 1200)
+    view = bank.api.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and deals.get(deal_id)["state"] in ("authorized", "delivered")
+    assert not any(s[0] == "void" for s in bank.sender.sent)
+
+
 def test_payment_info_amount_is_the_accepted_quote(bank):
     deal_id, _ = deal(bank, asset="tCZK")
     bank.seller.post("/mode", json={"seller_id": "s-beta", "mode": "honest"})

@@ -318,11 +318,19 @@ def test_no_cached_screening_fails_closed_with_neutral_text(world):
 
 def test_seller_rejecting_escrow_returns_the_lock(world, monkeypatch):
     deal_id, _ = new_deal(world)
-    monkeypatch.setattr(seller_mod, "verify_escrow", lambda *a, **k: "escrow_capturable_not_price")
+    monkeypatch.setattr(seller_mod, "verify_escrow", lambda *a, **k: "receiver_not_our_pay_to")
     view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
     assert view["code"] == "QUOTE_MISMATCH" and view["reasons"][0]["code"] == "seller_rejected_escrow"
     assert [s[0] for s in world.sender.sent] == ["authorize", "void"] and ("release",) in world.mandate.calls
     assert deals.get(deal_id)["state"] == "closed"
+
+
+def test_a_lagging_escrow_read_at_the_seller_never_voids_the_lock(world, monkeypatch):
+    deal_id, _ = new_deal(world)
+    monkeypatch.setattr(seller_mod, "verify_escrow", lambda *a, **k: "escrow_capturable_not_price")
+    view = world.bank.post(f"/api/deals/{deal_id}/pay").json()
+    assert view["status"] == "ok" and [s[0] for s in world.sender.sent] == ["authorize"]
+    assert deals.get(deal_id)["state"] == "authorized"  # pay again resends the notice (_already_paid)
 
 
 def test_pay_before_offer_is_409(world):

@@ -150,7 +150,11 @@ def make_items(count: int, mode: str, data: str | None = None, predicates: list[
     return items
 
 
-EXPIRY_SLACK_S = 600  # the bank built the PaymentInfo a little before the seller reads it
+# The bank built the PaymentInfo before the notice; a notice may come late (a retried, ambiguous authorize), so the
+# slack is a day of the term, not minutes of the notice time. A lock still days long is a valid lock.
+EXPIRY_SLACK_S = escrow.DAY_S
+# Reasons that depend on time or read lag: answered with a retryable 503, so the bank never voids on them.
+RETRYABLE = ("authorization_expires_too_early", "escrow_capturable_not_price")
 
 
 def verify_escrow(offer: dict, asset: str, pi: dict, now: float | None = None, notice: dict | None = None) -> str | None:
@@ -454,7 +458,7 @@ def create_app(facilitator_client=None, sellers: dict | None = None) -> FastAPI:
             raise HTTPException(409, "asset_not_quoted")
         reason = verify_escrow(offer, body.asset, body.payment_info, notice=body.model_dump())
         if reason:
-            raise HTTPException(409, reason)
+            raise HTTPException(503 if reason in RETRYABLE else 409, reason)
         if body.kind != "deal":  # the disputed sum locked again (§8.2): checked, nothing to deliver
             return {"ok": True, "offer_id": offer_id, "kind": body.kind}
         if mode_of(offer) == "no_delivery":  # takes the lock and delivers nothing (scenario N13: NO_DELIVERY)

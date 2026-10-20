@@ -179,7 +179,8 @@ def test_seller_checks_escrow_before_delivering(seller, monkeypatch, over, captu
         assert payload["manifest"]["merkle_root"] == receipts.merkle_root(payload["items"])
         assert receipts.manifest_signer(payload["manifest"], payload["signature"]) == posted[0][1]["address"]
     else:
-        assert r.status_code == 409 and r.json()["detail"] == reason
+        # time- or lag-dependent reasons are retryable (503: the bank asks again, never voids on them)
+        assert r.status_code == (503 if reason in seller_mod.RETRYABLE else 409) and r.json()["detail"] == reason
         assert posted == []
 
 
