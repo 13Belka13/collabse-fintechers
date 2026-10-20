@@ -104,3 +104,15 @@ def test_supported_without_a_relayer_key_is_a_clear_503(monkeypatch):
     app.include_router(facilitator.router)
     r = TestClient(app).get("/x402/supported")
     assert r.status_code == 503 and "BANK_RELAYER_PK missing" in r.json()["detail"]
+
+
+def test_bank_feed_shows_a_stopped_agent_and_a_silent_seller(seeded):
+    from bank import ui
+    journal.append("agent:buyer", "agent_unavailable", {"kind": "timeout", "text": "stopped"}, deal_id="d-x")
+    journal.append("bank", "seller_unavailable", {"step": "negotiate", "error": "ReadTimeout"}, deal_id="d-x")
+    rows = [r for r in ui.feed("client") if r.get("event") in ("agent_unavailable", "seller_unavailable")]
+    assert {r["event"] for r in rows} == {"agent_unavailable", "seller_unavailable"} and all(r["tone"] == "bad" for r in rows)
+    app = FastAPI()
+    app.include_router(ui.router)
+    html = TestClient(app).get("/bank/feed").text
+    assert "AI agent stopped (timeout): nothing more is paid" in html and "the offer is unchanged" in html
