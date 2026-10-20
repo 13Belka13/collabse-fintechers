@@ -32,7 +32,8 @@ FIRST_NAMES = {"jan", "jiří", "petr", "josef", "pavel", "martin", "tomáš", "
 
 POSTCODE_CITY = {"6": "Brno", "1": "Praha"}  # bank/deals.py POSTCODE_PREFIX the other way round
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="maps-live")
-_inflight: dict[str, Future] = {}
+REUSE_S = 300  # a finished fetch (even a fallback) answers the same query for 5 min: no retry storm per turn
+_inflight: dict[str, tuple[Future, float]] = {}
 _lock = threading.Lock()
 STATS = {"live": 0, "cached": 0, "recorded": 0}  # where each fetch was answered from (cache hit rate in the report)
 
@@ -141,9 +142,10 @@ def prefetch(q: dict, client=None) -> Future:
     """Start (or join) the run for this query in the background; one run per normalized query at a time."""
     key = key_of(q)
     with _lock:
-        f = _inflight.get(key)
-        if f is None or f.done():
-            f = _inflight[key] = _pool.submit(fetch, q, client)
+        f, started = _inflight.get(key, (None, 0.0))
+        if f is None or (f.done() and time.time() - started > REUSE_S):
+            f, started = _pool.submit(fetch, q, client), time.time()
+            _inflight[key] = (f, started)
         return f
 
 

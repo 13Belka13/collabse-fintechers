@@ -73,6 +73,14 @@ def test_any_error_falls_back_to_the_recorded_dataset(fake):
     assert out["run"]["id"] == "w9XlXOBtETIUObLGm"
 
 
+def test_prefetch_runs_once_per_query_and_does_not_retry_every_turn(monkeypatch):
+    fake = FakeApify(error=TimeoutError("120 s"))
+    q = maps_live.query_of(10, praha_preds())
+    first = maps_live.prefetch(q, fake).result(timeout=5)
+    again = maps_live.prefetch(maps_live.query_of(10, praha_preds(rating=4.0)), fake).result(timeout=5)
+    assert first["source"] == again["source"] == "recorded" and len(fake.calls) == 1
+
+
 def test_timed_out_run_keeps_what_it_found():
     out = maps_live.fetch(maps_live.query_of(10, praha_preds()), FakeApify([place(1)], status="TIMED-OUT"))
     assert out["source"] == "live" and [it["placeId"] for it in out["items"]] == ["p1"]
