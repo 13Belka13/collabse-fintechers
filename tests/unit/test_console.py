@@ -336,6 +336,23 @@ def test_after_demo_seed_no_window_stays_open_and_the_scenes_run(client, sim):
     assert runs == [("honest", "ok"), ("fake_data", "ok"), ("tczk", "ok")], runs
 
 
+@pytest.mark.parametrize("task", ds.TASKS)
+def test_every_preset_task_is_met_by_an_honest_seller_with_the_default_data(client, sim, task):
+    """The console's chips with the default form (companies, Honest): every item delivered and accepted. 40 items
+    cost 10 € (budget 10 €, above the 6 € threshold): a person confirms, as on stage."""
+    from bank import deals
+    count = int(task.split()[0])
+    p = ds.custom_params({**FORM, "task": task, "seller": "s-gama", "budget": "10" if count > 20 else "5"})
+    out = ds.run_safe("custom", p)
+    deal_id = out["deals"]["s-gama"]
+    if count > 20:
+        assert out["outcome"] == Code.CONFIRMATION_REQUIRED, out
+        out = deals.confirm(deal_id, "human:alfa")
+    assert out.get("outcome", out.get("status")) == "ok", out
+    items = db.rows("SELECT status, code FROM items WHERE deal_id=?", (deal_id,))
+    assert len(items) == count and {r["status"] for r in items} == {"accepted"}, items
+
+
 # ---- the buyer's wallet: tCZK by default, balances next to the form, no run the wallet cannot pay ----
 
 def wallet(monkeypatch, **values):

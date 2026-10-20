@@ -55,9 +55,11 @@ DATA_SOURCES = {"companies": "Warehouse companies with IČO (synthetic, checked 
                 "maps": "Google Maps places recorded once through Apify (Brno)",
                 "apify": "Google Maps places fetched live through Apify for your task (cached; recorded data on failure)"}
 PLACES = ("maps", "places", "apify")
+# Presets an honest seller can meet with the default data (synthetic Brno companies, 40 alive in the fixture);
+# Praha needs Google Maps places (data "apify"), so it is typed by the viewer, not offered as a chip
 TASKS = [TASK, "10 warehouses in Brno with rating above 4.5 and a website",
          "40 warehouses in Brno with rating above 4.0 and a website",
-         "20 warehouses in Praha with rating above 4.0 and a website"]
+         "15 warehouses in Brno with rating above 4.7 and a website"]
 OPENINGS = {"list": "Opens at its list price: the agents haggle", "min": "Opens at its minimum price"}
 RULES = {"": "The deal's default (B for this data)",
          "A": "A: no quality claims (this mandate requires B for data, so the bank refuses A)",
