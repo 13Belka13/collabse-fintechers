@@ -189,6 +189,8 @@ def setup(address: str, admin_pk: str | None = None, relayer: str | None = None,
         allow_(c["wallet_address"], account_ref(c["account_number"]))
     allow_(config.COLLECTOR, b"\0" * 32)
     allow_(store, b"\0" * 32)
+    # the fee receiver of every capture (MODEL_V2 §10): off the allowlist a tCZK capture with a fee reverts
+    allow_(config.BANK_CLEARING_ADDR, account_ref("bank-clearing"))
     if mint_alfa:
         alfa = Web3.to_checksum_address(next(c["wallet_address"] for c in companies if c["id"] == "alfa"))
         if t.functions.balanceOf(alfa).call() == 0:
